@@ -407,7 +407,16 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
+			 -Wno-discarded-qualifiers -Wno-attributes \
+			 -Wno-unused-const-variable -Wunused-variable \
+			 -Wno-format-truncation -Wno-duplicate-decl-specifier \
+		   -Wno-misleading-indentation -Wno-unused-function -Wno-format  \
+		   -Wno-int-in-bool-context -Wno-pointer-to-int-cast	\
+		   -Wno-int-to-pointer-cast -Wno-incompatible-pointer-types \
+		   -Wno-switch -Wno-maybe-uninitialized\
+		   -Wno-bool-operation -Wno-switch-bool -Wno-pointer-compare \
 		   -std=gnu89
+
 
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
