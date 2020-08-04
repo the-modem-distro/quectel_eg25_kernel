@@ -68,6 +68,8 @@ static struct cnss_dfs_nol_info {
 	u16 dfs_nol_info_len;
 } dfs_nol_info;
 
+static enum cnss_cc_src cnss_cc_source = CNSS_SOURCE_CORE;
+
 int cnss_set_wlan_unsafe_channel(u16 *unsafe_ch_list, u16 ch_count)
 {
 	mutex_lock(&unsafe_channel_list_lock);
@@ -406,7 +408,43 @@ int cnss_get_fw_files_for_target(struct cnss_fw_files *pfw_files,
 }
 EXPORT_SYMBOL(cnss_get_fw_files_for_target);
 
+void cnss_set_cc_source(enum cnss_cc_src cc_source)
+{
+	cnss_cc_source = cc_source;
+}
+EXPORT_SYMBOL(cnss_set_cc_source);
+
+enum cnss_cc_src cnss_get_cc_source(void)
+{
+	return cnss_cc_source;
+}
+EXPORT_SYMBOL(cnss_get_cc_source);
+
 const char *cnss_wlan_get_evicted_data_file(void)
 {
 	return FW_FILES_QCA6174_FW_3_0.evicted_data;
 }
+
+int cnss_common_register_tsf_captured_handler(struct device *dev,
+					      irq_handler_t handler, void *ctx)
+{
+	struct cnss_dev_platform_ops *pf_ops = cnss_get_platform_ops(dev);
+
+	if (pf_ops && pf_ops->register_tsf_captured_handler)
+		return pf_ops->register_tsf_captured_handler(handler, ctx);
+	else
+		return -EINVAL;
+}
+EXPORT_SYMBOL(cnss_common_register_tsf_captured_handler);
+
+int cnss_common_unregister_tsf_captured_handler(struct device *dev,
+						void *ctx)
+{
+	struct cnss_dev_platform_ops *pf_ops = cnss_get_platform_ops(dev);
+
+	if (pf_ops && pf_ops->unregister_tsf_captured_handler)
+		return pf_ops->unregister_tsf_captured_handler(ctx);
+	else
+		return -EINVAL;
+}
+EXPORT_SYMBOL(cnss_common_unregister_tsf_captured_handler);

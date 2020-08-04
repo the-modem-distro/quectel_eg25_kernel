@@ -31,7 +31,7 @@ MODULE_PARM_DESC(rmnet_dl_max_pkt_per_xfer,
 #define RMNET_NOTIFY_INTERVAL	5
 #define RMNET_MAX_NOTIFY_SIZE	sizeof(struct usb_cdc_notification)
 
-
+#define QUECTEL_MULTI_IP_PACKAGES
 #define ACM_CTRL_DTR	(1 << 0)
 
 /* TODO: use separate structures for data and
@@ -59,6 +59,17 @@ struct f_rmnet {
 	const struct usb_endpoint_descriptor *in_ep_desc_backup;
 	const struct usb_endpoint_descriptor *out_ep_desc_backup;
 };
+
+#ifdef QUECTEL_MULTI_IP_PACKAGES
+
+#define USB_CDC_SET_MULTI_PACKAGE_COMMAND (0x5C)
+
+extern unsigned int multi_package_max_len;;
+extern unsigned int wait_for_package_timeout; //us
+extern unsigned int package_max_count_in_queue;
+extern unsigned int multi_package_enabled;
+#endif
+
 
 static unsigned int nr_rmnet_ports;
 static unsigned int no_ctrl_smd_ports;
@@ -596,6 +607,12 @@ static void frmnet_suspend(struct usb_function *f)
 	enum transport_type	dxport = rmnet_ports[dev->port_num].data_xport;
 	bool			remote_wakeup_allowed;
 
+	/* Check if function is already suspended in frmnet_func_suspend() */
+	if (f->func_is_suspended) {
+		pr_debug("%s: func already suspended!\n", __func__);
+		return;
+	}
+
 	if (f->config->cdev->gadget->speed == USB_SPEED_SUPER)
 		remote_wakeup_allowed = f->func_wakeup_allowed;
 	else
@@ -657,6 +674,14 @@ static void frmnet_resume(struct usb_function *f)
 	int  ret;
 	bool remote_wakeup_allowed;
 
+	/*
+	 * If the function is in USB3 Function Suspend state, resume is
+	 * canceled. In this case resume is done by a Function Resume request.
+	 */
+	if ((f->config->cdev->gadget->speed == USB_SPEED_SUPER) &&
+		f->func_is_suspended)
+		return;
+
 	if (f->config->cdev->gadget->speed == USB_SPEED_SUPER)
 		remote_wakeup_allowed = f->func_wakeup_allowed;
 	else
@@ -696,6 +721,40 @@ static void frmnet_resume(struct usb_function *f)
 		pr_err("%s: Un-supported transport: %s\n", __func__,
 				xport_to_str(dxport));
 	}
+}
+
+static int frmnet_func_suspend(struct usb_function *f, u8 options)
+{
+	bool func_wakeup_allowed;
+
+	pr_debug("func susp %u cmd for %s", options, f->name ? f->name : "");
+
+	func_wakeup_allowed =
+		((options & FUNC_SUSPEND_OPT_RW_EN_MASK) != 0);
+
+	if (options & FUNC_SUSPEND_OPT_SUSP_MASK) {
+		f->func_wakeup_allowed = func_wakeup_allowed;
+		if (!f->func_is_suspended) {
+			frmnet_suspend(f);
+			f->func_is_suspended = true;
+		}
+	} else {
+		if (f->func_is_suspended) {
+			f->func_is_suspended = false;
+			frmnet_resume(f);
+		}
+		f->func_wakeup_allowed = func_wakeup_allowed;
+	}
+
+	return 0;
+}
+
+static int frmnet_get_status(struct usb_function *f)
+{
+	unsigned remote_wakeup_en_status = f->func_wakeup_allowed ? 1 : 0;
+
+	return (remote_wakeup_en_status << FUNC_WAKEUP_ENABLE_SHIFT) |
+		(1 << FUNC_WAKEUP_CAPABLE_SHIFT);
 }
 
 static void frmnet_disable(struct usb_function *f)
@@ -818,6 +877,14 @@ static void frmnet_ctrl_response_available(struct f_rmnet *dev)
 	spin_unlock_irqrestore(&dev->lock, flags);
 
 	ret = usb_ep_queue(dev->notify, dev->notify_req, GFP_ATOMIC);
+#if 1 //add by carl, PC maybe not open qmi-channel, store this qmi and wait PC to read
+	if (ret == -EBUSY) {
+		unsigned long notify_count = dev->notify_count;
+		pr_info("frmnet ep enqueue busy notify_count = %ld\n", notify_count);
+		if (notify_count < 1000) //OFFLINE_UL_Q_LIMIT
+			ret = 0;
+	}
+#endif
 	if (ret) {
 		spin_lock_irqsave(&dev->lock, flags);
 		if (!list_empty(&dev->cpkt_resp_q)) {
@@ -875,6 +942,7 @@ static void frmnet_disconnect(struct grmnet *gr)
 
 	usb_ep_fifo_flush(dev->notify);
 
+#if 0 //comment by carl, this will make dev->notify_count un-corrent and one qmi response miss to notify to PC, I think PC donot care this cdc-msg, so remove it
 	event = dev->notify_req->buf;
 	event->bmRequestType = USB_DIR_IN | USB_TYPE_CLASS
 			| USB_RECIP_INTERFACE;
@@ -890,6 +958,7 @@ static void frmnet_disconnect(struct grmnet *gr)
 		pr_err("%s: rmnet notify ep enqueue error %d\n",
 				__func__, status);
 	}
+#endif
 
 	frmnet_purge_responses(dev);
 }
@@ -1018,6 +1087,31 @@ static void frmnet_notify_complete(struct usb_ep *ep, struct usb_request *req)
 	}
 }
 
+#ifdef QUECTEL_MULTI_IP_PACKAGES
+static void
+frmnet_set_multi_package_complete(struct usb_ep *ep, struct usb_request *req)
+{
+	struct multi_package_config {
+		__le32 enable;
+		__le32 package_max_len;
+		__le32 package_max_count_in_queue;
+		__le32 timeout;
+	} __packed;
+
+	struct multi_package_config cfg;
+	
+	if (sizeof(cfg) != req->actual) {
+		return;
+	}
+
+	memcpy(&cfg, req->buf, sizeof(cfg));
+	multi_package_enabled = le32_to_cpu(cfg.enable);
+	multi_package_max_len = le32_to_cpu(cfg.package_max_len);
+	package_max_count_in_queue = le32_to_cpu(cfg.package_max_count_in_queue);
+	wait_for_package_timeout = le32_to_cpu(cfg.timeout);
+}
+#endif
+
 static int
 frmnet_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 {
@@ -1038,6 +1132,14 @@ frmnet_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 	}
 
 	switch ((ctrl->bRequestType << 8) | ctrl->bRequest) {
+#ifdef QUECTEL_MULTI_IP_PACKAGES
+	case ((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8)
+			| USB_CDC_SET_MULTI_PACKAGE_COMMAND:
+		ret = w_length;
+		req->complete = frmnet_set_multi_package_complete;
+		req->context = dev;
+		break;
+#endif
 
 	case ((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8)
 			| USB_CDC_SEND_ENCAPSULATED_COMMAND:
@@ -1295,6 +1397,7 @@ static int frmnet_bind_config(struct usb_configuration *c, unsigned portno)
 	spin_lock_irqsave(&dev->lock, flags);
 	dev->cdev = c->cdev;
 	f = &dev->gether_port.func;
+	dev->port.f = f;
 	f->name = kasprintf(GFP_ATOMIC, "rmnet%d", portno);
 	spin_unlock_irqrestore(&dev->lock, flags);
 	if (!f->name) {
@@ -1310,6 +1413,8 @@ static int frmnet_bind_config(struct usb_configuration *c, unsigned portno)
 	f->setup = frmnet_setup;
 	f->suspend = frmnet_suspend;
 	f->resume = frmnet_resume;
+	f->func_suspend = frmnet_func_suspend;
+	f->get_status = frmnet_get_status;
 	dev->port.send_cpkt_response = frmnet_send_cpkt_response;
 	dev->port.disconnect = frmnet_disconnect;
 	dev->port.connect = frmnet_connect;

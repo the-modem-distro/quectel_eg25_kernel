@@ -710,6 +710,12 @@ static int msm_dai_q6_auxpcm_set_clk(
 	return rc;
 }
 
+//jun20160814
+#ifdef CONFIG_QUECTEL_AUDIO_DRIVER
+static u16 quectel_enable_pcm_clk = 0;
+#endif
+//endif
+
 static void msm_dai_q6_auxpcm_shutdown(struct snd_pcm_substream *substream,
 				struct snd_soc_dai *dai)
 {
@@ -718,6 +724,11 @@ static void msm_dai_q6_auxpcm_shutdown(struct snd_pcm_substream *substream,
 		dev_get_drvdata(dai->dev);
 
 	mutex_lock(&aux_dai_data->rlock);
+
+//jun20160814
+	if(quectel_enable_pcm_clk)
+		goto exit;
+//endif
 
 	if (!(test_bit(STATUS_TX_PORT, aux_dai_data->auxpcm_port_status) ||
 	      test_bit(STATUS_RX_PORT, aux_dai_data->auxpcm_port_status))) {
@@ -2199,6 +2210,441 @@ static struct snd_soc_dai_driver msm_dai_q6_incall_record_dai[] = {
 	},
 };
 
+//2014-11-24 add by scott.hu
+#ifdef CONFIG_QUECTEL_AUDIO_DRIVER
+static ssize_t auxpcm_mode_show
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	char *buf
+)
+{
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+	
+	return snprintf(buf, PAGE_SIZE, "%d\n", auxpcm_pdata->mode_8k.mode);
+}
+
+static ssize_t auxpcm_mode_store
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	const char *buff, size_t size
+)
+{
+	int mode;
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+	
+	sscanf(buff, "%d", &mode);
+
+	if(mode <= AFE_PORT_PCM_AUX_MODE_AUX)
+	{
+		auxpcm_pdata->mode_8k.mode = (u16)mode;
+		#ifdef CONFIG_QUECTEL_PCM16K_SUPPORT
+		auxpcm_pdata->mode_16k.mode = (u16)mode;//16k
+		#endif
+	}
+	else
+	{
+		pr_err("auxpcm mode out of range.\n");
+	}
+	
+	return size;
+}
+
+static ssize_t auxpcm_sync_show
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	char *buf
+)
+{
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+	
+	return snprintf(buf, PAGE_SIZE, "%d\n", auxpcm_pdata->mode_8k.sync);
+}
+
+static ssize_t auxpcm_sync_store
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	const char *buff, size_t size
+)
+{
+	int sync;
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+	
+	sscanf(buff, "%d", &sync);
+
+	if(sync <= AFE_PORT_PCM_SYNC_SRC_INTERNAL)
+	{
+		auxpcm_pdata->mode_8k.sync = (u16)sync;
+		#ifdef CONFIG_QUECTEL_PCM16K_SUPPORT
+		auxpcm_pdata->mode_16k.sync = (u16)sync; //16k
+		#endif
+	}
+	else
+	{
+		pr_err("auxpcm sync out of range.\n");
+	}
+	
+	return size;
+}
+
+static ssize_t auxpcm_frame_show
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	char *buf
+)
+{
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+	
+	return snprintf(buf, PAGE_SIZE, "%d\n", auxpcm_pdata->mode_8k.frame);
+}
+
+static ssize_t auxpcm_frame_store
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	const char *buff, size_t size
+)
+{
+	int frame;
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+	
+	sscanf(buff, "%d", &frame);
+
+	if(frame <= AFE_PORT_PCM_BITS_PER_FRAME_256)
+	{
+		auxpcm_pdata->mode_8k.frame = (u16)frame;
+		#ifdef CONFIG_QUECTEL_PCM16K_SUPPORT
+		auxpcm_pdata->mode_16k.frame = (u16)frame; //16k
+		#endif
+	}
+	else
+	{
+		pr_err("auxpcm frame out of range.\n");
+	}
+	
+	return size;
+}
+
+static ssize_t auxpcm_quant_show
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	char *buf
+)
+{
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+	return snprintf(buf, PAGE_SIZE, "%d\n", auxpcm_pdata->mode_8k.quant);
+}
+
+static ssize_t auxpcm_quant_store
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	const char *buff, size_t size
+)
+{
+	int quant;
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+
+	sscanf(buff, "%d", &quant);
+
+	if(quant <= AFE_PORT_PCM_LINEAR_PADDING)
+	{
+		auxpcm_pdata->mode_8k.quant = (u16)quant;
+		#ifdef CONFIG_QUECTEL_PCM16K_SUPPORT
+		auxpcm_pdata->mode_16k.quant = (u16)quant;//16k
+		#endif
+	}
+	else
+	{
+		pr_err("auxpcm quant out of range.\n");
+	}
+	
+	return size;
+}
+
+static ssize_t auxpcm_data_show
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	char *buf
+)
+{
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", auxpcm_pdata->mode_8k.data);
+}
+
+static ssize_t auxpcm_data_store
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	const char *buff, size_t size
+)
+{
+	int data;
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+	
+	sscanf(buff, "%d", &data);
+
+	if(data <= AFE_PORT_PCM_CTRL_DATA_OE_ENABLE)
+	{
+		auxpcm_pdata->mode_8k.data = (u16)data;
+		#ifdef CONFIG_QUECTEL_PCM16K_SUPPORT
+		auxpcm_pdata->mode_16k.data = (u16)data;//16k
+		#endif
+	}
+	else
+	{
+		pr_err("auxpcm data out of range.\n");
+	}
+	
+	return size;
+}
+
+static ssize_t auxpcm_rate_show
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	char *buf
+)
+{	
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+	
+	return snprintf(buf, PAGE_SIZE, "%d\n", auxpcm_pdata->mode_8k.pcm_clk_rate);
+}
+
+static ssize_t auxpcm_rate_store
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	const char *buff, size_t size
+)
+{
+	int rate;
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = (struct msm_dai_auxpcm_pdata *)pdev->platform_data;
+	
+	sscanf(buff, "%d", &rate);
+	
+	if(rate <= 4096000)
+	{
+		auxpcm_pdata->mode_8k.pcm_clk_rate = rate;
+		#ifdef CONFIG_QUECTEL_PCM16K_SUPPORT
+		auxpcm_pdata->mode_16k.pcm_clk_rate = rate;//16k
+		#endif
+	}
+	else
+	{
+		pr_err("auxpcm pcm_clk_rate out of range.\n");
+	}
+	
+	return size;
+}
+
+//jun20160811
+
+static ssize_t auxpcm_enable_clk_show
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	char *buf
+)
+{	
+	return snprintf(buf, PAGE_SIZE, "%d\n", quectel_enable_pcm_clk);
+}
+
+static ssize_t auxpcm_enable_clk_store
+(
+	struct device *pdev,
+	struct device_attribute *attr,
+	const char *buff, size_t size
+)
+{
+	struct msm_dai_q6_auxpcm_dai_data *aux_dai_data =
+		dev_get_drvdata(pdev);
+	struct msm_dai_q6_dai_data *dai_data = &aux_dai_data->bdai_data;
+	struct msm_dai_auxpcm_pdata *auxpcm_pdata = NULL;
+	int rc = 0, enable, slot_mapping_copy_len = 0;
+	u32 pcm_clk_rate;
+
+	sscanf(buff, "%d", &enable);
+
+	auxpcm_pdata = pdev->platform_data;
+	mutex_lock(&aux_dai_data->rlock);
+
+	dev_dbg(pdev, "%s: opening afe ports\n",
+			__func__);
+
+	rc = afe_q6_interface_prepare();
+	if (IS_ERR_VALUE(rc)) {
+		dev_err(pdev, "fail to open AFE APR\n");
+		goto fail;
+	}
+
+	/*
+	 * For AUX PCM Interface the below sequence of clk
+	 * settings and afe_open is a strict requirement.
+	 *
+	 * Also using afe_open instead of afe_port_start_nowait
+	 * to make sure the port is open before deasserting the
+	 * clock line. This is required because pcm register is
+	 * not written before clock deassert. Hence the hw does
+	 * not get updated with new setting if the below clock
+	 * assert/deasset and afe_open sequence is not followed.
+	 */
+
+	if (dai_data->rate == 8000) {
+		pcm_clk_rate = auxpcm_pdata->mode_8k.pcm_clk_rate;
+	} else if (dai_data->rate == 16000) {
+		pcm_clk_rate = (auxpcm_pdata->mode_16k.pcm_clk_rate);
+	} else {
+		dev_err(pdev, "%s: Invalid AUX PCM rate %d\n", __func__,
+			dai_data->rate);
+
+		dai_data->channels = 1;
+		dai_data->rate = 8000;
+
+		dai_data->port_config.pcm.pcm_cfg_minor_version =
+				AFE_API_VERSION_PCM_CONFIG;
+		dai_data->port_config.pcm.aux_mode = auxpcm_pdata->mode_8k.mode;
+		dai_data->port_config.pcm.sync_src = auxpcm_pdata->mode_8k.sync;
+		dai_data->port_config.pcm.frame_setting =
+					auxpcm_pdata->mode_8k.frame;
+		dai_data->port_config.pcm.quantype =
+					 auxpcm_pdata->mode_8k.quant;
+		dai_data->port_config.pcm.ctrl_data_out_enable =
+					 auxpcm_pdata->mode_8k.data;
+		dai_data->port_config.pcm.sample_rate = dai_data->rate;
+		dai_data->port_config.pcm.num_channels = dai_data->channels;
+		dai_data->port_config.pcm.bit_width = 16;
+
+		if (ARRAY_SIZE(dai_data->port_config.pcm.slot_number_mapping) <=
+		    auxpcm_pdata->mode_8k.num_slots)
+			slot_mapping_copy_len =
+				ARRAY_SIZE(
+				dai_data->port_config.pcm.slot_number_mapping)
+				 * sizeof(uint16_t);
+		else
+			slot_mapping_copy_len = auxpcm_pdata->mode_8k.num_slots
+				* sizeof(uint16_t);
+
+		if (auxpcm_pdata->mode_8k.slot_mapping) {
+			memcpy(dai_data->port_config.pcm.slot_number_mapping,
+			       auxpcm_pdata->mode_8k.slot_mapping,
+			       slot_mapping_copy_len);
+		} else {
+			dev_err(pdev, "%s 8khz slot mapping is NULL\n",
+				__func__);
+			mutex_unlock(&aux_dai_data->rlock);
+			return -EINVAL;
+		}
+
+		pcm_clk_rate = auxpcm_pdata->mode_8k.pcm_clk_rate;
+	}
+
+	memcpy(&aux_dai_data->clk_cfg, &lpass_clk_cfg_default,
+			sizeof(struct afe_clk_cfg));
+	aux_dai_data->clk_cfg.clk_val1 = pcm_clk_rate;
+
+	if(enable)
+	{
+		dev_err(pdev,"%s: enable pcm clk \n",__func__);
+
+		rc = msm_dai_q6_auxpcm_set_clk(aux_dai_data,
+				       aux_dai_data->tx_pid, true);
+		if (rc < 0) {
+			dev_err(pdev,"%s: set tx pcm clk err\n", __func__);
+			goto fail;
+		}
+
+		rc = msm_dai_q6_auxpcm_set_clk(aux_dai_data,
+				       aux_dai_data->rx_pid, true);
+		if (rc < 0) {
+			dev_err(pdev,
+				"%s:set rx pcm clk err\n",__func__);
+			goto fail;
+		}
+
+		set_bit(STATUS_TX_PORT, aux_dai_data->auxpcm_port_status);
+		set_bit(STATUS_RX_PORT, aux_dai_data->auxpcm_port_status);
+
+		afe_open(aux_dai_data->tx_pid, &dai_data->port_config, dai_data->rate);
+		afe_open(aux_dai_data->rx_pid, &dai_data->port_config, dai_data->rate);
+	}
+	else
+	{
+		if (test_bit(STATUS_TX_PORT, aux_dai_data->auxpcm_port_status) 
+		||  test_bit(STATUS_RX_PORT, aux_dai_data->auxpcm_port_status)
+		)
+		{
+			rc = afe_close(aux_dai_data->rx_pid); /* can block */
+			if (IS_ERR_VALUE(rc))
+				dev_err(pdev, "fail to close AUXPCM RX AFE port\n");
+
+			rc = afe_close(aux_dai_data->tx_pid);
+			if (IS_ERR_VALUE(rc))
+				dev_err(pdev, "fail to close AUXPCM TX AFE port\n");
+
+			clear_bit(STATUS_TX_PORT, aux_dai_data->auxpcm_port_status);
+			clear_bit(STATUS_RX_PORT, aux_dai_data->auxpcm_port_status);
+		}
+
+		msm_dai_q6_auxpcm_set_clk(aux_dai_data, aux_dai_data->rx_pid, false);
+		msm_dai_q6_auxpcm_set_clk(aux_dai_data, aux_dai_data->tx_pid, false);
+	}
+
+	quectel_enable_pcm_clk = enable;
+
+fail:
+	mutex_unlock(&aux_dai_data->rlock);
+	return size;
+}
+//end jun
+
+static DEVICE_ATTR(mode,  S_IRUGO | S_IWUSR, auxpcm_mode_show, auxpcm_mode_store);
+static DEVICE_ATTR(sync,  S_IRUGO | S_IWUSR, auxpcm_sync_show, auxpcm_sync_store);
+static DEVICE_ATTR(frame, S_IRUGO | S_IWUSR, auxpcm_frame_show, auxpcm_frame_store);
+static DEVICE_ATTR(quant, S_IRUGO | S_IWUSR, auxpcm_quant_show, auxpcm_quant_store);
+static DEVICE_ATTR(data,  S_IRUGO | S_IWUSR, auxpcm_data_show, auxpcm_data_store);
+static DEVICE_ATTR(rate,  S_IRUGO | S_IWUSR, auxpcm_rate_show, auxpcm_rate_store);
+static DEVICE_ATTR(enable_clk,  S_IRUGO | S_IWUSR, auxpcm_enable_clk_show, auxpcm_enable_clk_store);
+
+static struct device_attribute *aux_pcm_attributes[] = {
+	&dev_attr_mode,
+	&dev_attr_sync,
+	&dev_attr_frame,
+	&dev_attr_quant,
+	&dev_attr_data,
+	&dev_attr_rate,
+	&dev_attr_enable_clk,
+	NULL
+};
+
+int quectel_create_auxpcm_interface(struct device *dev)
+{
+	int err;
+	struct device_attribute **attrs = aux_pcm_attributes;
+	struct device_attribute *attr;
+	
+	while((attr = *attrs++))
+	{
+		err = device_create_file(dev, attr);
+		if (err)
+		{
+			pr_err("create auxpcm interface error: %d", err);
+			return err;
+		}
+	}
+
+	return 0;
+}
+#endif /* CONFIG_QUECTEL_AUDIO_DRIVER */
+//end scott.hu
+
 static int msm_auxpcm_dev_probe(struct platform_device *pdev)
 {
 	struct msm_dai_q6_auxpcm_dai_data *dai_data;
@@ -2416,6 +2862,12 @@ static int msm_auxpcm_dev_probe(struct platform_device *pdev)
 
 	dev_set_drvdata(&pdev->dev, dai_data);
 	pdev->dev.platform_data = (void *) auxpcm_pdata;
+
+//2014-11-24 add by scott.hu
+#ifdef CONFIG_QUECTEL_AUDIO_DRIVER
+	quectel_create_auxpcm_interface(&(pdev->dev));
+#endif
+//end scott.hu
 
 	rc = snd_soc_register_component(&pdev->dev,
 			&msm_dai_q6_aux_pcm_dai_component,

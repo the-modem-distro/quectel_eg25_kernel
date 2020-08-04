@@ -418,6 +418,15 @@ config MSM_SMEM
 	  processors in the System on a Chip (SoC) which allows basic
 	  inter-processor communication.
 
+config QPNP_PBS
+	tristate "PBS trigger support for QPNP PMIC"
+	depends on MSM_SPMI
+	help
+	  This driver supports configuring software PBS trigger event through PBS
+	  RAM on Qualcomm Technologies, Inc. QPNP PMICs. This module provides
+	  the APIs to the client drivers that wants to send the PBS trigger
+	  event to the PBS RAM.
+
 config MSM_SMD
 	depends on MSM_SMEM
 	bool "MSM Shared Memory Driver (SMD)"
@@ -785,13 +794,6 @@ config MSM_QBT1000
 	help
 	  This driver is used to enable clocks and marshal buffers for trusted
 	  applications running in the trusted execution environment.
-
-config MSM_PACMAN
-	tristate "Enable the Peripheral Access Control Manager (PACMan)"
-	help
-	  Add support for the Peripheral Access Control Manager (PACMan). This
-	  driver allows reconfiguration of the Bus Access Manager Low Speed
-	  peripheral (BLSP) ownership.
 
 config MSM_KERNEL_PROTECT
 	bool "Protect kernel text by removing write permissions"

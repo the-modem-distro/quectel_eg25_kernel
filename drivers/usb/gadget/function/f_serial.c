@@ -44,7 +44,7 @@
 #define GSERIAL_SET_XPORT_TYPE_SMD 1
 
 #define GSERIAL_BUF_LEN  256
-#define GSERIAL_NO_PORTS 3
+#define GSERIAL_NO_PORTS 4	//juson.zhang-2018/10/16:add usb channel
 
 struct ioctl_smd_write_arg_type {
 	char		*buf;
@@ -330,12 +330,16 @@ int gport_setup(struct usb_configuration *c)
 	pr_debug("%s: no_tty_ports: %u no_smd_ports: %u no_hsic_sports: %u nr_ports: %u\n",
 		__func__, no_tty_ports, no_smd_ports, no_hsic_sports, nr_ports);
 
+	/* juson.zhang-2018/10/16:add usb tty */
 	if (no_tty_ports) {
-		for (i = 0; i < no_tty_ports; i++) {
-			ret = gserial_alloc_line(
+		for (i = 0; i < GSERIAL_NO_PORTS; i++) {
+			if(gserial_ports[i].transport == USB_GADGET_XPORT_TTY)
+			{
+				ret = gserial_alloc_line(
 					&gserial_ports[i].client_port_num);
-			if (ret)
-				return ret;
+				if (ret)
+					return ret;
+			}
 		}
 	}
 
@@ -1111,17 +1115,22 @@ static struct usb_function *gser_alloc(struct usb_function_instance *fi)
 	struct f_gser	*gser;
 	struct f_serial_opts *opts;
 
+	opts = container_of(fi, struct f_serial_opts, func_inst);
+	if (nr_ports) {
+		opts->port_num = gser_next_free_port++;
+		if (opts->port_num >= GSERIAL_NO_PORTS) {
+			pr_err("%s: No serial allowed for port %d\n",
+					__func__, opts->port_num);
+			return ERR_PTR(-EINVAL);
+		}
+	}
+
 	/* allocate and initialize one new instance */
 	gser = kzalloc(sizeof(*gser), GFP_KERNEL);
 	if (!gser)
 		return ERR_PTR(-ENOMEM);
 
-	opts = container_of(fi, struct f_serial_opts, func_inst);
-
 	spin_lock_init(&gser->lock);
-	if (nr_ports)
-		opts->port_num = gser_next_free_port++;
-
 	gser->port_num = opts->port_num;
 
 	gser->port.func.name = "gser";

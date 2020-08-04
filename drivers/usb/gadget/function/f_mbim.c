@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016,2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -22,6 +22,11 @@
 #include <linux/platform_device.h>
 
 #include <linux/spinlock.h>
+
+#define pr_debug pr_err
+#define pr_info pr_err
+#define pr_warn pr_err
+
 
 /*
  * This function is a "Mobile Broadband Interface Model" (MBIM) link.
@@ -121,7 +126,7 @@ struct f_mbim {
 
 	u8				ctrl_id, data_id;
 	bool				data_interface_up;
-
+    bool                notify_wait_for_get_encap;
 	spinlock_t			lock;
 
 	struct list_head	cpkt_req_q;
@@ -133,6 +138,7 @@ struct f_mbim {
 	atomic_t		error;
 	unsigned int		cpkt_drop_cnt;
 	bool			remote_wakeup_enabled;
+    struct delayed_work	rwake_work;
 };
 
 struct mbim_ntb_input_size {
@@ -145,6 +151,7 @@ struct mbim_ntb_input_size {
 static struct f_mbim *_mbim_dev;
 
 static unsigned int nr_mbim_ports;
+static unsigned int open_status;
 
 static struct mbim_ports {
 	struct f_mbim	*port;
@@ -455,7 +462,11 @@ static struct usb_descriptor_header *mbim_ss_function[] = {
 #define STRING_DATA_IDX	1
 
 static struct usb_string mbim_string_defs[] = {
+#if 0 //will.shao, for quectel mbim discriptor
 	[STRING_CTRL_IDX].s = "MBIM Control",
+#else
+	[STRING_CTRL_IDX].s = "LTE Module",
+#endif
 	[STRING_DATA_IDX].s = "MBIM Data",
 	{  } /* end of list */
 };
@@ -526,6 +537,26 @@ static struct {
 		/* .subCompatibleID = DYNAMIC */
 	},
 };
+
+static void print_msg_header(struct ctrl_pkt	*cpkt)
+{
+    unsigned char *pkt = NULL;
+
+    if(cpkt == NULL)
+        return ;
+    
+    if(cpkt->len >= 16)
+    {
+        pkt = cpkt->buf;
+        
+        printk(KERN_ERR"MSG:\n"
+        "%02x %02x %02x %02x  %02x %02x %02x %02x\n"
+        "%02x %02x %02x %02x  %02x %02x %02x %02x\n",
+        pkt[0],pkt[1],pkt[2],pkt[3],pkt[4],pkt[5],pkt[6],pkt[7],
+        pkt[8],pkt[9],pkt[10],pkt[11],pkt[12],pkt[13],pkt[14],pkt[15]);
+    }
+
+}
 
 static inline int mbim_lock(atomic_t *excl)
 {
@@ -667,6 +698,30 @@ static void mbim_clear_queues(struct f_mbim *mbim)
 	spin_unlock(&mbim->lock);
 }
 
+static void mbim_remote_wakeup_work(struct work_struct *w)
+{
+	struct f_mbim	*mbim = container_of(w, struct f_mbim, rwake_work.work);
+	int		ret = 0;
+
+	if ((mbim->cdev->gadget->speed == USB_SPEED_SUPER) &&
+			!mbim->function.func_is_suspended){
+		pr_debug("%s: resume in progress\n", __func__);
+		return;
+	}
+
+	if ((mbim->cdev->gadget->speed == USB_SPEED_SUPER) &&
+			mbim->function.func_is_suspended)
+		ret = usb_func_wakeup(&mbim->function);
+	else
+		ret = usb_gadget_wakeup(mbim->cdev->gadget);
+
+	if (ret == -EBUSY || ret == -EAGAIN)
+		pr_debug("%s:RW delayed due to LPM exit %d\n",  __func__, ret);
+	else
+		pr_info("%s: remote wake-up failed: %d\n", __func__, ret);
+}
+
+
 /*
  * Context: mbim->lock held
  */
@@ -707,10 +762,16 @@ static void mbim_do_notify(struct f_mbim *mbim)
 				req, GFP_ATOMIC);
 		spin_lock(&mbim->lock);
 		if (status) {
+			/* ignore if request already queued before bus_resume */
+			if (status != -EBUSY)
 			atomic_dec(&mbim->not_port.notify_count);
 			pr_err("Queue notify request failed, err: %d\n",
 					status);
 		}
+		else
+		{
+			mbim->notify_wait_for_get_encap = true;
+		}	
 
 		return;
 	}
@@ -749,6 +810,11 @@ static void mbim_notify_complete(struct usb_ep *ep, struct usb_request *req)
 		atomic_dec(&mbim->not_port.notify_count);
 		pr_debug("notify_count = %d\n",
 			atomic_read(&mbim->not_port.notify_count));
+
+		if((atomic_read(&mbim->not_port.notify_count) > 0) &&(false == mbim->notify_wait_for_get_encap))
+        {
+        	mbim_do_notify(mbim);
+		}		
 		break;
 
 	case -ECONNRESET:
@@ -756,6 +822,7 @@ static void mbim_notify_complete(struct usb_ep *ep, struct usb_request *req)
 		/* connection gone */
 		mbim->not_port.notify_state = MBIM_NOTIFY_NONE;
 		atomic_set(&mbim->not_port.notify_count, 0);
+		mbim->notify_wait_for_get_encap = false;
 		pr_info("ESHUTDOWN/ECONNRESET, connection gone\n");
 		spin_unlock(&mbim->lock);
 		mbim_clear_queues(mbim);
@@ -768,7 +835,6 @@ static void mbim_notify_complete(struct usb_ep *ep, struct usb_request *req)
 		break;
 	}
 
-	mbim_do_notify(mbim);
 	spin_unlock(&mbim->lock);
 
 	pr_debug("dev:%pK Exit\n", mbim);
@@ -829,9 +895,11 @@ static void
 fmbim_cmd_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	struct f_mbim		*dev = req->context;
-	struct ctrl_pkt		*cpkt = NULL;
+	//struct ctrl_pkt		*cpkt = NULL;
+	struct ctrl_pkt *cpkt = NULL,*tempCpkt = NULL; 
 	int			len = req->actual;
 	static bool		first_command_sent;
+    struct list_head *act, *tmp; 
 
 	if (!dev) {
 		pr_err("mbim dev is null\n");
@@ -848,10 +916,18 @@ fmbim_cmd_complete(struct usb_ep *ep, struct usb_request *req)
 	 * However don't drop first command during bootup as file may not be
 	 * opened by now. Queue the command in this case.
 	 */
-	if (!atomic_read(&dev->open_excl) && first_command_sent) {
+	#if 0
+	if (!atomic_read(&dev->open_excl)/**Deleted by Yonglin Tan for MBIM issue** && first_command_sent*/) {
 		pr_err("mbim not opened yet, dropping cmd pkt = %d\n", len);
 		return;
 	}
+    #else
+	if (!atomic_read(&dev->open_excl)&& first_command_sent) {
+		pr_err("mbim not opened yet, dropping cmd pkt = %d\n", len);
+		return;
+	}
+    #endif
+    
 	if (!first_command_sent)
 		first_command_sent = true;
 
@@ -862,9 +938,31 @@ fmbim_cmd_complete(struct usb_ep *ep, struct usb_request *req)
 		pr_err("Unable to allocate ctrl pkt\n");
 		return;
 	}
+        
+    if((len>0)&&(open_status == 0)) 
+    { 
+        spin_lock(&dev->lock);
+        if(0x01 == *(u8 *)(req->buf)) 
+        { 
+            pr_info("MODEM get MBIM_OPEN_MSG when notify_count is %d\n", atomic_read(&dev->not_port.notify_count)); 
+            list_for_each_safe(act, tmp, &dev->cpkt_resp_q) { 
+                tempCpkt = list_entry(act, struct ctrl_pkt, list); 
+                pr_info("del a response node in cpkt_resp_q\n"); 
+                list_del(&tempCpkt->list); 
+                mbim_free_ctrl_pkt(tempCpkt); 
+            } 
+            
+            atomic_set(&dev->not_port.notify_count, 0); 
+			dev->notify_wait_for_get_encap = false;
+        } 
+        spin_unlock(&dev->lock);
+    } 
 
 	pr_debug("Add to cpkt_req_q packet with len = %d\n", len);
+
 	memcpy(cpkt->buf, req->buf, len);
+    
+    print_msg_header(cpkt);
 
 	spin_lock(&dev->lock);
 
@@ -876,6 +974,17 @@ fmbim_cmd_complete(struct usb_ep *ep, struct usb_request *req)
 	wake_up(&dev->read_wq);
 
 	return;
+}
+
+static void mbim_response_complete(struct usb_ep *ep, struct usb_request *req)
+{
+	struct f_mbim *mbim = req->context;
+    
+	pr_debug("%s: queue notify request if any new response available\n"
+			, __func__);
+	spin_lock(&mbim->lock);
+	mbim_do_notify(mbim);
+	spin_unlock(&mbim->lock);
 }
 
 static int
@@ -948,8 +1057,10 @@ mbim_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 		cpkt = list_first_entry(&mbim->cpkt_resp_q,
 					struct ctrl_pkt, list);
 		list_del(&cpkt->list);
+		mbim->notify_wait_for_get_encap = false;
 		spin_unlock(&mbim->lock);
 
+        print_msg_header(cpkt);
 		value = min_t(unsigned, w_length, cpkt->len);
 		memcpy(req->buf, cpkt->buf, value);
 		mbim_free_ctrl_pkt(cpkt);
@@ -957,6 +1068,8 @@ mbim_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 		pr_debug("copied encapsulated_response %d bytes\n",
 			value);
 
+		req->complete = mbim_response_complete;
+		req->context = mbim;
 		break;
 
 	case ((USB_DIR_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8)
@@ -1104,6 +1217,8 @@ static int mbim_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 	int ret = 0;
 
 	pr_debug("intf=%u, alt=%u\n", intf, alt);
+    if((alt == 0)&&(open_status == 1))
+        open_status = 0;
 
 	/* Control interface has only altsetting 0 */
 	if (intf == mbim->ctrl_id) {
@@ -1271,6 +1386,7 @@ static void mbim_disable(struct usb_function *f)
 	struct usb_composite_dev *cdev = mbim->cdev;
 
 	pr_info("SET DEVICE OFFLINE\n");
+    cancel_delayed_work(&mbim->rwake_work);
 	atomic_set(&mbim->online, 0);
 	mbim->remote_wakeup_enabled = 0;
 
@@ -1280,6 +1396,7 @@ static void mbim_disable(struct usb_function *f)
 		mbim->not_port.notify->driver_data = NULL;
 	}
 	atomic_set(&mbim->not_port.notify_count, 0);
+	mbim->notify_wait_for_get_encap = false;
 	mbim->not_port.notify_state = MBIM_NOTIFY_NONE;
 
 	mbim_clear_queues(mbim);
@@ -1348,6 +1465,12 @@ static void mbim_suspend(struct usb_function *f)
 
 	bam_data_suspend(&mbim->bam_port, mbim->port_num, USB_FUNC_MBIM,
 			 mbim->remote_wakeup_enabled);
+    if (mbim->remote_wakeup_enabled &&
+			atomic_read(&mbim->not_port.notify_count) > 0) {
+		pr_info("%s: pending notification, wakeup host\n", __func__);
+		schedule_delayed_work(&mbim->rwake_work,
+				      msecs_to_jiffies(2000));
+	}
 }
 
 static void mbim_resume(struct usb_function *f)
@@ -1366,7 +1489,9 @@ static void mbim_resume(struct usb_function *f)
 	if ((mbim->cdev->gadget->speed == USB_SPEED_SUPER) &&
 		f->func_is_suspended)
 		return;
-
+    
+    cancel_delayed_work(&mbim->rwake_work);
+    
 	/* resume control path by queuing notify req */
 	spin_lock(&mbim->lock);
 	mbim_do_notify(mbim);
@@ -1734,6 +1859,7 @@ int mbim_bind_config(struct usb_configuration *c, unsigned portno,
 
 	INIT_LIST_HEAD(&mbim->cpkt_req_q);
 	INIT_LIST_HEAD(&mbim->cpkt_resp_q);
+    INIT_DELAYED_WORK(&mbim->rwake_work, mbim_remote_wakeup_work);
 
 	status = usb_add_function(c, &mbim->function);
 
@@ -1831,6 +1957,9 @@ mbim_write(struct file *fp, const char __user *buf, size_t count, loff_t *pos)
 
 	pr_debug("Enter(%zu)\n", count);
 
+    if(open_status == 0)
+        open_status = 1;
+
 	if (!dev || !req || !req->buf) {
 		pr_err("%s: dev %pK req %pK req->buf %pK\n",
 			__func__, dev, req, req ? req->buf : req);
@@ -1864,6 +1993,7 @@ mbim_write(struct file *fp, const char __user *buf, size_t count, loff_t *pos)
 			!dev->function.func_wakeup_allowed) {
 		dev->cpkt_drop_cnt++;
 		pr_err("drop ctrl pkt of len %zu\n", count);
+        mbim_unlock(&dev->write_excl);
 		return -ENOTSUPP;
 	}
 
@@ -1896,8 +2026,10 @@ mbim_write(struct file *fp, const char __user *buf, size_t count, loff_t *pos)
 
 	ret = usb_func_ep_queue(&dev->function, dev->not_port.notify,
 			   req, GFP_ATOMIC);
+
 	if (ret == -ENOTSUPP || (ret < 0 && ret != -EAGAIN)) {
 		spin_lock_irqsave(&dev->lock, flags);
+		pr_err("drop ctrl pkt of len %d error %d\n", cpkt->len, ret);
 		/* check if device disconnected while we dropped lock */
 		if (atomic_read(&dev->online)) {
 			list_del(&cpkt->list);
@@ -1906,8 +2038,10 @@ mbim_write(struct file *fp, const char __user *buf, size_t count, loff_t *pos)
 		}
 		dev->cpkt_drop_cnt++;
 		spin_unlock_irqrestore(&dev->lock, flags);
-		pr_err("drop ctrl pkt of len %d error %d\n", cpkt->len, ret);
 	} else {
+		spin_lock_irqsave(&dev->lock, flags);		
+		dev->notify_wait_for_get_encap = true;
+		spin_unlock_irqrestore(&dev->lock, flags);		
 		ret = 0;
 	}
 	mbim_unlock(&dev->write_excl);
@@ -1954,6 +2088,27 @@ static int mbim_release(struct inode *ip, struct file *fp)
 	return 0;
 }
 
+static void clear_req_queue_open_msg(struct f_mbim *mbim)
+{
+    struct f_mbim       *dev = mbim;
+    struct ctrl_pkt *tempCpkt = NULL; 
+    struct list_head *act, *tmp; 
+    
+    spin_lock(&dev->lock);
+    list_for_each_safe(act, tmp, &dev->cpkt_req_q) { 
+        tempCpkt = list_entry(act, struct ctrl_pkt, list); 
+        
+        if((tempCpkt->len > 0)&&(0x01 == *(u8 *)(tempCpkt->buf)))
+        {
+            list_del(&tempCpkt->list); 
+            mbim_free_ctrl_pkt(tempCpkt); 
+        }
+    }
+    spin_unlock(&dev->lock);
+}
+
+#define MBIM_CLEAR_REQ_OPEN_MSG 0x11FF
+
 #define BAM_DMUX_CHANNEL_ID 8
 static long mbim_ioctl(struct file *fp, unsigned cmd, unsigned long arg)
 {
@@ -1973,6 +2128,10 @@ static long mbim_ioctl(struct file *fp, unsigned cmd, unsigned long arg)
 		return -EBUSY;
 
 	switch (cmd) {
+    case MBIM_CLEAR_REQ_OPEN_MSG:
+    	pr_debug("Received command to clear open msg.\n");
+        clear_req_queue_open_msg(mbim);
+        break;
 	case MBIM_GET_NTB_SIZE:
 		ret = copy_to_user((void __user *)arg,
 			&mbim->ntb_input_size, sizeof(mbim->ntb_input_size));
@@ -2108,6 +2267,7 @@ static int mbim_init(int instances)
 		atomic_set(&dev->write_excl, 0);
 
 		nr_mbim_ports++;
+        open_status = 0;
 
 	}
 

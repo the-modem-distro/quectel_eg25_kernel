@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -117,12 +117,7 @@ int ipa3_get_ntn_stats(struct Ipa3HwStatsNTNInfoData_t *stats)
 	TX_STATS(bam_stats.bamFifoUsageLow);
 	TX_STATS(bam_stats.bamUtilCount);
 	TX_STATS(num_db);
-	TX_STATS(num_unexpected_db);
-	TX_STATS(num_bam_int_handled);
-	TX_STATS(num_bam_int_in_non_running_state);
 	TX_STATS(num_qmb_int_handled);
-	TX_STATS(num_bam_int_handled_while_wait_for_bam);
-	TX_STATS(num_bam_int_handled_while_not_in_bam);
 
 	RX_STATS(max_outstanding_pkts);
 	RX_STATS(num_pkts_processed);
@@ -137,16 +132,54 @@ int ipa3_get_ntn_stats(struct Ipa3HwStatsNTNInfoData_t *stats)
 	RX_STATS(bam_stats.bamFifoUsageHigh);
 	RX_STATS(bam_stats.bamFifoUsageLow);
 	RX_STATS(bam_stats.bamUtilCount);
-	RX_STATS(num_bam_int_handled);
 	RX_STATS(num_db);
-	RX_STATS(num_unexpected_db);
-	RX_STATS(num_pkts_in_dis_uninit_state);
-	RX_STATS(num_bam_int_handled_while_not_in_bam);
-	RX_STATS(num_bam_int_handled_while_in_bam_state);
 
 	IPA_ACTIVE_CLIENTS_DEC_SIMPLE();
 
 	return 0;
+}
+
+
+int ipa3_ntn_uc_reg_rdyCB(void (*ipa_ready_cb)(void *), void *user_data)
+{
+	int ret;
+
+	if (!ipa3_ctx) {
+		IPAERR("IPA ctx is null\n");
+		return -ENXIO;
+	}
+
+	ret = ipa3_uc_state_check();
+	if (ret) {
+		ipa3_ctx->uc_ntn_ctx.uc_ready_cb = ipa_ready_cb;
+		ipa3_ctx->uc_ntn_ctx.priv = user_data;
+		return 0;
+	}
+
+	return -EEXIST;
+}
+
+void ipa3_ntn_uc_dereg_rdyCB(void)
+{
+	ipa3_ctx->uc_ntn_ctx.uc_ready_cb = NULL;
+	ipa3_ctx->uc_ntn_ctx.priv = NULL;
+}
+
+static void ipa3_uc_ntn_loaded_handler(void)
+{
+	if (!ipa3_ctx) {
+		IPAERR("IPA ctx is null\n");
+		return;
+	}
+
+	if (ipa3_ctx->uc_ntn_ctx.uc_ready_cb) {
+		ipa3_ctx->uc_ntn_ctx.uc_ready_cb(
+			ipa3_ctx->uc_ntn_ctx.priv);
+
+		ipa3_ctx->uc_ntn_ctx.uc_ready_cb =
+			NULL;
+		ipa3_ctx->uc_ntn_ctx.priv = NULL;
+	}
 }
 
 int ipa3_ntn_init(void)
@@ -156,6 +189,8 @@ int ipa3_ntn_init(void)
 	uc_ntn_cbs.ipa_uc_event_hdlr = ipa3_uc_ntn_event_handler;
 	uc_ntn_cbs.ipa_uc_event_log_info_hdlr =
 		ipa3_uc_ntn_event_log_info_handler;
+	uc_ntn_cbs.ipa_uc_loaded_hdlr =
+		ipa3_uc_ntn_loaded_handler;
 
 	ipa3_uc_register_handlers(IPA_HW_FEATURE_NTN, &uc_ntn_cbs);
 
@@ -253,7 +288,8 @@ int ipa3_setup_uc_ntn_pipes(struct ipa_ntn_conn_in_params *in,
 	ep_dl = &ipa3_ctx->ep[ipa_ep_idx_dl];
 
 	if (ep_ul->valid || ep_dl->valid) {
-		IPAERR("EP already allocated.\n");
+		IPAERR("EP already allocated ul:%d dl:%d\n",
+			   ep_ul->valid, ep_dl->valid);
 		return -EFAULT;
 	}
 
@@ -398,7 +434,7 @@ int ipa3_tear_down_uc_offload_pipes(int ipa_ep_idx_ul,
 		goto fail;
 	}
 	ipa3_delete_dflt_flt_rules(ipa_ep_idx_ul);
-	memset(&ipa3_ctx->ep[ipa_ep_idx_dl], 0, sizeof(struct ipa3_ep_context));
+	memset(&ipa3_ctx->ep[ipa_ep_idx_ul], 0, sizeof(struct ipa3_ep_context));
 	IPADBG("ul client (ep: %d) disconnected\n", ipa_ep_idx_ul);
 
 fail:

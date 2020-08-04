@@ -33,5 +33,6 @@
 			memory-region = <&qseecom_mem>;
 			qcom,ion-heap-type = "DMA";
 		};
+
 	};
 };

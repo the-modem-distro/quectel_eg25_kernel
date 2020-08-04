@@ -113,8 +113,8 @@ SoCs:
 - MDM9650
   compatible = "qcom,mdm9650"
 
-- SDXHEDGEHOG
-  compatible = "qcom,sdxhedgehog"
+- SDX20
+  compatible = "qcom,sdx20"
 
 - VPIPA
   compatible = "qcom,msmvpipa"
@@ -163,7 +163,8 @@ Generic board variants:
 - IPC device:
   compatible = "qcom,ipc"
 
-
+- TTP device:
+  compatible = "qcom,ttp"
 
 Boards (SoC type + board variant):
 
@@ -304,7 +305,6 @@ compatible = "qcom,msm8953-qrd"
 compatible = "qcom,msm8953-qrd-sku3"
 compatible = "qcom,sdm450-cdp"
 compatible = "qcom,sdm450-mtp"
-compatible = "qcom,sdm450-qrd"
 compatible = "qcom,mdm9640-cdp"
 compatible = "qcom,mdm9640-mtp"
 compatible = "qcom,mdm9640-rumi"
@@ -313,11 +313,12 @@ compatible = "qcom,msmvpipa-sim"
 compatible = "qcom,mdm9607-rumi"
 compatible = "qcom,mdm9607-cdp"
 compatible = "qcom,mdm9607-mtp"
+compatible = "qcom,mdm9607-ttp"
 compatible = "qcom,mdm9650-rumi"
 compatible = "qcom,mdm9650-sim"
 compatible = "qcom,mdm9650-cdp"
 compatible = "qcom,mdm9650-mtp"
-compatible = "qcom,sdxhedgehog-mtp"
-compatible = "qcom,sdxhedgehog-cdp"
+compatible = "qcom,sdx20-mtp"
+compatible = "qcom,sdx20-cdp"
 compatible = "qcom,apq8009-cdp"
 compatible = "qcom,apq8009-mtp"

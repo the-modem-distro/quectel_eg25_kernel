@@ -489,16 +489,12 @@ static int msm_vidc_probe_vidc_device(struct platform_device *pdev)
 	struct device *dev;
 	int nr = BASE_DEVICE_NUMBER;
 
-	if (!vidc_driver) {
-		dprintk(VIDC_ERR, "Invalid vidc driver\n");
-		return -EINVAL;
-	}
-
 	core = kzalloc(sizeof(*core), GFP_KERNEL);
-	if (!core) {
+	if (!core || !vidc_driver) {
 		dprintk(VIDC_ERR,
 			"Failed to allocate memory for device core\n");
-		return -ENOMEM;
+		rc = -ENOMEM;
+		goto err_no_mem;
 	}
 
 	dev_set_drvdata(&pdev->dev, core);
@@ -646,6 +642,7 @@ err_v4l2_register:
 err_core_init:
 	dev_set_drvdata(&pdev->dev, NULL);
 	kfree(core);
+err_no_mem:
 	return rc;
 }
 
@@ -792,6 +789,7 @@ static int __init msm_vidc_init(void)
 	if (rc) {
 		dprintk(VIDC_ERR,
 			"Failed to register platform driver\n");
+		msm_vidc_debugfs_deinit_drv();
 		debugfs_remove_recursive(vidc_driver->debugfs_root);
 		kfree(vidc_driver);
 		vidc_driver = NULL;
@@ -803,6 +801,7 @@ static int __init msm_vidc_init(void)
 static void __exit msm_vidc_exit(void)
 {
 	platform_driver_unregister(&msm_vidc_driver);
+	msm_vidc_debugfs_deinit_drv();
 	debugfs_remove_recursive(vidc_driver->debugfs_root);
 	kfree(vidc_driver);
 	vidc_driver = NULL;

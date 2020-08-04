@@ -26,8 +26,7 @@
 		log_info.file = __FILENAME__; \
 		log_info.line = __LINE__; \
 		log_info.type = EP; \
-		log_info.id_string = (client < 0 || client >= IPA_CLIENT_MAX) \
-			? "Invalid Client" : ipa_clients_strings[client]
+		log_info.id_string = ipa_clients_strings[client]
 
 #define IPA_ACTIVE_CLIENTS_PREP_SIMPLE(log_info) \
 		log_info.file = __FILENAME__; \
@@ -372,6 +371,9 @@ int ipa_setup_uc_ntn_pipes(struct ipa_ntn_conn_in_params *in,
 	struct ipa_ntn_conn_out_params *outp);
 
 int ipa_tear_down_uc_offload_pipes(int ipa_ep_idx_ul, int ipa_ep_idx_dl);
+int ipa_ntn_uc_reg_rdyCB(void (*ipauc_ready_cb)(void *user_data),
+			      void *user_data);
+void ipa_ntn_uc_dereg_rdyCB(void);
 const char *ipa_get_version_string(enum ipa_hw_type ver);
 
 #endif /* _IPA_COMMON_I_H_ */

@@ -257,6 +257,7 @@ void gic_show_pending_irq(void)
 	}
 }
 
+char g_wakeup_src[32] = {0};
 static void gic_show_resume_irq(struct gic_chip_data *gic)
 {
 	unsigned int i;
@@ -288,6 +289,7 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 		else if (desc->action && desc->action->name)
 			name = desc->action->name;
 
+                strcpy(g_wakeup_src, name);
 		pr_warning("%s: %d triggered %s\n", __func__,
 					i + gic->irq_offset, name);
 		log_base_wakeup_reason(i + gic->irq_offset);

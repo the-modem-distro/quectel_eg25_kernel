@@ -51,6 +51,20 @@
 #include <linux/slab.h>
 #include "ubifs.h"
 
+#if 1 // def  QUECTEL_SYSTEM_BACKUP    // Ramos add for quectel for linuxfs restore
+#include <linux/qstart.h> //quectel add
+#include "../../drivers/mtd/ubi/ubi.h"
+extern unsigned int Quectel_Restore(const char * partition_name, int where);
+/******************************************************************************************
+francis-2018/12/29:Description....
+Refer to [Issue-Depot].[IS0000416][Submitter:dawn.yang@quectel.com,Date:2018-12-28]
+<recovery模式下usrdata 的ubi设备号被改为3，导致概率性被擦除，差分包丢失>
+******************************************************************************************/
+
+extern void Quectel_Erase_Partition(const char * partition_name);
+#endif
+
+
 /**
  * is_empty - determine whether a buffer is empty (contains all 0xff).
  * @buf: buffer to clean
@@ -361,6 +375,8 @@ out_err:
 	err = -EINVAL;
 out_free:
 	ubifs_err(c, "failed to recover master node");
+        ubifs_err(c, "@quetel  add for backup in 999111 ,scan LEB failed for corrupted\n");
+	Quectel_Restore(ubi_get_device(c->vi.ubi_num)->mtd->name,9);
 	if (mst1) {
 		ubifs_err(c, "dumping first master node");
 		ubifs_dump_node(c, mst1);

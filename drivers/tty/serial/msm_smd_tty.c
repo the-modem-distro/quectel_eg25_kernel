@@ -114,6 +114,7 @@ struct smd_tty_info {
 	spinlock_t ra_lock_lha3;
 	char ra_wakeup_source_name[MAX_RA_WAKE_LOCK_NAME_LEN];
 	struct wakeup_source ra_wakeup_source;
+	int writeable;
 };
 
 /**
@@ -690,6 +691,10 @@ static int smd_tty_write(struct tty_struct *tty, const unsigned char *buf,
 	if (is_in_reset(info))
 		return -ENETRESET;
 
+	if(0==info->writeable) {
+		return len;
+	}
+
 	avail = smd_write_avail(info->ch);
 	/* if no space, we'll have to setup a notification later to wake up the
 	 * tty framework when space becomes avaliable
@@ -915,6 +920,7 @@ static int smd_tty_devicetree_init(struct platform_device *pdev)
 	const char *dev_name;
 	const char *remote_ss;
 	struct device_node *node;
+	const char *writeable;
 
 	ret = smd_tty_register_driver();
 	if (ret) {
@@ -958,6 +964,18 @@ static int smd_tty_devicetree_init(struct platform_device *pdev)
 			strlcpy(smd_tty[idx].dev_name, dev_name,
 						SMD_MAX_CH_NAME_LEN);
 		}
+
+		key = "quectel,smdtty-writeable";
+		writeable = of_get_property(node, key, NULL);
+		if(!writeable || writeable[0]!='0') {
+			smd_tty[idx].writeable = 1;
+			SMD_TTY_INFO("smd%d is writeable\n", idx);
+		}
+		else {
+			smd_tty[idx].writeable = 0;
+			SMD_TTY_INFO("smd%d is not writeable\n", idx);
+		}
+
 
 		smd_tty_device_init(idx);
 	}

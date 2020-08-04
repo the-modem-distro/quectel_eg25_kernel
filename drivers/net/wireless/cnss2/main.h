@@ -60,6 +60,29 @@ struct cnss_ramdump_info {
 	struct msm_dump_data dump_data;
 };
 
+struct cnss_dump_seg {
+	unsigned long address;
+	void *v_address;
+	unsigned long size;
+	uint32_t type;
+};
+
+struct cnss_dump_data {
+	uint32_t version;
+	uint32_t magic;
+	char name[32];
+	phys_addr_t paddr;
+	void *vaddr;
+	int nentries;
+};
+
+struct cnss_ramdump_info_v2 {
+	struct ramdump_device *ramdump_dev;
+	unsigned long ramdump_size;
+	bool dump_data_valid;
+	struct cnss_dump_data dump_data;
+};
+
 struct cnss_esoc_info {
 	struct esoc_desc *esoc_desc;
 	bool notify_modem_status;
@@ -96,7 +119,11 @@ enum cnss_driver_event_type {
 	CNSS_DRIVER_EVENT_REQUEST_MEM,
 	CNSS_DRIVER_EVENT_FW_MEM_READY,
 	CNSS_DRIVER_EVENT_FW_READY,
+	CNSS_DRIVER_EVENT_COLD_BOOT_CAL_START,
 	CNSS_DRIVER_EVENT_COLD_BOOT_CAL_DONE,
+	CNSS_DRIVER_EVENT_REGISTER_DRIVER,
+	CNSS_DRIVER_EVENT_UNREGISTER_DRIVER,
+	CNSS_DRIVER_EVENT_RECOVERY,
 	CNSS_DRIVER_EVENT_MAX,
 };
 
@@ -104,13 +131,16 @@ enum cnss_driver_state {
 	CNSS_QMI_WLFW_CONNECTED,
 	CNSS_FW_MEM_READY,
 	CNSS_FW_READY,
-	CNSS_COLD_BOOT_CAL_DONE,
+	CNSS_COLD_BOOT_CAL,
+	CNSS_DRIVER_LOADING,
+	CNSS_DRIVER_UNLOADING,
 	CNSS_DRIVER_PROBED,
+	CNSS_DRIVER_RECOVERY,
+	CNSS_FW_BOOT_RECOVERY,
+	CNSS_DEV_ERR_NOTIFY,
 };
 
-struct cnss_recovery_work_t {
-	struct work_struct work;
-	struct device *dev;
+struct cnss_recovery_data {
 	enum cnss_recovery_reason reason;
 };
 
@@ -140,6 +170,7 @@ struct cnss_plat_data {
 	struct cnss_pinctrl_info pinctrl_info;
 	struct cnss_subsys_info subsys_info;
 	struct cnss_ramdump_info ramdump_info;
+	struct cnss_ramdump_info_v2 ramdump_info_v2;
 	struct cnss_esoc_info esoc_info;
 	struct cnss_bus_bw_info bus_bw_info;
 	struct notifier_block modem_nb;
@@ -151,12 +182,10 @@ struct cnss_plat_data {
 	uint32_t recovery_count;
 	struct cnss_wlan_mac_info wlan_mac_info;
 	unsigned long driver_state;
-	struct completion fw_ready_event;
 	struct list_head event_list;
 	spinlock_t event_lock; /* spinlock for driver work event handling */
 	struct work_struct event_work;
 	struct workqueue_struct *event_wq;
-	struct cnss_recovery_work_t cnss_recovery_work;
 	struct qmi_handle *qmi_wlfw_clnt;
 	struct work_struct qmi_recv_msg_work;
 	struct notifier_block qmi_wlfw_clnt_nb;
@@ -169,6 +198,7 @@ struct cnss_plat_data {
 	struct cnss_pin_connect_result pin_result;
 	struct dentry *root_dentry;
 	atomic_t pm_count;
+	struct timer_list fw_boot_timer;
 };
 
 void *cnss_bus_dev_to_bus_priv(struct device *dev);

@@ -115,6 +115,14 @@ extern int sysctl_nr_open_min, sysctl_nr_open_max;
 extern int sysctl_nr_trim_pages;
 #endif
 
+#ifndef SYS_CONFIG_QUECTEL_ESCAPE_FEATURE ////MaxCodeFlagForEscapeFunc
+#define SYS_CONFIG_QUECTEL_ESCAPE_FEATURE
+#endif
+
+#ifdef SYS_CONFIG_QUECTEL_ESCAPE_FEATURE ////MaxCodeFlagForEscapeFunc
+extern int q_modemmode;
+#endif
+
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
@@ -1059,6 +1067,20 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_jiffies,
 	},
+	
+#ifdef SYS_CONFIG_QUECTEL_ESCAPE_FEATURE
+     /* 2015/4/20 added by tommy for modem mode */
+    {
+        .procname       = "qmodem_mode",
+        .data           = &q_modemmode,
+        .maxlen         = sizeof(int),
+        .mode           = 0644,
+        .proc_handler   = proc_dointvec,
+    },
+#else
+#error "max cmp tag: donot get expect src code!"
+#endif
+	
 	{
 		.procname	= "printk_ratelimit_burst",
 		.data		= &printk_ratelimit_state.burst,

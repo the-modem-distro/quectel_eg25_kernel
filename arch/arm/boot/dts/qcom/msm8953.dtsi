@@ -86,13 +86,11 @@
 		dfps_data_mem: dfps_data_mem@90000000 {
 		       reg = <0 0x90000000 0 0x1000>;
 		       label = "dfps_data_mem";
-		       status = "disabled";
 		};
 
 		cont_splash_mem: splash_region@0x90001000 {
 			reg = <0x0 0x90001000 0x0 0x13ff000>;
 			label = "cont_splash_mem";
-		        status = "disabled";
 		};
 
 		gpu_mem: gpu_region@0 {
@@ -289,8 +287,10 @@
 		reg-names = "tsens_physical", "tsens_eeprom_physical";
 		interrupts = <0 184 0>, <0 314 0>;
 		interrupt-names = "tsens-upper-lower", "tsens-critical";
-		qcom,sensors = <16>;
-		qcom,slope = <3200 3200 3200 3200 3200 3200 3200 3200 3200
+		qcom,client-id = <1 2 3 4 5 6 7 8 9 10 11 12 13 14 15>;
+		qcom,sensor-id = <1 2 3 4 5 6 7 8 9 10 11 12 13 14 15>;
+		qcom,sensors = <15>;
+		qcom,slope = <3200 3200 3200 3200 3200 3200 3200 3200
 					3200 3200 3200 3200 3200 3200 3200>;
 		qcom,valid-status-check;
 	};
@@ -639,42 +639,6 @@
 		status = "disabled";
 	};
 
-	blsp2_uart0: uart@7aef000 {
-		compatible = "qcom,msm-hsuart-v14";
-		reg = <0x7aef000 0x200>,
-			<0x7ac4000 0x1f000>;
-		reg-names = "core_mem", "bam_mem";
-
-		interrupt-names = "core_irq", "bam_irq", "wakeup_irq";
-		#address-cells = <0>;
-		interrupt-parent = <&blsp2_uart0>;
-		interrupts = <0 1 2>;
-		#interrupt-cells = <1>;
-		interrupt-map-mask = <0xffffffff>;
-		interrupt-map = <0 &intc 0 306 0
-				1 &intc 0 239 0
-				2 &tlmm 17 0>;
-
-		qcom,inject-rx-on-wakeup;
-		qcom,rx-char-to-inject = <0xFD>;
-		qcom,master-id = <84>;
-		clock-names = "core_clk", "iface_clk";
-		clocks = <&clock_gcc clk_gcc_blsp2_uart1_apps_clk>,
-			<&clock_gcc clk_gcc_blsp2_ahb_clk>;
-		pinctrl-names = "sleep", "default";
-		pinctrl-0 = <&blsp2_uart0_sleep>;
-		pinctrl-1 = <&blsp2_uart0_active>;
-		qcom,bam-tx-ep-pipe-index = <0>;
-		qcom,bam-rx-ep-pipe-index = <1>;
-		qcom,msm-bus,name = "blsp2_uart0";
-		qcom,msm-bus,num-cases = <2>;
-		qcom,msm-bus,num-paths = <1>;
-		qcom,msm-bus,vectors-KBps =
-				<84 512 0 0>,
-				<84 512 500 800>;
-		status = "disabled";
-	};
-
 	dma_blsp1: qcom,sps-dma@7884000 { /* BLSP1 */
 		#dma-cells = <4>;
 		compatible = "qcom,sps-dma";
@@ -841,9 +805,8 @@
 
 	clock_gcc: qcom,gcc@1800000 {
 		compatible = "qcom,gcc-8953";
-		reg = <0x1800000 0x80000>,
-			<0x00a4124 0x08>;
-		reg-names = "cc_base", "efuse";
+		reg = <0x1800000 0x80000>;
+		reg-names = "cc_base";
 		vdd_dig-supply = <&pm8953_s2_level>;
 		#clock-cells = <1>;
 	};
@@ -859,8 +822,6 @@
 			<&mdss_dsi0_pll clk_dsi0pll_byte_clk_mux>,
 			<&mdss_dsi1_pll clk_dsi1pll_byte_clk_mux>;
 		#clock-cells = <1>;
-
-		status = "disabled";
 	};
 
 	clock_debug: qcom,cc-debug@1874000 {
@@ -2060,6 +2021,7 @@
 		interrupt-names = "hs_phy_irq", "ss_phy_irq", "pwr_event_irq";
 
 		USB3_GDSC-supply = <&gdsc_usb30>;
+		vbus_dwc3-supply = <&smbcharger_charger_otg>;
 		qcom,usb-dbm = <&dbm_1p5>;
 		qcom,msm-bus,name = "usb3";
 		qcom,msm-bus,num-cases = <3>;
@@ -2329,6 +2291,7 @@
 #include "msm-pm8953-rpm-regulator.dtsi"
 #include "msm-pm8953.dtsi"
 #include "msm8953-regulator.dtsi"
+#include "msm-pmi8950.dtsi"
 #include "msm-audio.dtsi"
 #include "msm8953-audio.dtsi"
 #include "msm-gdsc-8916.dtsi"
@@ -2356,7 +2319,7 @@
 		 <&clock_gcc clk_gcc_mdss_axi_clk>;
 	proxy-supply = <&gdsc_mdss>;
 	qcom,proxy-consumer-enable;
-	status = "disabled";
+	status = "okay";
 };
 
 &gdsc_oxili_gx {

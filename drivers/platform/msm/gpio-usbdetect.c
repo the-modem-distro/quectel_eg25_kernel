@@ -24,6 +24,13 @@
 #include <linux/power_supply.h>
 #include <linux/regulator/consumer.h>
 
+#define QUECTEL_SLEEP_CTRL
+
+#ifdef QUECTEL_SLEEP_CTRL
+#include <linux/delay.h>
+#endif
+
+
 struct gpio_usbdetect {
 	struct platform_device	*pdev;
 	struct regulator	*vin;
@@ -187,6 +194,10 @@ static int gpio_usbdetect_probe(struct platform_device *pdev)
 	struct power_supply *usb_psy;
 	int rc;
 	unsigned long flags;
+
+#ifdef QUECTEL_SLEEP_CTRL
+	mdelay(200);	
+#endif
 
 	usb_psy = power_supply_get_by_name("usb");
 	if (!usb_psy) {

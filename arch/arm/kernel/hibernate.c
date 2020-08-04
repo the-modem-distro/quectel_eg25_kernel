@@ -71,7 +71,7 @@ static int notrace arch_save_image(unsigned long unused)
  */
 int notrace swsusp_arch_suspend(void)
 {
-	return cpu_suspend(0 /*, arch_save_image */);
+	return cpu_suspend(0, arch_save_image);
 }
 
 /*

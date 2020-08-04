@@ -633,6 +633,14 @@ config SPI_SPIDEV
 	  Note that this application programming interface is EXPERIMENTAL
 	  and hence SUBJECT TO CHANGE WITHOUT NOTICE while it stabilizes.
 
+config QUECTEL_SPI_MULTI_CHN
+        tristate "Quectel spi channel device driver support"
+        help
+          This supports Quectel spi channel device drivers.
+
+          Note that this application programming interface is EXPERIMENTAL
+          and hence SUBJECT TO CHANGE WITHOUT NOTICE while it stabilizes.
+
 config SPI_TLE62X0
 	tristate "Infineon TLE62X0 (for power switching)"
 	depends on SYSFS

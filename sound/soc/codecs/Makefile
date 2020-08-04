@@ -190,6 +190,15 @@ snd-soc-max9877-objs := max9877.o
 snd-soc-tpa6130a2-objs := tpa6130a2.o
 snd-soc-tas2552-objs := tas2552.o
 
+# 2015-12-05,add by jun.wu for quectel codec
+snd-soc-nau8814-objs := nau8814.o
+snd-soc-alc5616-objs := alc5616.o
+snd-soc-tlv320aic3x-objs := tlv320aic3x.o
+snd-soc-quec-stub-objs := quec_stub.o
+#20171109,add by cullen for codec nau88c10
+snd-soc-nau88c10-objs := nau88c10.o
+snd-soc-max9867-objs := max9867.o
+
 obj-$(CONFIG_SND_SOC_88PM860X)	+= snd-soc-88pm860x.o
 obj-$(CONFIG_SND_SOC_AB8500_CODEC)	+= snd-soc-ab8500-codec.o
 obj-$(CONFIG_SND_SOC_AC97_CODEC)	+= snd-soc-ac97.o
@@ -376,3 +385,23 @@ obj-$(CONFIG_SND_SOC_MSM_STUB)  += snd-soc-msm-stub.o
 # Amp
 obj-$(CONFIG_SND_SOC_MAX9877)	+= snd-soc-max9877.o
 obj-$(CONFIG_SND_SOC_TPA6130A2)	+= snd-soc-tpa6130a2.o
+
+# 2015-12-05, add by jun.wu for quectel codec
+#obj-m	+= snd-soc-nau8814.o
+#obj-m	+= snd-soc-alc5616.o
+#obj-m	+= snd-soc-tlv320aic3x.o
+#obj-m 	+= snd-soc-quec-stub.o
+#20171109,add by cullen for codec nau88c10
+#obj-m	+= snd-soc-nau88c10.o
+#obj-m	+= snd-soc-max9867.o
+
+# achang-200180607, update codec driver.
+snd-soc-nau8810-objs := nau8810.o
+snd-soc-rt5616-objs := rt5616.o rl6231.o
+snd-soc-tlv320aic3x_new-objs := tlv320aic3x_new.o
+
+obj-y        += snd-soc-nau8810.o
+obj-y        += snd-soc-rt5616.o
+obj-y        += snd-soc-tlv320aic3x_new.o
+obj-y        += snd-soc-max9867.o
+obj-y        += snd-soc-quec-stub.o

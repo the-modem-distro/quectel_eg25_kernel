@@ -512,7 +512,9 @@ struct snd_soc_dapm_path {
 	/* source (input) and sink (output) widgets */
 	struct snd_soc_dapm_widget *source;
 	struct snd_soc_dapm_widget *sink;
-
+	//yang add 2017-12-18
+	struct snd_kcontrol *kcontrol;
+	//yang add 2017-12-18
 	/* status */
 	u32 connect:1;	/* source and sink widgets are connected */
 	u32 walked:1;	/* path has been walked */
@@ -630,3 +632,4 @@ struct snd_soc_dapm_stats {
 };
 
 #endif
+

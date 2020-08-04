@@ -723,7 +723,9 @@ struct nand_chip {
 #define NAND_MFR_EON		0x92
 #define NAND_MFR_SANDISK	0x45
 #define NAND_MFR_INTEL		0x89
-
+#if 1 //quectel add  def QUECTEL_NAND_JSFCBB3YH3BBG
+#define NAND_MFR_JSC 		0xAD
+#endif
 /* The maximum expected count of bytes in the NAND ID sequence */
 #define NAND_MAX_ID_LEN 8
 

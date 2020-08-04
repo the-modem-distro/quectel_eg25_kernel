@@ -14,11 +14,9 @@
 	qcom,vidc@1d00000 {
 		compatible = "qcom,msm-vidc";
 		reg = <0x01d00000 0xff000>,
-			<0x000a4124 0x8>,
+			<0x000a4124 0x4>,
 			<0x000a0164 0x4>;
 		reg-names = "vidc", "efuse", "efuse2";
-		qcom,venus-uplift-freq = <540000000>;
-		qcom,speedbin-version = <0x7 0x8>;
 		qcom,platform-version = <0x00180000 0x13>;
 		qcom,capability-version = <0x00002000 0x0d>;
 		interrupts = <0 44 0>;

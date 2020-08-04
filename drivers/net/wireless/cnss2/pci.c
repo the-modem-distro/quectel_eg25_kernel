@@ -11,7 +11,9 @@
  */
 
 #include <linux/firmware.h>
+#include <linux/irq.h>
 #include <linux/module.h>
+#include <linux/msi.h>
 #include <linux/of.h>
 #include <linux/pm_runtime.h>
 
@@ -49,6 +51,13 @@ module_param(pci_link_down_panic, uint, S_IRUSR | S_IWUSR);
 MODULE_PARM_DESC(pci_link_down_panic,
 		 "Trigger kernel panic when PCI link down is detected");
 
+static bool fbc_bypass;
+#ifdef CONFIG_CNSS2_DEBUG
+module_param(fbc_bypass, bool, S_IRUSR | S_IWUSR);
+MODULE_PARM_DESC(fbc_bypass,
+		 "Bypass firmware download when loading WLAN driver");
+#endif
+
 static int cnss_set_pci_config_space(struct cnss_pci_data *pci_priv, bool save)
 {
 	int ret = 0;
@@ -60,7 +69,7 @@ static int cnss_set_pci_config_space(struct cnss_pci_data *pci_priv, bool save)
 		return -ENODEV;
 
 	link_down_or_recovery = pci_priv->pci_link_down_ind ||
-		(plat_priv->driver_status == CNSS_RECOVERY);
+		(test_bit(CNSS_DRIVER_RECOVERY, &plat_priv->driver_state));
 
 	if (save) {
 		if (link_down_or_recovery) {
@@ -98,7 +107,7 @@ static int cnss_set_pci_link(struct cnss_pci_data *pci_priv, bool link_up)
 		return -ENODEV;
 
 	link_down_or_recovery = pci_priv->pci_link_down_ind ||
-		(plat_priv->driver_status == CNSS_RECOVERY);
+		(test_bit(CNSS_DRIVER_RECOVERY, &plat_priv->driver_state));
 
 	ret = msm_pcie_pm_control(link_up ? MSM_PCIE_RESUME :
 				  MSM_PCIE_SUSPEND,
@@ -180,12 +189,6 @@ int cnss_pci_link_down(struct device *dev)
 	unsigned long flags;
 	struct pci_dev *pci_dev = to_pci_dev(dev);
 	struct cnss_pci_data *pci_priv = cnss_get_pci_priv(pci_dev);
-	struct cnss_plat_data *plat_priv = cnss_bus_dev_to_plat_priv(dev);
-
-	if (!plat_priv) {
-		cnss_pr_err("plat_priv is NULL!\n");
-		return -EINVAL;
-	}
 
 	if (!pci_priv) {
 		cnss_pr_err("pci_priv is NULL!\n");
@@ -205,7 +208,10 @@ int cnss_pci_link_down(struct device *dev)
 	spin_unlock_irqrestore(&pci_link_down_lock, flags);
 
 	cnss_pr_err("PCI link down is detected by host driver, schedule recovery!\n");
+
+	cnss_pci_set_mhi_state(pci_priv, CNSS_MHI_NOTIFY_LINK_ERROR);
 	cnss_schedule_recovery(dev, CNSS_REASON_LINK_DOWN);
+
 	return 0;
 }
 EXPORT_SYMBOL(cnss_pci_link_down);
@@ -302,6 +308,7 @@ static void cnss_pci_event_cb(struct msm_pcie_notify *notify)
 		spin_unlock_irqrestore(&pci_link_down_lock, flags);
 
 		cnss_pr_err("PCI link down, schedule recovery!\n");
+		cnss_pci_set_mhi_state(pci_priv, CNSS_MHI_NOTIFY_LINK_ERROR);
 		if (pci_dev->device == QCA6174_DEVICE_ID)
 			disable_irq(pci_dev->irq);
 		cnss_schedule_recovery(&pci_dev->dev, CNSS_REASON_LINK_DOWN);
@@ -365,9 +372,15 @@ static int cnss_pci_suspend(struct device *dev)
 	if (driver_ops && driver_ops->suspend) {
 		ret = driver_ops->suspend(pci_dev, state);
 		if (pci_priv->pci_link_state) {
+			if (cnss_pci_set_mhi_state(pci_priv,
+						   CNSS_MHI_SUSPEND)) {
+				driver_ops->resume(pci_dev);
+				ret = -EAGAIN;
+				goto out;
+			}
+
 			cnss_set_pci_config_space(pci_priv,
 						  SAVE_PCI_CONFIG_SPACE);
-			cnss_pci_set_mhi_state(pci_priv, CNSS_MHI_SUSPEND);
 		}
 	}
 
@@ -629,11 +642,11 @@ int cnss_auto_resume(void)
 		if (ret)
 			cnss_pr_err("Failed to enable PCI device, err = %d\n",
 				    ret);
-		cnss_pci_set_mhi_state(pci_priv, CNSS_MHI_RESUME);
 	}
 
 	cnss_set_pci_config_space(pci_priv, RESTORE_PCI_CONFIG_SPACE);
 	pci_set_master(pci_dev);
+	cnss_pci_set_mhi_state(pci_priv, CNSS_MHI_RESUME);
 	cnss_pci_set_auto_suspended(pci_priv, 0);
 
 	bus_bw_info = &plat_priv->bus_bw_info;
@@ -799,7 +812,7 @@ static int cnss_pci_enable_msi(struct cnss_pci_data *pci_priv)
 	struct pci_dev *pci_dev = pci_priv->pci_dev;
 	int num_vectors;
 	struct cnss_msi_config *msi_config;
-	uint32_t ep_base_data;
+	struct msi_desc *msi_desc;
 
 	ret = cnss_pci_get_msi_assignment(pci_priv);
 	if (ret) {
@@ -824,12 +837,25 @@ static int cnss_pci_enable_msi(struct cnss_pci_data *pci_priv)
 		goto reset_msi_config;
 	}
 
-	pci_read_config_dword(pci_dev, pci_dev->msi_cap + PCI_MSI_DATA_64,
-			      &ep_base_data);
-	pci_priv->msi_ep_base_data = ep_base_data & 0xFFFF;
+	msi_desc = irq_get_msi_desc(pci_dev->irq);
+	if (!msi_desc) {
+		cnss_pr_err("msi_desc is NULL!\n");
+		ret = -EINVAL;
+		goto disable_msi;
+	}
+
+	pci_priv->msi_ep_base_data = msi_desc->msg.data;
+	if (!pci_priv->msi_ep_base_data) {
+		cnss_pr_err("Got 0 MSI base data!\n");
+		CNSS_ASSERT(0);
+	}
+
+	cnss_pr_dbg("MSI base data is %d\n", pci_priv->msi_ep_base_data);
 
 	return 0;
 
+disable_msi:
+	pci_disable_msi(pci_priv->pci_dev);
 reset_msi_config:
 	pci_priv->msi_config = NULL;
 out:
@@ -990,29 +1016,118 @@ static void cnss_mhi_pm_runtime_put_noidle(struct pci_dev *pci_dev)
 	pm_runtime_put_noidle(&pci_dev->dev);
 }
 
-static char *mhi_dev_state_to_str(enum mhi_dev_ctrl state)
+static char *cnss_mhi_state_to_str(enum cnss_mhi_state mhi_state)
 {
-	switch (state) {
-	case MHI_DEV_CTRL_INIT:
+	switch (mhi_state) {
+	case CNSS_MHI_INIT:
 		return "INIT";
-	case MHI_DEV_CTRL_DE_INIT:
+	case CNSS_MHI_DEINIT:
 		return "DEINIT";
-	case MHI_DEV_CTRL_POWER_ON:
+	case CNSS_MHI_POWER_ON:
 		return "POWER_ON";
-	case MHI_DEV_CTRL_POWER_OFF:
+	case CNSS_MHI_POWER_OFF:
 		return "POWER_OFF";
-	case MHI_DEV_CTRL_SUSPEND:
+	case CNSS_MHI_SUSPEND:
 		return "SUSPEND";
-	case MHI_DEV_CTRL_RESUME:
+	case CNSS_MHI_RESUME:
 		return "RESUME";
-	case MHI_DEV_CTRL_RAM_DUMP:
-		return "RAM_DUMP";
-	case MHI_DEV_CTRL_NOTIFY_LINK_ERROR:
+	case CNSS_MHI_RDDM:
+		return "RDDM";
+	case CNSS_MHI_RDDM_KERNEL_PANIC:
+		return "RDDM_KERNEL_PANIC";
+	case CNSS_MHI_NOTIFY_LINK_ERROR:
 		return "NOTIFY_LINK_ERROR";
 	default:
 		return "UNKNOWN";
 	}
 };
+
+static void *cnss_pci_collect_dump_seg(struct cnss_pci_data *pci_priv,
+				       enum mhi_rddm_segment type,
+				       void *start_addr)
+{
+	int count;
+	struct scatterlist *sg_list, *s;
+	unsigned int i;
+	struct cnss_plat_data *plat_priv = pci_priv->plat_priv;
+	struct cnss_dump_data *dump_data =
+		&plat_priv->ramdump_info_v2.dump_data;
+	struct cnss_dump_seg *dump_seg = start_addr;
+
+	count = mhi_xfer_rddm(&pci_priv->mhi_dev, type, &sg_list);
+	if (count <= 0 || !sg_list) {
+		cnss_pr_err("Invalid dump_seg for type %u, count %u, sg_list %pK\n",
+			    type, count, sg_list);
+		return start_addr;
+	}
+
+	cnss_pr_dbg("Collect dump seg: type %u, nentries %d\n", type, count);
+
+	for_each_sg(sg_list, s, count, i) {
+		dump_seg->address = sg_dma_address(s);
+		dump_seg->v_address = sg_virt(s);
+		dump_seg->size = s->length;
+		dump_seg->type = type;
+		cnss_pr_dbg("seg-%d: address 0x%lx, v_address %pK, size 0x%lx\n",
+			    i, dump_seg->address,
+			    dump_seg->v_address, dump_seg->size);
+		dump_seg++;
+	}
+
+	dump_data->nentries += count;
+
+	return dump_seg;
+}
+
+void cnss_pci_collect_dump_info(struct cnss_pci_data *pci_priv)
+{
+	struct cnss_plat_data *plat_priv = pci_priv->plat_priv;
+	struct cnss_dump_data *dump_data =
+		&plat_priv->ramdump_info_v2.dump_data;
+	void *start_addr, *end_addr;
+
+	dump_data->nentries = 0;
+
+	start_addr = dump_data->vaddr;
+	end_addr = cnss_pci_collect_dump_seg(pci_priv,
+					     MHI_RDDM_FW_SEGMENT, start_addr);
+
+	start_addr = end_addr;
+	end_addr = cnss_pci_collect_dump_seg(pci_priv,
+					     MHI_RDDM_RD_SEGMENT, start_addr);
+
+	if (dump_data->nentries > 0)
+		plat_priv->ramdump_info_v2.dump_data_valid = true;
+}
+
+void cnss_pci_clear_dump_info(struct cnss_pci_data *pci_priv)
+{
+	struct cnss_plat_data *plat_priv = pci_priv->plat_priv;
+
+	plat_priv->ramdump_info_v2.dump_data.nentries = 0;
+	plat_priv->ramdump_info_v2.dump_data_valid = false;
+}
+
+static void cnss_mhi_notify_status(enum MHI_CB_REASON reason, void *priv)
+{
+	struct cnss_pci_data *pci_priv = priv;
+	struct cnss_plat_data *plat_priv = pci_priv->plat_priv;
+	enum cnss_recovery_reason cnss_reason = CNSS_REASON_RDDM;
+
+	if (!pci_priv)
+		return;
+
+	cnss_pr_dbg("MHI status cb is called with reason %d\n", reason);
+
+	set_bit(CNSS_DEV_ERR_NOTIFY, &plat_priv->driver_state);
+	del_timer(&plat_priv->fw_boot_timer);
+
+	if (reason == MHI_CB_SYS_ERROR)
+		cnss_reason = CNSS_REASON_TIMEOUT;
+
+	cnss_schedule_recovery(&pci_priv->pci_dev->dev,
+			       cnss_reason);
+}
 
 static int cnss_pci_register_mhi(struct cnss_pci_data *pci_priv)
 {
@@ -1042,10 +1157,13 @@ static int cnss_pci_register_mhi(struct cnss_pci_data *pci_priv)
 		    &mhi_dev->resources[1].start, &mhi_dev->resources[1].end);
 
 	mhi_dev->pm_runtime_get = cnss_mhi_pm_runtime_get;
-	mhi_dev->pm_runtime_noidle = cnss_mhi_pm_runtime_put_noidle;
+	mhi_dev->pm_runtime_put_noidle = cnss_mhi_pm_runtime_put_noidle;
 
-	ret = mhi_register_device(mhi_dev, MHI_NODE_NAME,
-				  (unsigned long)pci_priv);
+	mhi_dev->support_rddm = true;
+	mhi_dev->rddm_size = pci_priv->plat_priv->ramdump_info_v2.ramdump_size;
+	mhi_dev->status_cb = cnss_mhi_notify_status;
+
+	ret = mhi_register_device(mhi_dev, MHI_NODE_NAME, pci_priv);
 	if (ret) {
 		cnss_pr_err("Failed to register as MHI device, err = %d\n",
 			    ret);
@@ -1074,8 +1192,10 @@ static enum mhi_dev_ctrl cnss_to_mhi_dev_state(enum cnss_mhi_state state)
 		return MHI_DEV_CTRL_SUSPEND;
 	case CNSS_MHI_RESUME:
 		return MHI_DEV_CTRL_RESUME;
-	case CNSS_MHI_RAM_DUMP:
-		return MHI_DEV_CTRL_RAM_DUMP;
+	case CNSS_MHI_RDDM:
+		return MHI_DEV_CTRL_RDDM;
+	case CNSS_MHI_RDDM_KERNEL_PANIC:
+		return MHI_DEV_CTRL_RDDM_KERNEL_PANIC;
 	case CNSS_MHI_NOTIFY_LINK_ERROR:
 		return MHI_DEV_CTRL_NOTIFY_LINK_ERROR;
 	default:
@@ -1085,73 +1205,81 @@ static enum mhi_dev_ctrl cnss_to_mhi_dev_state(enum cnss_mhi_state state)
 }
 
 static int cnss_pci_check_mhi_state_bit(struct cnss_pci_data *pci_priv,
-					enum mhi_dev_ctrl mhi_dev_state)
+					enum cnss_mhi_state mhi_state)
 {
-	switch (mhi_dev_state) {
-	case MHI_DEV_CTRL_INIT:
-		if (!test_bit(MHI_DEV_CTRL_INIT, &pci_priv->mhi_state))
+	switch (mhi_state) {
+	case CNSS_MHI_INIT:
+		if (!test_bit(CNSS_MHI_INIT, &pci_priv->mhi_state))
 			return 0;
 		break;
-	case MHI_DEV_CTRL_DE_INIT:
-	case MHI_DEV_CTRL_POWER_ON:
-		if (test_bit(MHI_DEV_CTRL_INIT, &pci_priv->mhi_state) &&
-		    !test_bit(MHI_DEV_CTRL_POWER_ON, &pci_priv->mhi_state))
+	case CNSS_MHI_DEINIT:
+	case CNSS_MHI_POWER_ON:
+		if (test_bit(CNSS_MHI_INIT, &pci_priv->mhi_state) &&
+		    !test_bit(CNSS_MHI_POWER_ON, &pci_priv->mhi_state))
 			return 0;
 		break;
-	case MHI_DEV_CTRL_POWER_OFF:
-	case MHI_DEV_CTRL_SUSPEND:
-		if (test_bit(MHI_DEV_CTRL_POWER_ON, &pci_priv->mhi_state) &&
-		    !test_bit(MHI_DEV_CTRL_SUSPEND, &pci_priv->mhi_state))
+	case CNSS_MHI_POWER_OFF:
+	case CNSS_MHI_SUSPEND:
+		if (test_bit(CNSS_MHI_POWER_ON, &pci_priv->mhi_state) &&
+		    !test_bit(CNSS_MHI_SUSPEND, &pci_priv->mhi_state))
 			return 0;
 		break;
-	case MHI_DEV_CTRL_RESUME:
-		if (test_bit(MHI_DEV_CTRL_SUSPEND, &pci_priv->mhi_state))
+	case CNSS_MHI_RESUME:
+		if (test_bit(CNSS_MHI_SUSPEND, &pci_priv->mhi_state))
 			return 0;
 		break;
+	case CNSS_MHI_RDDM:
+	case CNSS_MHI_RDDM_KERNEL_PANIC:
+	case CNSS_MHI_NOTIFY_LINK_ERROR:
+		return 0;
 	default:
-		cnss_pr_err("Unhandled MHI DEV state: %s(%d)\n",
-			    mhi_dev_state_to_str(mhi_dev_state), mhi_dev_state);
+		cnss_pr_err("Unhandled MHI state: %s(%d)\n",
+			    cnss_mhi_state_to_str(mhi_state), mhi_state);
 	}
 
-	cnss_pr_err("Cannot set MHI DEV state %s(%d) in current MHI state (0x%lx)\n",
-		    mhi_dev_state_to_str(mhi_dev_state), mhi_dev_state,
+	cnss_pr_err("Cannot set MHI state %s(%d) in current MHI state (0x%lx)\n",
+		    cnss_mhi_state_to_str(mhi_state), mhi_state,
 		    pci_priv->mhi_state);
 
 	return -EINVAL;
 }
 
 static void cnss_pci_set_mhi_state_bit(struct cnss_pci_data *pci_priv,
-				       enum mhi_dev_ctrl mhi_dev_state)
+				       enum cnss_mhi_state mhi_state)
 {
-	switch (mhi_dev_state) {
-	case MHI_DEV_CTRL_INIT:
-		set_bit(MHI_DEV_CTRL_INIT, &pci_priv->mhi_state);
+	switch (mhi_state) {
+	case CNSS_MHI_INIT:
+		set_bit(CNSS_MHI_INIT, &pci_priv->mhi_state);
 		break;
-	case MHI_DEV_CTRL_DE_INIT:
-		clear_bit(MHI_DEV_CTRL_INIT, &pci_priv->mhi_state);
+	case CNSS_MHI_DEINIT:
+		clear_bit(CNSS_MHI_INIT, &pci_priv->mhi_state);
 		break;
-	case MHI_DEV_CTRL_POWER_ON:
-		set_bit(MHI_DEV_CTRL_POWER_ON, &pci_priv->mhi_state);
+	case CNSS_MHI_POWER_ON:
+		set_bit(CNSS_MHI_POWER_ON, &pci_priv->mhi_state);
 		break;
-	case MHI_DEV_CTRL_POWER_OFF:
-		clear_bit(MHI_DEV_CTRL_POWER_ON, &pci_priv->mhi_state);
+	case CNSS_MHI_POWER_OFF:
+		clear_bit(CNSS_MHI_POWER_ON, &pci_priv->mhi_state);
 		break;
-	case MHI_DEV_CTRL_SUSPEND:
-		set_bit(MHI_DEV_CTRL_SUSPEND, &pci_priv->mhi_state);
+	case CNSS_MHI_SUSPEND:
+		set_bit(CNSS_MHI_SUSPEND, &pci_priv->mhi_state);
 		break;
-	case MHI_DEV_CTRL_RESUME:
-		clear_bit(MHI_DEV_CTRL_SUSPEND, &pci_priv->mhi_state);
+	case CNSS_MHI_RESUME:
+		clear_bit(CNSS_MHI_SUSPEND, &pci_priv->mhi_state);
+		break;
+	case CNSS_MHI_RDDM:
+	case CNSS_MHI_RDDM_KERNEL_PANIC:
+	case CNSS_MHI_NOTIFY_LINK_ERROR:
 		break;
 	default:
-		cnss_pr_err("Unhandled MHI DEV state (%d)\n", mhi_dev_state);
+		cnss_pr_err("Unhandled MHI state (%d)\n", mhi_state);
 	}
 }
 
 int cnss_pci_set_mhi_state(struct cnss_pci_data *pci_priv,
-			   enum cnss_mhi_state state)
+			   enum cnss_mhi_state mhi_state)
 {
 	int ret = 0;
-	enum mhi_dev_ctrl mhi_dev_state = cnss_to_mhi_dev_state(state);
+	enum mhi_dev_ctrl mhi_dev_state = cnss_to_mhi_dev_state(mhi_state);
 
 	if (!pci_priv) {
 		cnss_pr_err("pci_priv is NULL!\n");
@@ -1166,20 +1294,20 @@ int cnss_pci_set_mhi_state(struct cnss_pci_data *pci_priv,
 		return -EINVAL;
 	}
 
-	ret = cnss_pci_check_mhi_state_bit(pci_priv, mhi_dev_state);
+	ret = cnss_pci_check_mhi_state_bit(pci_priv, mhi_state);
 	if (ret)
 		goto out;
 
-	cnss_pr_dbg("Setting MHI DEV state: %s(%d)\n",
-		    mhi_dev_state_to_str(mhi_dev_state), mhi_dev_state);
+	cnss_pr_dbg("Setting MHI state: %s(%d)\n",
+		    cnss_mhi_state_to_str(mhi_state), mhi_state);
 	ret = mhi_pm_control_device(&pci_priv->mhi_dev, mhi_dev_state);
 	if (ret) {
-		cnss_pr_err("Failed to set MHI DEV state: %s(%d)\n",
-			    mhi_dev_state_to_str(mhi_dev_state), mhi_dev_state);
+		cnss_pr_err("Failed to set MHI state: %s(%d)\n",
+			    cnss_mhi_state_to_str(mhi_state), mhi_state);
 		goto out;
 	}
 
-	cnss_pci_set_mhi_state_bit(pci_priv, mhi_dev_state);
+	cnss_pci_set_mhi_state_bit(pci_priv, mhi_state);
 
 out:
 	return ret;
@@ -1193,6 +1321,9 @@ int cnss_pci_start_mhi(struct cnss_pci_data *pci_priv)
 		cnss_pr_err("pci_priv is NULL!\n");
 		return -ENODEV;
 	}
+
+	if (fbc_bypass)
+		return 0;
 
 	ret = cnss_pci_set_mhi_state(pci_priv, CNSS_MHI_INIT);
 	if (ret)
@@ -1212,13 +1343,21 @@ out:
 
 void cnss_pci_stop_mhi(struct cnss_pci_data *pci_priv)
 {
+	struct cnss_plat_data *plat_priv;
+
 	if (!pci_priv) {
 		cnss_pr_err("pci_priv is NULL!\n");
 		return;
 	}
 
+	if (fbc_bypass)
+		return;
+
+	plat_priv = pci_priv->plat_priv;
+
 	cnss_pci_set_mhi_state(pci_priv, CNSS_MHI_POWER_OFF);
-	cnss_pci_set_mhi_state(pci_priv, CNSS_MHI_DEINIT);
+	if (!plat_priv->ramdump_info_v2.dump_data_valid)
+		cnss_pci_set_mhi_state(pci_priv, CNSS_MHI_DEINIT);
 }
 
 static int cnss_pci_probe(struct pci_dev *pci_dev,
@@ -1232,11 +1371,18 @@ static int cnss_pci_probe(struct pci_dev *pci_dev,
 	cnss_pr_dbg("PCI is probing, vendor ID: 0x%x, device ID: 0x%x\n",
 		    id->vendor, pci_dev->device);
 
-	if (pci_dev->device == QCA6290_DEVICE_ID &&
-	    !mhi_is_device_ready(&plat_priv->plat_dev->dev, MHI_NODE_NAME)) {
-		cnss_pr_err("MHI driver is not ready, defer PCI probe!\n");
-		ret = -EPROBE_DEFER;
-		goto out;
+	switch (pci_dev->device) {
+	case QCA6290_EMULATION_DEVICE_ID:
+	case QCA6290_DEVICE_ID:
+		if (!mhi_is_device_ready(&plat_priv->plat_dev->dev,
+					 MHI_NODE_NAME)) {
+			cnss_pr_err("MHI driver is not ready, defer PCI probe!\n");
+			ret = -EPROBE_DEFER;
+			goto out;
+		}
+		break;
+	default:
+		break;
 	}
 
 	pci_priv = devm_kzalloc(&pci_dev->dev, sizeof(*pci_priv),
@@ -1299,6 +1445,7 @@ static int cnss_pci_probe(struct pci_dev *pci_dev,
 				    ret);
 		cnss_power_off_device(plat_priv);
 		break;
+	case QCA6290_EMULATION_DEVICE_ID:
 	case QCA6290_DEVICE_ID:
 		ret = cnss_pci_enable_msi(pci_priv);
 		if (ret)
@@ -1344,10 +1491,16 @@ static void cnss_pci_remove(struct pci_dev *pci_dev)
 	cnss_pci_free_m3_mem(pci_priv);
 	cnss_pci_free_fw_mem(pci_priv);
 
-	if (pci_dev->device == QCA6290_DEVICE_ID) {
+	switch (pci_dev->device) {
+	case QCA6290_EMULATION_DEVICE_ID:
+	case QCA6290_DEVICE_ID:
 		cnss_pci_unregister_mhi(pci_priv);
 		cnss_pci_disable_msi(pci_priv);
+		break;
+	default:
+		break;
 	}
+
 	cnss_pci_disable_bus(pci_priv);
 	cnss_dereg_pci_event(pci_priv);
 	if (pci_priv->smmu_mapping)
@@ -1359,6 +1512,8 @@ static void cnss_pci_remove(struct pci_dev *pci_dev)
 
 static const struct pci_device_id cnss_pci_id_table[] = {
 	{ QCA6174_VENDOR_ID, QCA6174_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
+	{ QCA6290_EMULATION_VENDOR_ID, QCA6290_EMULATION_DEVICE_ID,
+	  PCI_ANY_ID, PCI_ANY_ID },
 	{ QCA6290_VENDOR_ID, QCA6290_DEVICE_ID, PCI_ANY_ID, PCI_ANY_ID },
 	{ 0 }
 };

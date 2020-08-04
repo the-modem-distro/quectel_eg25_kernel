@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -204,6 +204,10 @@ static inline bool _isidle(struct adreno_device *adreno_dev)
 	unsigned int reg_rbbm_status;
 
 	if (!kgsl_state_is_awake(KGSL_DEVICE(adreno_dev)))
+		goto ret;
+
+	if (test_bit(ADRENO_DEVICE_HANG_INTR, &adreno_dev->priv)
+			&& adreno_rb_empty(adreno_dev->cur_rb))
 		goto ret;
 
 	/* only check rbbm status to determine if GPU is idle */
@@ -1116,6 +1120,13 @@ int adreno_dispatcher_queue_cmd(struct adreno_device *adreno_dev,
 
 	if (drawctxt->base.flags & KGSL_CONTEXT_NO_FAULT_TOLERANCE)
 		set_bit(KGSL_FT_DISABLE, &cmdbatch->fault_policy);
+	/*
+	 *  Set the fault tolerance policy to FT_REPLAY - As context wants
+	 *  to invalidate it after a replay attempt fails. This doesn't
+	 *  require to execute the default FT policy.
+	 */
+	else if (drawctxt->base.flags & KGSL_CONTEXT_INVALIDATE_ON_FAULT)
+		set_bit(KGSL_FT_REPLAY, &cmdbatch->fault_policy);
 	else
 		cmdbatch->fault_policy = adreno_dev->ft_policy;
 
@@ -1752,6 +1763,18 @@ static int dispatcher_do_fault(struct adreno_device *adreno_dev)
 		return 0;
 
 	/*
+	 * In the very unlikely case that the power is off, do nothing - the
+	 * state will be reset on power up and everybody will be happy
+	 */
+
+	if (!kgsl_state_is_awake(device) && (fault & ADRENO_SOFT_FAULT)) {
+		/* Clear the existing register values */
+		memset(adreno_ft_regs_val, 0,
+				adreno_ft_regs_num * sizeof(unsigned int));
+		return 0;
+	}
+
+	/*
 	 * On A5xx, read RBBM_STATUS3:SMMU_STALLED_ON_FAULT (BIT 24) to
 	 * tell if this function was entered after a pagefault. If so, only
 	 * proceed if the fault handler has already run in the IRQ thread,
@@ -2024,10 +2047,6 @@ static int adreno_dispatch_process_cmdqueue(struct adreno_device *adreno_dev,
 	if (adreno_cmdqueue_is_empty(cmdqueue))
 		return count;
 
-	/* Don't update the cmdqueue timeout if we are about to preempt out */
-	if (!adreno_in_preempt_state(adreno_dev, ADRENO_PREEMPT_NONE))
-		return count;
-
 	/* Don't update the cmdqueue timeout if it isn't active */
 	if (!cmdqueue_is_current(cmdqueue))
 		return count;
@@ -2206,7 +2225,7 @@ static void adreno_dispatcher_fault_timer(unsigned long data)
 	if (!fault_detect_read_compare(adreno_dev)) {
 		adreno_set_gpu_fault(adreno_dev, ADRENO_SOFT_FAULT);
 		adreno_dispatcher_schedule(KGSL_DEVICE(adreno_dev));
-	} else {
+	} else if (dispatcher->inflight > 0) {
 		mod_timer(&dispatcher->fault_timer,
 			jiffies + msecs_to_jiffies(_fault_timer_interval));
 	}
@@ -2247,6 +2266,20 @@ void adreno_dispatcher_stop(struct adreno_device *adreno_dev)
 	struct adreno_dispatcher *dispatcher = &adreno_dev->dispatcher;
 
 	del_timer_sync(&dispatcher->timer);
+	del_timer_sync(&dispatcher->fault_timer);
+}
+
+/**
+ * adreno_dispatcher_stop() - stop the dispatcher fault timer
+ * @adreno_dev: pointer to the adreno device structure
+ *
+ * Stop the dispatcher fault timer
+ */
+void adreno_dispatcher_stop_fault_timer(struct kgsl_device *device)
+{
+	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
+	struct adreno_dispatcher *dispatcher = &adreno_dev->dispatcher;
+
 	del_timer_sync(&dispatcher->fault_timer);
 }
 

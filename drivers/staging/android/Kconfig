@@ -58,7 +58,7 @@ config ASHMEM
 
 config ANDROID_LOGGER
 	tristate "Android log driver"
-	default n
+	default y
 	---help---
 	  This adds support for system-wide logging using four log buffers.
 

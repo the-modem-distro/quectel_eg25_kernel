@@ -29,18 +29,10 @@
 
 &cnss_debug_mem {
 	status = "disabled";
-	reg = <0x82800000 0x200000>;
-};
-
-&cnss_sdio {
-	status = "disabled";
-	reg = <0x82800000 0x200000>;
 };
 
 &qcom_seecom {
 	reg = <0x87900000 0x280000>;
-	qcom,appsbl-qseecom-support;
-	qcom,appsbl-not-loaded-cmnlib;
 	status = "okay";
 };
 
@@ -49,9 +41,5 @@
 };
 
 &qseecom_mem {
-	status = "okay";
-};
-
-&qcom_tzlog {
 	status = "okay";
 };

@@ -1822,7 +1822,6 @@ static struct platform_driver msm_eeprom_platform_driver = {
 		.name = "qcom,eeprom",
 		.owner = THIS_MODULE,
 		.of_match_table = msm_eeprom_dt_match,
-		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 	.probe = msm_eeprom_platform_probe,
 	.remove = msm_eeprom_platform_remove,
@@ -1839,7 +1838,6 @@ static struct i2c_driver msm_eeprom_i2c_driver = {
 	.remove = msm_eeprom_i2c_remove,
 	.driver = {
 		.name = "msm_eeprom",
-		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 };
 
@@ -1848,7 +1846,6 @@ static struct spi_driver msm_eeprom_spi_driver = {
 		.name = "qcom_eeprom",
 		.owner = THIS_MODULE,
 		.of_match_table = msm_eeprom_dt_match,
-		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 	.probe = msm_eeprom_spi_probe,
 	.remove = msm_eeprom_spi_remove,

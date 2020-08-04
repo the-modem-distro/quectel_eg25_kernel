@@ -1892,6 +1892,7 @@ static int msm_serial_hsl_suspend(struct device *dev)
 			enable_irq_wake(port->irq);
 	}
 
+	pinctrl_pm_select_sleep_state(dev); //add bu jun.wu for uart sleep
 	return 0;
 }
 
@@ -1899,6 +1900,9 @@ static int msm_serial_hsl_resume(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct uart_port *port;
+
+	pinctrl_pm_select_default_state(dev);	//add by jun.wu for UART sleep 
+
 	port = get_port_from_line(get_line(pdev));
 
 	if (port) {
@@ -1997,6 +2001,9 @@ static void __exit msm_serial_hsl_exit(void)
 #define MSM_HSL_UART_SR_TXEMT		BIT(3)
 #define MSM_HSL_UART_ISR_TXREADY	BIT(7)
 
+#ifndef CONFIG_DYNAMIC_DEBUG //carl, use this macro indicate mdm9607-perf_config
+#undef CONFIG_SERIAL_MSM_HSL_CONSOLE
+#endif
 #ifdef CONFIG_SERIAL_MSM_HSL_CONSOLE
 static void msm_serial_hsl_early_putc(struct uart_port *port, int ch)
 {

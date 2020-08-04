@@ -26,6 +26,14 @@
 #endif
 #define pr_fmt(fmt) "%s: " fmt, __func__
 
+#ifdef QUECTEL_UAC_FEATURE //add yang.yang 2018-01-05 UAC
+#include <linux/time.h>
+#include <linux/timex.h>
+#include <linux/rtc.h>
+int quec_usb_audio_enable(void);
+static int usb_snd_open = 0;
+#endif 
+
 /*
  * This component encapsulates the ALSA devices for USB audio gadget
  */
@@ -476,6 +484,9 @@ void u_audio_clear(struct gaudio *card)
  */
 size_t u_audio_playback(struct gaudio *card, void *buf, size_t count)
 {
+	
+
+#ifndef QUECTEL_UAC_FEATURE
 	struct gaudio_snd_dev	*snd = &card->playback;
 	struct snd_pcm_substream *substream = snd->substream;
 	struct snd_pcm_runtime *runtime = substream->runtime;
@@ -483,12 +494,25 @@ size_t u_audio_playback(struct gaudio *card, void *buf, size_t count)
 	ssize_t result;
 	snd_pcm_sframes_t frames;
 	int err = 0;
-
+#else
+	struct gaudio_snd_dev	*snd ;
+	struct snd_pcm_substream *substream;
+	struct snd_pcm_runtime *runtime;
+	mm_segment_t old_fs;
+	ssize_t result;
+	snd_pcm_sframes_t frames;
+	int err = 0;
+	if (!card->usb_snd_opened)
+		return 0;
+	
+	snd = &card->playback;
+	substream = snd->substream;
+	runtime = substream->runtime;
+#endif
 	if (!count) {
 		pr_err("Buffer is empty, no data to play");
 		return 0;
 	}
-
 	if (!card->audio_reinit_playback) {
 		err = gaudio_open_playback_streams(card);
 		if (err) {
@@ -517,7 +541,7 @@ try_again:
 	}
 
 	frames = bytes_to_frames(runtime, count);
-	pr_debug("runtime->frame_bits = %d, count = %d, frames = %d",
+	pr_debug("runtime->frame_bits = %d, count = %d, frames = %d\n",
 		runtime->frame_bits, (int)count, (int)frames);
 
 	old_fs = get_fs();
@@ -529,8 +553,7 @@ try_again:
 		goto try_again;
 	}
 	set_fs(old_fs);
-
-	pr_debug("Done. Sent %d frames", (int)frames);
+	pr_debug("Done. Sent %d frames\n", (int)frames);
 
 	return 0;
 }
@@ -542,14 +565,26 @@ size_t u_audio_capture(struct gaudio *card, void *buf, size_t count)
 	snd_pcm_sframes_t frames;
 	int err = 0;
 
+#ifndef QUECTEL_UAC_FEATURE
 	struct gaudio_snd_dev	 *snd = &card->capture;
 	struct snd_pcm_substream *substream = snd->substream;
 	struct snd_pcm_runtime   *runtime = substream->runtime;
+#else
+	struct gaudio_snd_dev	 *snd;
+	struct snd_pcm_substream *substream;
+	struct snd_pcm_runtime   *runtime;
 
+	if (!card->usb_snd_opened)
+		return 0;
+	
+	snd = &card->capture;
+	substream = snd->substream;
+	runtime = substream->runtime;
+#endif
 	if (!card->audio_reinit_capture) {
 		err = gaudio_open_capture_streams(card);
 		if (err) {
-			pr_err("Failed to init audio streams: err %d", err);
+			pr_err("Failed to init audio streams: err %d\n", err);
 			return 0;
 		}
 		card->audio_reinit_capture = 1;
@@ -589,24 +624,45 @@ try_again:
 
 int u_audio_get_playback_channels(struct gaudio *card)
 {
+#ifdef QUECTEL_UAC_FEATURE
+	if (!card->usb_snd_opened) {
+		return 1;
+	}
+#endif
 	pr_debug("Return %d", card->playback.channels);
 	return card->playback.channels;
 }
 
 int u_audio_get_playback_rate(struct gaudio *card)
 {
+#ifdef QUECTEL_UAC_FEATURE
+	if (!card->usb_snd_opened) {
+		return UAC1_SAMPLE_RATE;
+	}
+#endif
 	pr_debug("Return %d", card->playback.rate);
 	return card->playback.rate;
 }
 
 int u_audio_get_capture_channels(struct gaudio *card)
 {
+#ifdef QUECTEL_UAC_FEATURE
+	if (!card->usb_snd_opened) {
+		return 1;
+	}
+#endif
+
 	pr_debug("Return %d", card->capture.channels);
 	return card->capture.channels;
 }
 
 int u_audio_get_capture_rate(struct gaudio *card)
 {
+#ifdef QUECTEL_UAC_FEATURE
+	if (!card->usb_snd_opened) {
+		return UAC1_SAMPLE_RATE;
+	}
+#endif
 	pr_debug("Return %d", card->capture.rate);
 	return card->capture.rate;
 }
@@ -624,6 +680,15 @@ static int gaudio_open_snd_dev(struct gaudio *card)
 	char *fn_play, *fn_cap, *fn_cntl;
 	int res = 0;
 
+#ifdef QUECTEL_UAC_FEATURE
+	if (!usb_snd_open) {
+		return 0;
+	}
+	
+	if ((!card->usb_snd_setuped) || card->usb_snd_opened) {
+		return 0;
+	}
+#endif
 	opts = container_of(card->func.fi, struct f_uac1_opts, func_inst);
 	fn_play = opts->fn_play;
 	fn_cap = opts->fn_cap;
@@ -681,7 +746,25 @@ static int gaudio_open_snd_dev(struct gaudio *card)
 
 	if (res)
 		ERROR(card, "Setting capture HW params failed: err %d", res);
+#ifdef QUECTEL_UAC_FEATURE
+	if (!card->audio_reinit_playback) {
+		if (gaudio_open_playback_streams(card)) {
+			pr_err("Failed to init audio playback streams");
+			return 0;
+		}
+		card->audio_reinit_playback = 1;
+	}
 
+	if (!card->audio_reinit_capture) {
+		if (gaudio_open_capture_streams(card)) {
+			pr_err("Failed to init audio capture streams");
+			return 0;
+		}
+		card->audio_reinit_capture = 1;
+	}
+
+	card->usb_snd_opened = 1;
+#endif
 	return res;
 }
 
@@ -691,7 +774,12 @@ static int gaudio_open_snd_dev(struct gaudio *card)
 static int gaudio_close_snd_dev(struct gaudio *gau)
 {
 	struct gaudio_snd_dev	*snd;
-
+#ifdef QUECTEL_UAC_FEATURE
+	if (!gau->usb_snd_opened) {
+		return 0;
+	}
+	gau->usb_snd_opened = 0;
+#endif
 	pr_debug("Enter");
 	/* Close control device */
 	snd = &gau->control;
@@ -699,27 +787,50 @@ static int gaudio_close_snd_dev(struct gaudio *gau)
 		filp_close(snd->filp, NULL);
 		snd->filp = NULL;
 	}
+#ifdef QUECTEL_UAC_FEATURE
+	snd->substream = NULL;
 	snd->card = NULL;
-
+#endif
 	/* Close PCM playback device and setup substream */
 	snd = &gau->playback;
 	if (snd->filp) {
 		filp_close(snd->filp, NULL);
 		snd->filp = NULL;
 	}
+#ifdef QUECTEL_UAC_FEATURE
+	snd->substream = NULL;
 	snd->card = NULL;
-
+#endif
 	/* Close PCM capture device and setup substream */
 	snd = &gau->capture;
 	if (snd->filp) {
 		filp_close(snd->filp, NULL);
 		snd->filp = NULL;
 	}
+#ifdef QUECTEL_UAC_FEATURE
+	snd->substream = NULL;
 	snd->card = NULL;
-
+#endif
 	return 0;
 }
 
+#ifdef QUECTEL_UAC_FEATURE
+int quec_uac_open_snd_dev(struct gaudio *card, int open) {
+	int	ret = 0;
+
+	usb_snd_open = open;
+	
+	if (!open) {
+		ret = gaudio_close_snd_dev(card);
+		card->audio_reinit_playback = false;
+		card->audio_reinit_capture = false;
+	} else {
+		ret = gaudio_open_snd_dev(card);
+	}
+	
+	return ret;
+}
+#endif
 /**
  * gaudio_setup - setup ALSA interface and preparing for USB transfer
  *
@@ -737,7 +848,9 @@ int gaudio_setup(struct gaudio *card)
 		pr_debug("snd devices already opened\n");
 		return 0;
 	}
-
+#ifdef QUECTEL_UAC_FEATURE
+	card->usb_snd_setuped = 1;
+#endif
 	pr_debug("trying to open snd devices\n");
 	ret = gaudio_open_snd_dev(card);
 	if (ret)
@@ -755,6 +868,9 @@ int gaudio_setup(struct gaudio *card)
 void gaudio_cleanup(struct gaudio *the_card)
 {
 	if (the_card) {
+#ifdef QUECTEL_UAC_FEATURE
+		the_card->usb_snd_setuped = 0;
+#endif
 		gaudio_close_snd_dev(the_card);
 	}
 }

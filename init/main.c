@@ -78,7 +78,7 @@
 #include <linux/context_tracking.h>
 #include <linux/random.h>
 #include <linux/list.h>
-
+#include <linux/qstart.h>
 #include <asm/io.h>
 #include <asm/bugs.h>
 #include <asm/setup.h>
@@ -87,6 +87,10 @@
 
 #ifdef CONFIG_X86_LOCAL_APIC
 #include <asm/smp.h>
+#endif
+
+#if 1 // def  QUECTEL_SYSTEM_BACKUP    // Ramos add for quectel for linuxfs restore
+extern unsigned int Quectel_Set_Partition_RestoreFlag(const char * partition_name, int where);
 #endif
 
 static int kernel_init(void *);
@@ -932,6 +936,26 @@ static int try_to_run_init_process(const char *init_filename)
 	return ret;
 }
 
+//add by len [QUECTEL], 2018-1-18
+static unsigned char rootfstype[20], rootflags[20];
+
+static int __init quectel_set_rootfstype(char *str)
+{
+    strcpy(rootfstype, str);
+    rootfstype[strlen(str)] = '\0';
+    return 0;
+}
+early_param("rootfstype", quectel_set_rootfstype);
+
+static int __init quectel_set_rootflags(char *str)
+{
+    strcpy(rootflags, str);
+    rootflags[strlen(str)]='\0';
+    return 0;
+}
+early_param("rootflags", quectel_set_rootflags);
+//add end
+
 static noinline void __init kernel_init_freeable(void);
 
 #ifdef CONFIG_DEBUG_RODATA
@@ -959,7 +983,9 @@ static inline void mark_readonly(void)
 static int __ref kernel_init(void *unused)
 {
 	int ret;
-
+#if 1 //def CONFIG_QUECTEL_MODEM_BOOT_TIME //
+	char * temp_cmdLine = saved_command_line;
+#endif
 	kernel_init_freeable();
 	/* need to finish all async __init code before freeing the memory */
 	async_synchronize_full();
@@ -991,11 +1017,56 @@ static int __ref kernel_init(void *unused)
 		pr_err("Failed to execute %s (error %d).  Attempting defaults...\n",
 			execute_command, ret);
 	}
+#if 1 //def CONFIG_QUECTEL_MODEM_BOOT_TIME //jun20160728
+    pr_notice("@Ramos Kernel command line: %s\n", temp_cmdLine);
+    //if(strstr(temp_cmdLine, "ubi.mtd=19"))
+    //add by len 2018-03-13
+    if(!get_bootmode(NULL))
+    //add end
+    {
+      /* mtd19 is system partition, form kerenl command this normal mode, we need start up modem
+        */
+    	extern void *subsystem_get_with_fwname(const char *name, const char *fw_name);
+        //modify by len[QUECTEL], 2018-1-18
+    	//if( sys_mount("ubi1:modem", "/firmware", "ubifs", MS_RDONLY, "bulk_read")
+    	//&&  sys_mount("/dev/ubi1_0", "/firmware", "ubifs", MS_RDONLY, "bulk_read")
+        if( sys_mount("ubi1:modem", "/firmware", rootfstype, MS_RDONLY, rootflags)
+        &&  sys_mount("/dev/ubi1_0", "/firmware", rootfstype, MS_RDONLY, rootflags)
+    	) 
+        //modify end
+    	{
+    		 printk("quectel_mount failed \n");
+			          printk("@Ramos set restore modem flag here 444444 \r\n");
+	    	Quectel_Set_Partition_RestoreFlag("modem",4); // modem ޷أлԭ
+
+    	}
+    	else
+    	{
+    		 printk("quectel_mount_success \n");
+    		 subsystem_get_with_fwname("modem", "modem");
+    	}
+    }
+#endif //end jun.wu
+	printk("@Ramos kernel_init try_to_run_init_process entry !!!!\r\n\r\n");
 	if (!try_to_run_init_process("/sbin/init") ||
 	    !try_to_run_init_process("/etc/init") ||
 	    !try_to_run_init_process("/bin/init") ||
 	    !try_to_run_init_process("/bin/sh"))
+	{
+		printk("@Ramos kernel_init try_to_run_init_process EXIT 11111\r\n\r\n");	
 		return 0;
+	}
+		printk("@Ramos kernel_init try_to_run_init_process EXIT panic 22222\r\n\r\n");	
+#if 1 // def  QUECTEL_SYSTEM_BACKUP    // Ramos add for quectel for linuxfs restore
+
+		if (!get_bootmode(NULL))
+		{
+			printk("@Ramos set restore systemfs flag here 444444 \r\n");
+		    Quectel_Set_Partition_RestoreFlag("system",4);
+		}else{
+		    Quectel_Set_Partition_RestoreFlag("recovery",4);
+		}
+#endif
 
 	panic("No working init found.  Try passing init= option to kernel. "
 	      "See Linux Documentation/init.txt for guidance.");

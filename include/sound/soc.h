@@ -37,6 +37,12 @@
 	{.reg = xreg, .rreg = xreg, .shift = shift_left, \
 	.rshift = shift_right, .max = xmax, .platform_max = xmax, \
 	.invert = xinvert, .autodisable = xautodisable})
+//add yang start 2017-12-28
+#define SOC_SINGLE_VALUE_4(xreg, xshift, xmax, xinvert) \
+	((unsigned long)&(struct soc_mixer_control) \
+	{.reg = xreg, .shift = xshift, .rshift = xshift, .max = xmax, \
+	.platform_max = xmax, .invert = xinvert})
+//add yang  end 2017-12-28
 #define SOC_SINGLE_VALUE(xreg, xshift, xmax, xinvert, xautodisable) \
 	SOC_DOUBLE_VALUE(xreg, xshift, xshift, xmax, xinvert, xautodisable)
 #define SOC_SINGLE_VALUE_EXT(xreg, xmax, xinvert) \
@@ -534,10 +540,12 @@ int snd_soc_set_ac97_ops_of_reset(struct snd_ac97_bus_ops *ops,
  *Controls
  */
 struct snd_kcontrol *snd_soc_cnew(const struct snd_kcontrol_new *_template,
-				  void *data, const char *long_name,
-				  const char *prefix);
+				  void *data,  char *long_name,
+				  const char *prefix);// delete const yang modify 2017-12-28
 struct snd_kcontrol *snd_soc_card_get_kcontrol(struct snd_soc_card *soc_card,
 					       const char *name);
+int snd_soc_add_controls_1(struct snd_soc_codec *codec,
+const struct snd_kcontrol_new *controls, int num_controls);						   
 int snd_soc_add_component_controls(struct snd_soc_component *component,
 	const struct snd_kcontrol_new *controls, unsigned int num_controls);
 int snd_soc_add_codec_controls(struct snd_soc_codec *codec,
@@ -836,6 +844,13 @@ struct snd_soc_codec {
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs_reg;
 #endif
+//yang add 2017-12-28
+	struct snd_soc_card *card;
+	const char *name_prefix;
+	const char *name;
+	u32 cache_only;  /* Suppress writes to hardware */
+	unsigned int (*hw_read)(struct snd_soc_codec *, unsigned int);
+	//yang add end 2017-12-28
 };
 
 /* codec driver */
@@ -1244,6 +1259,10 @@ struct soc_enum {
 	const char * const *texts;
 	const unsigned int *values;
 };
+enum snd_soc_control_type{
+	SND_SOC_I2C = 1,
+	SND_SOC_SPI,
+};
 
 /**
  * snd_soc_component_to_codec() - Casts a component to the CODEC it is embedded in
@@ -1539,3 +1558,4 @@ static inline void snd_soc_dapm_mutex_unlock(struct snd_soc_dapm_context *dapm)
 }
 
 #endif
+

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,7 +14,6 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
-#include <linux/spinlock.h>
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>
@@ -68,11 +67,7 @@ static void *dummy_q6_mvm;
 static void *dummy_q6_cvs;
 dev_t device_num;
 
-static spinlock_t voicesvc_lock;
-static bool is_released;
 static int voice_svc_dummy_reg(void);
-static int voice_svc_dummy_dereg(void);
-
 static int32_t qdsp_dummy_apr_callback(struct apr_client_data *data,
 					void *priv);
 
@@ -87,16 +82,10 @@ static int32_t qdsp_apr_callback(struct apr_client_data *data, void *priv)
 
 		return -EINVAL;
 	}
-	spin_lock(&voicesvc_lock);
-	if (is_released) {
-		spin_unlock(&voicesvc_lock);
-		return 0;
-	}
 
 	prtd = (struct voice_svc_prvt *)priv;
 	if (prtd == NULL) {
 		pr_err("%s: private data is NULL\n", __func__);
-		spin_unlock(&voicesvc_lock);
 
 		return -EINVAL;
 	}
@@ -139,7 +128,6 @@ static int32_t qdsp_apr_callback(struct apr_client_data *data, void *priv)
 
 			spin_unlock_irqrestore(&prtd->response_lock,
 					       spin_flags);
-			spin_unlock(&voicesvc_lock);
 			return -ENOMEM;
 		}
 
@@ -168,7 +156,6 @@ static int32_t qdsp_apr_callback(struct apr_client_data *data, void *priv)
 		       __func__);
 	}
 
-	spin_unlock(&voicesvc_lock);
 	return 0;
 }
 
@@ -627,21 +614,6 @@ err:
 	return -EINVAL;
 }
 
-static int voice_svc_dummy_dereg(void)
-{
-	pr_debug("%s\n", __func__);
-	if (dummy_q6_mvm != NULL) {
-		apr_deregister(dummy_q6_mvm);
-		dummy_q6_mvm = NULL;
-	}
-
-	if (dummy_q6_cvs != NULL) {
-		apr_deregister(dummy_q6_cvs);
-		dummy_q6_cvs = NULL;
-	}
-	return 0;
-}
-
 static int voice_svc_open(struct inode *inode, struct file *file)
 {
 	struct voice_svc_prvt *prtd = NULL;
@@ -665,7 +637,6 @@ static int voice_svc_open(struct inode *inode, struct file *file)
 	mutex_init(&prtd->response_mutex_lock);
 	file->private_data = (void *)prtd;
 
-	is_released = 0;
 	/* Current APR implementation doesn't support session based
 	 * multiple service registrations. The apr_deregister()
 	 * function sets the destination and client IDs to zero, if
@@ -698,11 +669,6 @@ static int voice_svc_release(struct inode *inode, struct file *file)
 		goto done;
 	}
 
-	mutex_lock(&prtd->response_mutex_lock);
-	if (reg_dummy_sess) {
-		voice_svc_dummy_dereg();
-		reg_dummy_sess = 0;
-	}
 	if (prtd->apr_q6_cvs != NULL) {
 		svc_name = VOICE_SVC_MVM_STR;
 		handle = &prtd->apr_q6_cvs;
@@ -719,6 +685,7 @@ static int voice_svc_release(struct inode *inode, struct file *file)
 			pr_err("%s: Failed to dereg MVM %d\n", __func__, ret);
 	}
 
+	mutex_lock(&prtd->response_mutex_lock);
 	spin_lock_irqsave(&prtd->response_lock, spin_flags);
 
 	while (!list_empty(&prtd->response_queue)) {
@@ -736,11 +703,9 @@ static int voice_svc_release(struct inode *inode, struct file *file)
 
 	mutex_destroy(&prtd->response_mutex_lock);
 
-	spin_lock(&voicesvc_lock);
 	kfree(file->private_data);
 	file->private_data = NULL;
-	is_released = 1;
-	spin_unlock(&voicesvc_lock);
+
 done:
 	return ret;
 }
@@ -773,7 +738,7 @@ static int voice_svc_probe(struct platform_device *pdev)
 	if (ret) {
 		pr_err("%s: Failed to alloc chrdev\n", __func__);
 		ret = -ENODEV;
-		goto done;
+		goto chrdev_err;
 	}
 
 	voice_svc_dev->major = MAJOR(device_num);
@@ -809,7 +774,6 @@ static int voice_svc_probe(struct platform_device *pdev)
 		goto add_err;
 	}
 	pr_debug("%s: Device created\n", __func__);
-	spin_lock_init(&voicesvc_lock);
 	goto done;
 
 add_err:
@@ -820,6 +784,8 @@ dev_err:
 	class_destroy(voice_svc_class);
 class_err:
 	unregister_chrdev_region(0, MINOR_NUMBER);
+chrdev_err:
+	kfree(voice_svc_dev);
 done:
 	return ret;
 }
@@ -833,6 +799,7 @@ static int voice_svc_remove(struct platform_device *pdev)
 	device_destroy(voice_svc_class, device_num);
 	class_destroy(voice_svc_class);
 	unregister_chrdev_region(0, MINOR_NUMBER);
+	kfree(voice_svc_dev);
 
 	return 0;
 }

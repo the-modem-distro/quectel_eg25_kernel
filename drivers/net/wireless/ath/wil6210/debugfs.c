@@ -807,12 +807,8 @@ static ssize_t wil_write_file_txmgmt(struct file *file, const char __user *buf,
 	struct wireless_dev *wdev = wil_to_wdev(wil);
 	struct cfg80211_mgmt_tx_params params;
 	int rc;
-	void *frame;
+	void *frame = kmalloc(len, GFP_KERNEL);
 
-	if (!len)
-		return -EINVAL;
-
-	frame = kmalloc(len, GFP_KERNEL);
 	if (!frame)
 		return -ENOMEM;
 

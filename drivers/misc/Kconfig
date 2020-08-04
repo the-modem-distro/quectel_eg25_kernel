@@ -544,7 +544,7 @@ config VEXPRESS_SYSCFG
 	  of generating transactions on this bus.
 
 config UID_CPUTIME
-	tristate "Per-UID cpu time statistics"
+	bool "Per-UID cpu time statistics"
 	depends on PROFILING
 	help
 	  Per UID based cpu time statistics exported to /proc/uid_cputime
@@ -594,6 +594,12 @@ config MEMORY_STATE_TIME
 	depends on PROFILING
 	help
 	  Memory time statistics exported to /sys/kernel/memory_state_time
+
+#2016-01-29, add by jun.wu, for power manager
+config QUECTEL_POWER_MANAGER
+	bool "add quectel_power_manager"
+	default y
+#end jun.wu
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"

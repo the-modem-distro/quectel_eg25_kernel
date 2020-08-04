@@ -23,18 +23,24 @@
 
 #include "gadget_chips.h"
 
+#define QUECTEL_UAC_FEATURE //add yang.yang 2018-01-05 uac
+
 #define FILE_PCM_PLAYBACK	"/dev/snd/pcmC0D5p"
 #define FILE_PCM_CAPTURE	"/dev/snd/pcmC0D6c"
 #define FILE_CONTROL		"/dev/snd/controlC0"
+
+//#define FILE_PCM_PLAYBACK	"/dev/snd/pcmC0D0p"
+//#define FILE_PCM_CAPTURE	"/dev/snd/pcmC0D1c"
+//#define FILE_CONTROL		"/dev/snd/controlC0"
+
 
 #define UAC1_IN_EP_MAX_PACKET_SIZE	32
 #define UAC1_OUT_EP_MAX_PACKET_SIZE	32
 #define UAC1_OUT_REQ_COUNT		48
 #define UAC1_IN_REQ_COUNT		 4
-#define UAC1_AUDIO_PLAYBACK_BUF_SIZE   256	/* Matches with Audio driver */
-#define UAC1_AUDIO_CAPTURE_BUF_SIZE    256	/* Matches with Audio driver */
-#define UAC1_SAMPLE_RATE	     16000
-
+#define UAC1_AUDIO_PLAYBACK_BUF_SIZE  256 //480 //320// 256	/* Matches with Audio driver */
+#define UAC1_AUDIO_CAPTURE_BUF_SIZE   256 //480 //320 //256	/* Matches with Audio driver */
+#define UAC1_SAMPLE_RATE	     8000
 /*
  * This represents the USB side of an audio card device, managed by a USB
  * function which provides control and stream interfaces.
@@ -61,6 +67,11 @@ struct gaudio {
 
 	bool				audio_reinit_capture;
 	bool				audio_reinit_playback;
+#ifdef QUECTEL_UAC_FEATURE
+	int					usb_snd_opened;
+	int					usb_snd_setuped;
+#endif
+
 	/* TODO */
 };
 

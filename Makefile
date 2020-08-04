@@ -1,6 +1,6 @@
 VERSION = 3
 PATCHLEVEL = 18
-SUBLEVEL = 44
+SUBLEVEL = 48
 EXTRAVERSION =
 NAME = Shuffling Zombie Juror
 
@@ -407,16 +407,7 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-			 -Wno-discarded-qualifiers -Wno-attributes \
-			 -Wno-unused-const-variable -Wunused-variable \
-			 -Wno-format-truncation -Wno-duplicate-decl-specifier \
-		   -Wno-misleading-indentation -Wno-unused-function -Wno-format  \
-		   -Wno-int-in-bool-context -Wno-pointer-to-int-cast	\
-		   -Wno-int-to-pointer-cast -Wno-incompatible-pointer-types \
-		   -Wno-switch -Wno-maybe-uninitialized\
-		   -Wno-bool-operation -Wno-switch-bool -Wno-pointer-compare \
 		   -std=gnu89
-
 
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
@@ -624,6 +615,9 @@ all: vmlinux
 include $(srctree)/arch/$(SRCARCH)/Makefile
 
 KBUILD_CFLAGS	+= $(call cc-option,-fno-delete-null-pointer-checks,)
+KBUILD_CFLAGS	+= $(call cc-disable-warning,frame-address,)
+KBUILD_CFLAGS	+= $(call cc-option,-fno-PIE)
+KBUILD_AFLAGS	+= $(call cc-option,-fno-PIE)
 
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os $(call cc-disable-warning,maybe-uninitialized,)
@@ -806,6 +800,9 @@ include $(srctree)/scripts/Makefile.ubsan
 KBUILD_CPPFLAGS += $(KCPPFLAGS)
 KBUILD_AFLAGS += $(KAFLAGS)
 KBUILD_CFLAGS += $(KCFLAGS)
+
+#Add by running. 2018-01-13
+KBUILD_CFLAGS += -include quectel-features-config.h
 
 # Use --build-id when available.
 LDFLAGS_BUILD_ID = $(patsubst -Wl$(comma)%,%,\

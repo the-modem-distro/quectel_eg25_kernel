@@ -34,7 +34,6 @@ int mdss_pll_resource_enable(struct mdss_pll_resources *pll_res, bool enable)
 		return -EINVAL;
 	}
 
-	 mutex_lock(&pll_res->mutex);
 	/*
 	 * Don't turn off resources during handoff or add more than
 	 * 1 refcount.
@@ -45,6 +44,7 @@ int mdss_pll_resource_enable(struct mdss_pll_resources *pll_res, bool enable)
 		return rc;
 	}
 
+	mutex_lock(&pll_res->mutex);
 	if (enable) {
 		if (pll_res->resource_ref_cnt == 0)
 			changed++;

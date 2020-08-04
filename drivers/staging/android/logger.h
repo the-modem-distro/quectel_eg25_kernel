@@ -70,10 +70,10 @@ struct logger_entry {
 	char		msg[0];
 };
 
-#define LOGGER_LOG_RADIO	"log_radio"	/* radio-related messages */
-#define LOGGER_LOG_EVENTS	"log_events"	/* system/hardware events */
-#define LOGGER_LOG_SYSTEM	"log_system"	/* system/framework messages */
-#define LOGGER_LOG_MAIN		"log_main"	/* everything else */
+#define LOGGER_LOG_RADIO	"logger/radio"	/* radio-related messages */
+#define LOGGER_LOG_EVENTS	"logger/events"	/* system/hardware events */
+#define LOGGER_LOG_SYSTEM	"logger/system"	/* system/framework messages */
+#define LOGGER_LOG_MAIN		"logger/main"	/* everything else */
 
 #define LOGGER_ENTRY_MAX_PAYLOAD	4076
 

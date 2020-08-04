@@ -1600,6 +1600,20 @@ static int smd_stream_read(smd_channel_t *ch, void *data, int len)
 	return r;
 }
 
+static int quec_smd_debug_value = 0;
+int quec_get_smd_debug_value(void)
+{
+	return quec_smd_debug_value;
+}
+EXPORT_SYMBOL(quec_get_smd_debug_value);
+
+void quec_set_smd_debug_value(int value)
+{
+	quec_smd_debug_value = value;
+}
+
+EXPORT_SYMBOL(quec_set_smd_debug_value);
+
 static int smd_packet_read(smd_channel_t *ch, void *data, int len)
 {
 	unsigned long flags;
@@ -1621,7 +1635,16 @@ static int smd_packet_read(smd_channel_t *ch, void *data, int len)
 	if (r > 0)
 		if (!read_intr_blocked(ch))
 			ch->notify_other_cpu(ch);
-
+		
+	if(quec_smd_debug_value)
+	{
+		if (strcmp("rpm_requests", ch->name)) {
+            printk("smd_packet_read---------[%s]--------------\n", ch->name);
+            print_hex_dump(KERN_ERR, "", DUMP_PREFIX_NONE, 16, 1,
+                                (unsigned char *)data, len, 1);
+        }
+	}
+	
 	spin_lock_irqsave(&smd_lock, flags);
 	ch->current_packet -= r;
 	update_packet_state(ch);

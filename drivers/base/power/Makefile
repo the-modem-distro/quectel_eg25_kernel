@@ -4,5 +4,7 @@ obj-$(CONFIG_PM_TRACE_RTC)	+= trace.o
 obj-$(CONFIG_PM_OPP)	+= opp/
 obj-$(CONFIG_PM_GENERIC_DOMAINS)	+=  domain.o domain_governor.o
 obj-$(CONFIG_HAVE_CLK)	+= clock_ops.o
+#will.shao, add for quectel wakelock
+obj-$(CONFIG_PM_SLEEP)  += quec_wakelock.o
 
 ccflags-$(CONFIG_DEBUG_DRIVER) := -DDEBUG

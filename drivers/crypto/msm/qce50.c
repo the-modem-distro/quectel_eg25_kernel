@@ -2168,10 +2168,6 @@ static int _sha_complete(struct qce_device *pce_dev, int req_info)
 	pce_sps_data = &preq_info->ce_sps;
 	qce_callback = preq_info->qce_cb;
 	areq = (struct ahash_request *) preq_info->areq;
-	if (!areq) {
-		pr_err("sha operation error. areq is NULL\n");
-		return -ENXIO;
-	}
 	qce_dma_unmap_sg(pce_dev->pdev, areq->src, preq_info->src_nents,
 				DMA_TO_DEVICE);
 	memcpy(digest, (char *)(&pce_sps_data->result->auth_iv[0]),
@@ -2919,7 +2915,7 @@ static inline int qce_alloc_req_info(struct qce_device *pce_dev)
 		request_index++;
 		if (request_index >= MAX_QCE_BAM_REQ)
 			request_index = 0;
-		if (atomic_xchg(&pce_dev->ce_request_info[request_index].
+		if (xchg(&pce_dev->ce_request_info[request_index].
 						in_use, true) == false) {
 			pce_dev->ce_request_index = request_index;
 			return request_index;
@@ -2935,8 +2931,7 @@ static inline void qce_free_req_info(struct qce_device *pce_dev, int req_info,
 		bool is_complete)
 {
 	pce_dev->ce_request_info[req_info].xfer_type = QCE_XFER_TYPE_LAST;
-	if (atomic_xchg(&pce_dev->ce_request_info[req_info].in_use,
-						false) == true) {
+	if (xchg(&pce_dev->ce_request_info[req_info].in_use, false) == true) {
 		if (req_info < MAX_QCE_BAM_REQ && is_complete)
 			atomic_dec(&pce_dev->no_of_queued_req);
 	} else
@@ -4560,7 +4555,7 @@ static int qce_dummy_req(struct qce_device *pce_dev)
 {
 	int ret = 0;
 
-	if (!(atomic_xchg(&pce_dev->ce_request_info[DUMMY_REQ_INDEX].
+	if (!(xchg(&pce_dev->ce_request_info[DUMMY_REQ_INDEX].
 				in_use, true) == false))
 		return -EBUSY;
 	ret = qce_process_sha_req(pce_dev, NULL);
@@ -5978,7 +5973,7 @@ void *qce_open(struct platform_device *pdev, int *rc)
 	}
 
 	for (i = 0; i < MAX_QCE_ALLOC_BAM_REQ; i++)
-		atomic_set(&pce_dev->ce_request_info[i].in_use, false);
+		pce_dev->ce_request_info[i].in_use = false;
 	pce_dev->ce_request_index = 0;
 
 	pce_dev->memsize = 10 * PAGE_SIZE * MAX_QCE_ALLOC_BAM_REQ;
@@ -6142,13 +6137,12 @@ EXPORT_SYMBOL(qce_hw_support);
 void qce_dump_req(void *handle)
 {
 	int i;
-	bool req_in_use;
 	struct qce_device *pce_dev = (struct qce_device *)handle;
 
 	for (i = 0; i < MAX_QCE_BAM_REQ; i++) {
-		req_in_use = atomic_read(&pce_dev->ce_request_info[i].in_use);
-		pr_info("qce_dump_req %d %d\n", i, req_in_use);
-		if (req_in_use == true)
+		pr_info("qce_dump_req %d %d\n", i,
+					pce_dev->ce_request_info[i].in_use);
+		if (pce_dev->ce_request_info[i].in_use == true)
 			_qce_dump_descr_fifos(pce_dev, i);
 	}
 }

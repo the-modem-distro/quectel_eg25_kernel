@@ -69,6 +69,7 @@ static int msm_tert_tdm_rx_0_ch = 2; /* ICC STREAM */
 static int msm_tert_tdm_rx_1_ch = 2;
 static int msm_tert_tdm_rx_2_ch = 2;
 static int msm_tert_tdm_rx_3_ch = 2;
+static int msm_tert_tdm_rx_4_ch;
 
 static int msm_tert_tdm_tx_0_ch = 6; /* EC_REF1-EC_REF6(6 CHAN) */
 static int msm_tert_tdm_tx_1_ch = 1;
@@ -95,6 +96,7 @@ static int msm_tert_tdm_rx_0_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int msm_tert_tdm_rx_1_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int msm_tert_tdm_rx_2_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int msm_tert_tdm_rx_3_bit_format = SNDRV_PCM_FORMAT_S16_LE;
+static int msm_tert_tdm_rx_4_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 
 static int msm_tert_tdm_tx_0_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int msm_tert_tdm_tx_1_bit_format = SNDRV_PCM_FORMAT_S16_LE;
@@ -115,6 +117,9 @@ static int msm_quat_tdm_tx_3_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int msm_ec_ref_ch = 4;
 static int msm_ec_ref_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int msm_ec_ref_sampling_rate = SAMPLING_RATE_48KHZ;
+
+static int msm_tdm_slot_width = 32;
+static int msm_tdm_num_slots = 8;
 
 static void *adsp_state_notifier;
 static bool dummy_device_registered;
@@ -296,6 +301,62 @@ static unsigned int tdm_slot_offset_adp_mmxf[TDM_MAX][TDM_SLOT_OFFSET_MAX] = {
 	{0xFFFF}, /* not used */
 };
 
+static unsigned int tdm_slot_offset_custom[TDM_MAX][TDM_SLOT_OFFSET_MAX] = {
+	/* QUAT_TDM_RX */
+	{0, 2, 0xFFFF},
+	{4, 6, 8, 10, 12, 14, 16, 18},
+	{20, 22, 24, 26, 28, 30, 0xFFFF},
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	/* QUAT_TDM_TX */
+	{0, 2, 4, 6, 8, 10, 12, 0xFFFF},
+	{14, 16, 0xFFFF},
+	{18, 20, 22, 24, 26, 28, 30, 0xFFFF},
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	/* TERT_TDM_RX */
+	{0, 2, 0xFFFF},
+	{4, 0xFFFF},
+	{6, 0xFFFF},
+	{8, 0xFFFF},
+	{10, 0xFFFF},
+	{12, 14, 16, 18, 20, 22, 24, 26},
+	{28, 30, 0xFFFF},
+	{0xFFFF}, /* not used */
+	/* TERT_TDM_TX */
+	{0, 2, 0xFFFF},
+	{4, 6, 8, 10, 12, 14, 16, 18},
+	{20, 22, 24, 26, 28, 30, 0xFFFF},
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	/* SEC_TDM_RX */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	/* SEC_TDM_TX */
+	{0xFFFF},
+	{0xFFFF},
+	{0xFFFF},
+	{0xFFFF},
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+	{0xFFFF}, /* not used */
+};
 
 static char const *hdmi_rx_ch_text[] = {"Two", "Three", "Four", "Five",
 					"Six", "Seven", "Eight"};
@@ -775,6 +836,24 @@ static int msm_tert_tdm_rx_3_ch_put(struct snd_kcontrol *kcontrol,
 	msm_tert_tdm_rx_3_ch = ucontrol->value.integer.value[0] + 1;
 	pr_debug("%s: msm_tert_tdm_rx_3_ch = %d\n", __func__,
 		msm_tert_tdm_rx_3_ch);
+	return 0;
+}
+
+static int msm_tert_tdm_rx_4_ch_get(struct snd_kcontrol *kcontrol,
+			       struct snd_ctl_elem_value *ucontrol)
+{
+	pr_debug("%s: msm_tert_tdm_rx_4_ch = %d\n", __func__,
+		msm_tert_tdm_rx_4_ch);
+	ucontrol->value.integer.value[0] = msm_tert_tdm_rx_4_ch - 1;
+	return 0;
+}
+
+static int msm_tert_tdm_rx_4_ch_put(struct snd_kcontrol *kcontrol,
+			       struct snd_ctl_elem_value *ucontrol)
+{
+	msm_tert_tdm_rx_4_ch = ucontrol->value.integer.value[0] + 1;
+	pr_debug("%s: msm_tert_tdm_rx_4_ch = %d\n", __func__,
+		msm_tert_tdm_rx_4_ch);
 	return 0;
 }
 
@@ -1263,6 +1342,40 @@ static int msm_tert_tdm_rx_3_bit_format_put(struct snd_kcontrol *kcontrol,
 	}
 	pr_debug("%s: msm_tert_tdm_rx_3_bit_format = %d\n",
 		 __func__, msm_tert_tdm_rx_3_bit_format);
+	return 0;
+}
+
+static int msm_tert_tdm_rx_4_bit_format_get(struct snd_kcontrol *kcontrol,
+				  struct snd_ctl_elem_value *ucontrol)
+{
+	switch (msm_tert_tdm_rx_4_bit_format) {
+	case SNDRV_PCM_FORMAT_S24_LE:
+		ucontrol->value.integer.value[0] = 1;
+		break;
+	case SNDRV_PCM_FORMAT_S16_LE:
+	default:
+		ucontrol->value.integer.value[0] = 0;
+		break;
+	}
+	pr_debug("%s: msm_tert_tdm_rx_4_bit_format = %ld\n",
+		 __func__, ucontrol->value.integer.value[0]);
+	return 0;
+}
+
+static int msm_tert_tdm_rx_4_bit_format_put(struct snd_kcontrol *kcontrol,
+				  struct snd_ctl_elem_value *ucontrol)
+{
+	switch (ucontrol->value.integer.value[0]) {
+	case 1:
+		msm_tert_tdm_rx_4_bit_format = SNDRV_PCM_FORMAT_S24_LE;
+		break;
+	case 0:
+	default:
+		msm_tert_tdm_rx_4_bit_format = SNDRV_PCM_FORMAT_S16_LE;
+		break;
+	}
+	pr_debug("%s: msm_tert_tdm_rx_4_bit_format = %d\n",
+		 __func__, msm_tert_tdm_rx_4_bit_format);
 	return 0;
 }
 
@@ -1962,6 +2075,11 @@ static int msm_tdm_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 		param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
 			msm_tert_tdm_rx_3_bit_format);
 		break;
+	case AFE_PORT_ID_TERTIARY_TDM_RX_4:
+		channels->min = channels->max = msm_tert_tdm_rx_4_ch;
+		param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
+			msm_tert_tdm_rx_4_bit_format);
+		break;
 	case AFE_PORT_ID_TERTIARY_TDM_TX:
 		channels->min = channels->max = msm_tert_tdm_tx_0_ch;
 		param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
@@ -2257,41 +2375,35 @@ static int apq8096_tdm_snd_hw_params(struct snd_pcm_substream *substream,
 	pr_debug("%s: dai id = 0x%x\n", __func__, cpu_dai->id);
 
 	channels = params_channels(params);
-	switch (channels) {
-	case 1:
-	case 2:
-	case 3:
-	case 4:
-	case 6:
-	case 8:
-		switch (params_format(params)) {
-		case SNDRV_PCM_FORMAT_S32_LE:
-		case SNDRV_PCM_FORMAT_S24_LE:
-		case SNDRV_PCM_FORMAT_S16_LE:
-			/*
-			 * up to 8 channel HW configuration should
-			 * use 32 bit slot width for max support of
-			 * stream bit width. (slot_width > bit_width)
-			 */
-			slot_width = 32;
-			break;
-		default:
-			pr_err("%s: invalid param format 0x%x\n",
-				__func__, params_format(params));
-			return -EINVAL;
-		}
-		slots = 8;
-		slot_mask = tdm_param_set_slot_mask(cpu_dai->id,
-			slot_width, slots);
-		if (!slot_mask) {
-			pr_err("%s: invalid slot_mask 0x%x\n",
-				__func__, slot_mask);
-			return -EINVAL;
-		}
-		break;
-	default:
+	if (channels < 1 || channels > 8) {
 		pr_err("%s: invalid param channels %d\n",
 			__func__, channels);
+		return -EINVAL;
+	}
+
+	switch (params_format(params)) {
+	case SNDRV_PCM_FORMAT_S32_LE:
+	case SNDRV_PCM_FORMAT_S24_LE:
+	case SNDRV_PCM_FORMAT_S16_LE:
+		/*
+		 * up to 8 channel HW configuration should
+		 * use 32 bit slot width for max support of
+		 * stream bit width. (slot_width > bit_width)
+		 */
+		slot_width = msm_tdm_slot_width;
+		break;
+	default:
+		pr_err("%s: invalid param format 0x%x\n",
+			__func__, params_format(params));
+		return -EINVAL;
+	}
+
+	slots = msm_tdm_num_slots;
+	slot_mask = tdm_param_set_slot_mask(cpu_dai->id,
+		slot_width, slots);
+	if (!slot_mask) {
+		pr_err("%s: invalid slot_mask 0x%x\n",
+			__func__, slot_mask);
 		return -EINVAL;
 	}
 
@@ -2548,6 +2660,8 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 			msm_tert_tdm_rx_2_ch_get, msm_tert_tdm_rx_2_ch_put),
 	SOC_ENUM_EXT("TERT_TDM_RX_3 Channels", msm_snd_enum[5],
 			msm_tert_tdm_rx_3_ch_get, msm_tert_tdm_rx_3_ch_put),
+	SOC_ENUM_EXT("TERT_TDM_RX_4 Channels", msm_snd_enum[5],
+			msm_tert_tdm_rx_4_ch_get, msm_tert_tdm_rx_4_ch_put),
 	SOC_ENUM_EXT("TERT_TDM_TX_0 Channels", msm_snd_enum[5],
 			msm_tert_tdm_tx_0_ch_get, msm_tert_tdm_tx_0_ch_put),
 	SOC_ENUM_EXT("TERT_TDM_TX_1 Channels", msm_snd_enum[5],
@@ -2596,6 +2710,9 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 	SOC_ENUM_EXT("TERT_TDM_RX_3 Bit Format", msm_snd_enum[6],
 			msm_tert_tdm_rx_3_bit_format_get,
 			msm_tert_tdm_rx_3_bit_format_put),
+	SOC_ENUM_EXT("TERT_TDM_RX_4 Bit Format", msm_snd_enum[6],
+			msm_tert_tdm_rx_4_bit_format_get,
+			msm_tert_tdm_rx_4_bit_format_put),
 	SOC_ENUM_EXT("TERT_TDM_TX_0 Bit Format", msm_snd_enum[6],
 			msm_tert_tdm_tx_0_bit_format_get,
 			msm_tert_tdm_tx_0_bit_format_put),
@@ -2661,7 +2778,7 @@ static int apq8096_get_ll_qos_val(struct snd_pcm_runtime *runtime)
 	return usecs;
 }
 
-static int apq8096_mm5_prepare(struct snd_pcm_substream *substream)
+static int apq8096_ll_prepare(struct snd_pcm_substream *substream)
 {
 	if (pm_qos_request_active(&substream->latency_pm_qos_req))
 		pm_qos_remove_request(&substream->latency_pm_qos_req);
@@ -2671,8 +2788,8 @@ static int apq8096_mm5_prepare(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-static struct snd_soc_ops apq8096_mm5_ops = {
-	.prepare = apq8096_mm5_prepare,
+static struct snd_soc_ops apq8096_ll_ops = {
+	.prepare = apq8096_ll_prepare,
 };
 
 /* Digital audio interface glue - connects codec <---> CPU */
@@ -2939,7 +3056,7 @@ static struct snd_soc_dai_link apq8096_common_dai_links[] = {
 		/* this dainlink has playback support */
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA5,
-		.ops = &apq8096_mm5_ops,
+		.ops = &apq8096_ll_ops,
 	},
 	{
 		.name = "Listen 1 Audio Service",
@@ -3648,6 +3765,192 @@ static struct snd_soc_dai_link apq8096_auto_fe_dai_links[] = {
 	},
 };
 
+static struct snd_soc_dai_link apq8096_custom_fe_dai_links[] = {
+	/* FrontEnd DAI Links */
+	{
+		.name = "MSM8996 Media1",
+		.stream_name = "MultiMedia1",
+		.cpu_dai_name = "MultiMedia1",
+		.platform_name = "msm-pcm-dsp.1",
+		.dynamic = 1,
+		.async_ops = ASYNC_DPCM_SND_SOC_PREPARE,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+				SND_SOC_DPCM_TRIGGER_POST},
+		.ignore_suspend = 1,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA1,
+		.ops = &apq8096_ll_ops,
+	},
+	{
+		.name = "MSM8996 Media2",
+		.stream_name = "MultiMedia2",
+		.cpu_dai_name = "MultiMedia2",
+		.platform_name = "msm-pcm-dsp.1",
+		.dynamic = 1,
+		.async_ops = ASYNC_DPCM_SND_SOC_PREPARE,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+				SND_SOC_DPCM_TRIGGER_POST},
+		.ignore_suspend = 1,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA2,
+		.ops = &apq8096_ll_ops,
+	},
+	{
+		.name = "MSM8996 Media3",
+		.stream_name = "MultiMedia3",
+		.cpu_dai_name = "MultiMedia3",
+		.platform_name = "msm-pcm-dsp.1",
+		.dynamic = 1,
+		.async_ops = ASYNC_DPCM_SND_SOC_PREPARE,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+				SND_SOC_DPCM_TRIGGER_POST},
+		.ignore_suspend = 1,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA3,
+		.ops = &apq8096_ll_ops,
+	},
+	{
+		.name = "MSM8996 Media5",
+		.stream_name = "MultiMedia5",
+		.cpu_dai_name = "MultiMedia5",
+		.platform_name = "msm-pcm-dsp.1",
+		.dynamic = 1,
+		.async_ops = ASYNC_DPCM_SND_SOC_PREPARE,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+				SND_SOC_DPCM_TRIGGER_POST},
+		.ignore_suspend = 1,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA5,
+		.ops = &apq8096_ll_ops,
+	},
+	{
+		.name = "MSM8996 Media6",
+		.stream_name = "MultiMedia6",
+		.cpu_dai_name = "MultiMedia6",
+		.platform_name = "msm-pcm-dsp.1",
+		.dynamic = 1,
+		.async_ops = ASYNC_DPCM_SND_SOC_PREPARE,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+				SND_SOC_DPCM_TRIGGER_POST},
+		.ignore_suspend = 1,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA6,
+		.ops = &apq8096_ll_ops,
+	},
+	{
+		.name = "MSM8996 Media8",
+		.stream_name = "MultiMedia8",
+		.cpu_dai_name = "MultiMedia8",
+		.platform_name = "msm-pcm-dsp.1",
+		.dynamic = 1,
+		.async_ops = ASYNC_DPCM_SND_SOC_PREPARE,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+				SND_SOC_DPCM_TRIGGER_POST},
+		.ignore_suspend = 1,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA8,
+		.ops = &apq8096_ll_ops,
+	},
+	{
+		.name = "MSM8996 Media9",
+		.stream_name = "MultiMedia9",
+		.cpu_dai_name = "MultiMedia9",
+		.platform_name = "msm-pcm-dsp.1",
+		.dynamic = 1,
+		.async_ops = ASYNC_DPCM_SND_SOC_PREPARE,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+				SND_SOC_DPCM_TRIGGER_POST},
+		.ignore_suspend = 1,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA9,
+		.ops = &apq8096_ll_ops,
+	},
+	{
+		.name = "INT_HFP_BT Hostless",
+		.stream_name = "INT_HFP_BT Hostless",
+		.cpu_dai_name = "INT_HFP_BT_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			    SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+	{
+		.name = "AUXPCM Hostless",
+		.stream_name = "AUXPCM Hostless",
+		.cpu_dai_name = "AUXPCM_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dpcm_playback = 1,
+		.dpcm_capture = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		/* this dainlink has playback support */
+		.ignore_pmdown_time = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+	{
+		.name = "Tertiary MI2S TX_Hostless",
+		.stream_name = "Tertiary MI2S_TX Hostless Capture",
+		.cpu_dai_name = "TERT_MI2S_TX_HOSTLESS",
+		.platform_name = "msm-pcm-hostless",
+		.dynamic = 1,
+		.dpcm_capture = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		.codec_dai_name = "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+	},
+};
+
 static struct snd_soc_dai_link apq8096_common_be_dai_links[] = {
 	/* Backend AFE DAI Links */
 	{
@@ -3922,6 +4225,20 @@ static struct snd_soc_dai_link apq8096_auto_be_dai_links[] = {
 		.ignore_suspend = 1,
 	},
 	{
+		.name = LPASS_BE_TERT_TDM_RX_4,
+		.stream_name = "Tertiary TDM4 Playback",
+		.cpu_dai_name = "msm-dai-q6-tdm.36904",
+		.platform_name = "msm-pcm-routing",
+		.codec_name = "msm-stub-codec.1",
+		.codec_dai_name = "msm-stub-rx",
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.be_id = MSM_BACKEND_DAI_TERT_TDM_RX_4,
+		.be_hw_params_fixup = msm_tdm_be_hw_params_fixup,
+		.ops = &apq8096_tdm_be_ops,
+		.ignore_suspend = 1,
+	},
+	{
 		.name = LPASS_BE_TERT_TDM_TX_0,
 		.stream_name = "Tertiary TDM0 Capture",
 		.cpu_dai_name = "msm-dai-q6-tdm.36897",
@@ -4116,6 +4433,13 @@ static struct snd_soc_dai_link apq8096_auto_dai_links[
 			 ARRAY_SIZE(apq8096_auto_be_dai_links) +
 			 ARRAY_SIZE(apq8096_hdmi_dai_link)];
 
+static struct snd_soc_dai_link apq8096_auto_custom_dai_links[
+			 ARRAY_SIZE(apq8096_custom_fe_dai_links) +
+			 ARRAY_SIZE(apq8096_auto_fe_dai_links) +
+			 ARRAY_SIZE(apq8096_common_be_dai_links) +
+			 ARRAY_SIZE(apq8096_auto_be_dai_links) +
+			 ARRAY_SIZE(apq8096_hdmi_dai_link)];
+
 struct snd_soc_card snd_soc_card_auto_apq8096 = {
 	.name = "apq8096-auto-snd-card",
 };
@@ -4126,6 +4450,10 @@ struct snd_soc_card snd_soc_card_adp_agave_apq8096 = {
 
 struct snd_soc_card snd_soc_card_adp_mmxf_apq8096 = {
 	.name = "apq8096-adp-mmxf-snd-card",
+};
+
+struct snd_soc_card snd_soc_card_auto_custom_apq8096 = {
+	.name = "apq8096-auto-custom-snd-card",
 };
 
 static int apq8096_populate_dai_link_component_of_node(
@@ -4221,6 +4549,8 @@ static const struct of_device_id apq8096_asoc_machine_of_match[]  = {
 	  .data = "adp_agave_codec"},
 	{ .compatible = "qcom,apq8096-asoc-snd-adp-mmxf",
 	  .data = "adp_mmxf_codec"},
+	{ .compatible = "qcom,apq8096-asoc-snd-auto-custom",
+	  .data = "auto_custom_codec"},
 	{},
 };
 
@@ -4244,31 +4574,55 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 		card = &snd_soc_card_adp_agave_apq8096;
 	else if (!strcmp(match->data, "adp_mmxf_codec"))
 		card = &snd_soc_card_adp_mmxf_apq8096;
-	else {
+	else if (!strcmp(match->data, "auto_custom_codec")) {
+		card = &snd_soc_card_auto_custom_apq8096;
+	} else {
 		dev_err(dev, "%s: Codec not supported\n",
 			__func__);
 		return NULL;
 	}
 
-	/* same FE and BE used for all codec */
-	len_1 = ARRAY_SIZE(apq8096_common_dai_links);
-	len_2 = len_1 + ARRAY_SIZE(apq8096_auto_fe_dai_links);
-	len_3 = len_2 + ARRAY_SIZE(apq8096_common_be_dai_links);
+	if (!strcmp(match->data, "auto_custom_codec")) {
+		len_1 = ARRAY_SIZE(apq8096_custom_fe_dai_links);
+		len_2 = len_1 + ARRAY_SIZE(apq8096_auto_fe_dai_links);
+		len_3 = len_2 + ARRAY_SIZE(apq8096_common_be_dai_links);
 
-	memcpy(apq8096_auto_dai_links,
-		apq8096_common_dai_links,
-		sizeof(apq8096_common_dai_links));
-	memcpy(apq8096_auto_dai_links + len_1,
-		apq8096_auto_fe_dai_links,
-		sizeof(apq8096_auto_fe_dai_links));
-	memcpy(apq8096_auto_dai_links + len_2,
-		apq8096_common_be_dai_links,
-		sizeof(apq8096_common_be_dai_links));
-	memcpy(apq8096_auto_dai_links + len_3,
-		apq8096_auto_be_dai_links,
-		sizeof(apq8096_auto_be_dai_links));
+		memcpy(apq8096_auto_custom_dai_links,
+			apq8096_custom_fe_dai_links,
+			sizeof(apq8096_custom_fe_dai_links));
+		memcpy(apq8096_auto_custom_dai_links + len_1,
+			apq8096_auto_fe_dai_links,
+			sizeof(apq8096_auto_fe_dai_links));
+		memcpy(apq8096_auto_custom_dai_links + len_2,
+			apq8096_common_be_dai_links,
+			sizeof(apq8096_common_be_dai_links));
+		memcpy(apq8096_auto_custom_dai_links + len_3,
+			apq8096_auto_be_dai_links,
+			sizeof(apq8096_auto_be_dai_links));
 
-	dailink = apq8096_auto_dai_links;
+		dailink = apq8096_auto_custom_dai_links;
+	} else {
+		/* same FE and BE used for all non-custom codec */
+		len_1 = ARRAY_SIZE(apq8096_common_dai_links);
+		len_2 = len_1 + ARRAY_SIZE(apq8096_auto_fe_dai_links);
+		len_3 = len_2 + ARRAY_SIZE(apq8096_common_be_dai_links);
+
+		memcpy(apq8096_auto_dai_links,
+			apq8096_common_dai_links,
+			sizeof(apq8096_common_dai_links));
+		memcpy(apq8096_auto_dai_links + len_1,
+			apq8096_auto_fe_dai_links,
+			sizeof(apq8096_auto_fe_dai_links));
+		memcpy(apq8096_auto_dai_links + len_2,
+			apq8096_common_be_dai_links,
+			sizeof(apq8096_common_be_dai_links));
+		memcpy(apq8096_auto_dai_links + len_3,
+			apq8096_auto_be_dai_links,
+			sizeof(apq8096_auto_be_dai_links));
+
+		dailink = apq8096_auto_dai_links;
+	}
+
 	len_4 = len_3 + ARRAY_SIZE(apq8096_auto_be_dai_links);
 
 	if (of_property_read_bool(dev->of_node, "qcom,hdmi-audio-rx")) {
@@ -4309,9 +4663,19 @@ static int apq8096_init_tdm_dev(struct device *dev)
 		memcpy(tdm_slot_offset,
 			tdm_slot_offset_adp_mmxf,
 			sizeof(tdm_slot_offset_adp_mmxf));
+	} else if (!strcmp(match->data, "auto_custom_codec")) {
+		dev_dbg(dev, "%s: custom tdm slot offset\n", __func__);
+		msm_tdm_slot_width = 16;
+		msm_tdm_num_slots = 16;
+		memcpy(tdm_slot_offset,
+			tdm_slot_offset_custom,
+			sizeof(tdm_slot_offset_custom));
 	} else {
 		dev_dbg(dev, "%s: DEFAULT tdm slot offset\n", __func__);
 	}
+
+	dev_dbg(dev, "%s: tdm slot_width %d, num_slots %d\n",
+		__func__, msm_tdm_slot_width, msm_tdm_num_slots);
 
 	return 0;
 }

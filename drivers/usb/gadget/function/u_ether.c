@@ -29,7 +29,9 @@
 #include <linux/cpufreq.h>
 #include "u_ether.h"
 
-
+#ifndef QUECTEL_ECM_FIX
+#define QUECTEL_ECM_FIX
+#endif
 /*
  * This component encapsulates the Ethernet link glue needed to provide
  * one (!) network link through the USB gadget stack, normally "usb0".
@@ -1923,7 +1925,11 @@ int gether_get_host_addr_cdc(struct net_device *net, char *host_addr, int len)
 		return -EINVAL;
 
 	dev = netdev_priv(net);
+#ifdef QUECTEL_ECM_FIX
+	snprintf(host_addr, len, "%pm", dev->host_mac);
+#else
 	snprintf(host_addr, len, "%pM", dev->host_mac);
+#endif
 
 	return strlen(host_addr);
 }

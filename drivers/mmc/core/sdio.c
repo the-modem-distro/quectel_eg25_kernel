@@ -1080,7 +1080,11 @@ static int mmc_sdio_resume(struct mmc_host *host)
 	}
 
 	/* No need to reinitialize powered-resumed nonremovable cards */
+#if 1 //add by carl, mmc0 connect FC20, we remove "qcom,nonremovable" in mdm9607-mtp.dtsi because we need polling to detect wifi chip
+	if ((mmc_card_is_removable(host) && host->index != 0) || !mmc_card_keep_power(host)) {
+#else
 	if (mmc_card_is_removable(host) || !mmc_card_keep_power(host)) {
+#endif
 		sdio_reset(host);
 		mmc_go_idle(host);
 		err = mmc_sdio_init_card(host, host->card->ocr, host->card,

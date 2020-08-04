@@ -9,6 +9,8 @@
 
 #include "gpiolib.h"
 
+//#include <quectel-features-config.h>	//version control need this header file
+
 static DEFINE_IDR(dirent_idr);
 
 
@@ -262,6 +264,9 @@ static ssize_t gpio_edge_store(struct device *dev,
 	struct gpio_desc	*desc = dev_get_drvdata(dev);
 	ssize_t			status;
 	int			i;
+	#ifdef QUECTEL_FEATURE_OPENLINUX
+	int			irq;
+	#endif
 
 	for (i = 0; i < ARRAY_SIZE(trigger_types); i++)
 		if (sysfs_streq(trigger_types[i].name, buf))
@@ -277,6 +282,12 @@ found:
 		status = gpio_setup_irq(desc, dev, trigger_types[i].flags);
 		if (!status)
 			status = size;
+#ifdef QUECTEL_FEATURE_OPENLINUX	//for gpio interupt
+		irq = gpiod_to_irq(desc);
+		if (irq < 0)
+			return -EIO;
+		enable_irq_wake(irq);
+#endif
 	}
 
 	mutex_unlock(&sysfs_lock);
@@ -290,6 +301,9 @@ static int sysfs_set_active_low(struct gpio_desc *desc, struct device *dev,
 				int value)
 {
 	int			status = 0;
+#ifdef QUECTEL_FEATURE_OPENLINUX	//for gpio interupt
+	int			irq;
+#endif
 
 	if (!!test_bit(FLAG_ACTIVE_LOW, &desc->flags) == !!value)
 		return 0;
@@ -306,6 +320,12 @@ static int sysfs_set_active_low(struct gpio_desc *desc, struct device *dev,
 
 		gpio_setup_irq(desc, dev, 0);
 		status = gpio_setup_irq(desc, dev, trigger_flags);
+#ifdef QUECTEL_FEATURE_OPENLINUX	//for gpio interupt
+		irq = gpiod_to_irq(desc);
+		if (irq < 0)
+			return -EIO;
+		enable_irq_wake(irq);
+#endif
 	}
 
 	return status;

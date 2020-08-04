@@ -1595,7 +1595,12 @@ static int mdss_mdp_gdsc_notifier_call(struct notifier_block *self,
 	mdata = container_of(self, struct mdss_data_type, gdsc_cb);
 
 	if (event & REGULATOR_EVENT_ENABLE) {
-		__mdss_restore_sec_cfg(mdata);
+		/*
+		 * As SMMU in low tier targets is not power collapsible,
+		 * hence we don't need to restore sec configuration.
+		 */
+		if (!mdss_mdp_req_init_restore_cfg(mdata))
+			__mdss_restore_sec_cfg(mdata);
 	} else if (event & REGULATOR_EVENT_PRE_DISABLE) {
 		pr_debug("mdss gdsc is getting disabled\n");
 		/* halt the vbif transactions */
@@ -2738,9 +2743,12 @@ static int mdss_mdp_probe(struct platform_device *pdev)
 		if (split_display)
 			num_of_display_on--;
 	}
-	if (!num_of_display_on)
+	if (!num_of_display_on) {
 		mdss_mdp_footswitch_ctrl_splash(false);
-	else {
+		msm_bus_scale_client_update_request(
+					mdata->bus_hdl, 0);
+		mdata->ao_bw_uc_idx = 0;
+	} else {
 		mdata->handoff_pending = true;
 		/*
 		 * If multiple displays are enabled in LK, ctrl_splash off will

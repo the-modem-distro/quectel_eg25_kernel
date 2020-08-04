@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1155,12 +1155,7 @@ static ssize_t ipa3_read_ntn(struct file *file, char __user *ubuf,
 			"TX bamFifoUsageLow=%u\n"
 			"TX bamUtilCount=%u\n"
 			"TX num_db=%u\n"
-			"TX num_unexpected_db=%u\n"
-			"TX num_bam_int_handled=%u\n"
-			"TX num_bam_int_in_non_running_state=%u\n"
-			"TX num_qmb_int_handled=%u\n"
-			"TX num_bam_int_handled_while_wait_for_bam=%u\n"
-			"TX num_bam_int_handled_while_not_in_bam=%u\n",
+			"TX num_qmb_int_handled=%u\n",
 			TX_STATS(num_pkts_processed),
 			TX_STATS(tail_ptr_val),
 			TX_STATS(num_db_fired),
@@ -1175,12 +1170,7 @@ static ssize_t ipa3_read_ntn(struct file *file, char __user *ubuf,
 			TX_STATS(bam_stats.bamFifoUsageLow),
 			TX_STATS(bam_stats.bamUtilCount),
 			TX_STATS(num_db),
-			TX_STATS(num_unexpected_db),
-			TX_STATS(num_bam_int_handled),
-			TX_STATS(num_bam_int_in_non_running_state),
-			TX_STATS(num_qmb_int_handled),
-			TX_STATS(num_bam_int_handled_while_wait_for_bam),
-			TX_STATS(num_bam_int_handled_while_not_in_bam));
+			TX_STATS(num_qmb_int_handled));
 		cnt += nbytes;
 		nbytes = scnprintf(dbg_buff + cnt, IPA_MAX_MSG_LEN - cnt,
 			"RX max_outstanding_pkts=%u\n"
@@ -1196,12 +1186,7 @@ static ssize_t ipa3_read_ntn(struct file *file, char __user *ubuf,
 			"RX bamFifoUsageHigh=%u\n"
 			"RX bamFifoUsageLow=%u\n"
 			"RX bamUtilCount=%u\n"
-			"RX num_bam_int_handled=%u\n"
-			"RX num_db=%u\n"
-			"RX num_unexpected_db=%u\n"
-			"RX num_pkts_in_dis_uninit_state=%u\n"
-			"num_ic_inj_vdev_change=%u\n"
-			"num_ic_inj_fw_desc_change=%u\n",
+			"RX num_db=%u\n",
 			RX_STATS(max_outstanding_pkts),
 			RX_STATS(num_pkts_processed),
 			RX_STATS(rx_ring_rp_value),
@@ -1215,12 +1200,7 @@ static ssize_t ipa3_read_ntn(struct file *file, char __user *ubuf,
 			RX_STATS(bam_stats.bamFifoUsageHigh),
 			RX_STATS(bam_stats.bamFifoUsageLow),
 			RX_STATS(bam_stats.bamUtilCount),
-			RX_STATS(num_bam_int_handled),
-			RX_STATS(num_db),
-			RX_STATS(num_unexpected_db),
-			RX_STATS(num_pkts_in_dis_uninit_state),
-			RX_STATS(num_bam_int_handled_while_not_in_bam),
-			RX_STATS(num_bam_int_handled_while_in_bam_state));
+			RX_STATS(num_db));
 		cnt += nbytes;
 	} else {
 		nbytes = scnprintf(dbg_buff, IPA_MAX_MSG_LEN,
@@ -1298,8 +1278,9 @@ static ssize_t ipa3_read_wdi(struct file *file, char __user *ubuf,
 			"RX num_db=%u\n"
 			"RX num_unexpected_db=%u\n"
 			"RX num_pkts_in_dis_uninit_state=%u\n"
-			"num_ic_inj_vdev_change=%u\n"
-			"num_ic_inj_fw_desc_change=%u\n"
+			"RX num_ic_inj_vdev_change=%u\n"
+			"RX num_ic_inj_fw_desc_change=%u\n"
+			"RX num_qmb_int_handled=%u\n"
 			"RX reserved1=%u\n"
 			"RX reserved2=%u\n",
 			stats.rx_ch_stats.max_outstanding_pkts,
@@ -1321,6 +1302,7 @@ static ssize_t ipa3_read_wdi(struct file *file, char __user *ubuf,
 			stats.rx_ch_stats.num_pkts_in_dis_uninit_state,
 			stats.rx_ch_stats.num_ic_inj_vdev_change,
 			stats.rx_ch_stats.num_ic_inj_fw_desc_change,
+			stats.rx_ch_stats.num_qmb_int_handled,
 			stats.rx_ch_stats.reserved1,
 			stats.rx_ch_stats.reserved2);
 		cnt += nbytes;
@@ -1431,11 +1413,7 @@ static ssize_t ipa3_read_nat4(struct file *file,
 	pr_err("Table Size:%d\n",
 				ipa3_ctx->nat_mem.size_base_tables);
 
-	if (!ipa3_ctx->nat_mem.size_expansion_tables)
-		pr_err("Expansion Table Size:%d\n",
-				ipa3_ctx->nat_mem.size_expansion_tables);
-	else
-		pr_err("Expansion Table Size:%d\n",
+	pr_err("Expansion Table Size:%d\n",
 				ipa3_ctx->nat_mem.size_expansion_tables-1);
 
 	if (!ipa3_ctx->nat_mem.is_sys_mem)
@@ -1450,8 +1428,6 @@ static ssize_t ipa3_read_nat4(struct file *file,
 
 			pr_err("\nBase Table:\n");
 		} else {
-			if (!ipa3_ctx->nat_mem.size_expansion_tables)
-				continue;
 			tbl_size = ipa3_ctx->nat_mem.size_expansion_tables-1;
 			base_tbl =
 			 (u32 *)ipa3_ctx->nat_mem.ipv4_expansion_rules_addr;
@@ -1551,8 +1527,6 @@ static ssize_t ipa3_read_nat4(struct file *file,
 
 			pr_err("\nIndex Table:\n");
 		} else {
-			if (!ipa3_ctx->nat_mem.size_expansion_tables)
-				continue;
 			tbl_size = ipa3_ctx->nat_mem.size_expansion_tables-1;
 			indx_tbl =
 			 (u32 *)ipa3_ctx->nat_mem.index_table_expansion_addr;

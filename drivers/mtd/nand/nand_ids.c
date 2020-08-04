@@ -78,6 +78,11 @@ struct nand_flash_dev nand_flash_ids[] = {
 		{ .id = {0xc2, 0xa1, 0x80, 0x15, 0x00, 0x00, 0x00, 0x00} },
 		SZ_2K, SZ_128, SZ_128K, 0, 4, 64, NAND_ECC_INFO(4, SZ_512)},
 
+#if 1 //quectel add  def QUECTEL_NAND_JSFCBB3YH3BBG
+    {"JSFCBB3YH3BBG 4G 1.8V 4-bit",
+		{ .id = {0xad, 0xac, 0x90, 0x15, 0x00, 0x00, 0x00, 0x00} },
+		SZ_2K, SZ_512, SZ_128K, 0, 4, 128, NAND_ECC_INFO(4, SZ_512)},
+#endif
 	LEGACY_ID_NAND("NAND 4MiB 5V 8-bit",   0x6B, 4, SZ_8K, SP_OPTIONS),
 	LEGACY_ID_NAND("NAND 4MiB 3,3V 8-bit", 0xE3, 4, SZ_8K, SP_OPTIONS),
 	LEGACY_ID_NAND("NAND 4MiB 3,3V 8-bit", 0xE5, 4, SZ_8K, SP_OPTIONS),
@@ -205,6 +210,9 @@ struct nand_manufacturers nand_manuf_ids[] = {
 	{NAND_MFR_EON, "Eon"},
 	{NAND_MFR_SANDISK, "SanDisk"},
 	{NAND_MFR_INTEL, "Intel"},
+#if 1 //quectel add  def QUECTEL_NAND_JSFCBB3YH3BBG
+    {NAND_MFR_JSC,   "Jsc"},
+#endif
 	{0x0, "Unknown"}
 };
 

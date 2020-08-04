@@ -51,6 +51,9 @@ MODULE_DESCRIPTION("Diag Char Driver");
 MODULE_LICENSE("GPL v2");
 MODULE_VERSION("1.0");
 
+//will.shao, add for sleep
+#define QUECTEL_SLEEP_CTRL
+
 #define MIN_SIZ_ALLOW 4
 #define INIT	1
 #define EXIT	-1
@@ -964,11 +967,6 @@ static int diag_send_raw_data_remote(int proc, void *buf, int len,
 	else
 		hdlc_disabled = driver->hdlc_disabled;
 	if (hdlc_disabled) {
-		if (len < 4) {
-			pr_err("diag: In %s, invalid len: %d of non_hdlc pkt",
-			__func__, len);
-			return -EBADMSG;
-		}
 		payload = *(uint16_t *)(buf + 2);
 		if (payload > DIAG_MAX_HDLC_BUF_SIZE) {
 			pr_err("diag: Dropping packet, payload size is %d\n",
@@ -977,21 +975,11 @@ static int diag_send_raw_data_remote(int proc, void *buf, int len,
 		}
 		driver->hdlc_encode_buf_len = payload;
 		/*
-		 * Adding 5 bytes for start (1 byte), version (1 byte),
-		 * payload (2 bytes) and end (1 byte)
+		 * Adding 4 bytes for start (1 byte), version (1 byte) and
+		 * payload (2 bytes)
 		 */
-		if (len == (payload + 5)) {
-			/*
-			 * Adding 4 bytes for start (1 byte), version (1 byte)
-			 * and payload (2 bytes)
-			 */
-			memcpy(driver->hdlc_encode_buf, buf + 4, payload);
-			goto send_data;
-		} else {
-			pr_err("diag: In %s, invalid len: %d of non_hdlc pkt",
-			__func__, len);
-			return -EBADMSG;
-		}
+		memcpy(driver->hdlc_encode_buf, buf + 4, payload);
+		goto send_data;
 	}
 
 	if (hdlc_flag) {
@@ -1723,18 +1711,14 @@ static int diag_ioctl_lsm_deinit(void)
 {
 	int i;
 
-	mutex_lock(&driver->diagchar_mutex);
 	for (i = 0; i < driver->num_clients; i++)
 		if (driver->client_map[i].pid == current->tgid)
 			break;
 
-	if (i == driver->num_clients) {
-		mutex_unlock(&driver->diagchar_mutex);
+	if (i == driver->num_clients)
 		return -EINVAL;
-	}
 
 	driver->data_ready[i] |= DEINIT_TYPE;
-	mutex_unlock(&driver->diagchar_mutex);
 	wake_up_interruptible(&driver->wait_q);
 
 	return 1;
@@ -3129,7 +3113,10 @@ void diag_ws_on_notify()
 	 * Do not deal with reference count here as there can be spurious
 	 * interrupts.
 	 */
+//will.shao, add for sleep
+#ifndef QUECTEL_SLEEP_CTRL
 	pm_stay_awake(driver->diag_dev);
+#endif
 }
 
 void diag_ws_on_read(int type, int pkt_len)
@@ -3268,8 +3255,11 @@ void diag_ws_reset(int type)
 
 void diag_ws_release()
 {
+//will.shao, add for sleep
+#ifndef QUECTEL_SLEEP_CTRL
 	if (driver->dci_ws.ref_count == 0 && driver->md_ws.ref_count == 0)
 		pm_relax(driver->diag_dev);
+#endif
 }
 
 #ifdef DIAG_DEBUG
@@ -3427,8 +3417,6 @@ static int __init diagchar_init(void)
 	mutex_init(&driver->diag_file_mutex);
 	mutex_init(&driver->delayed_rsp_mutex);
 	mutex_init(&apps_data_mutex);
-	mutex_init(&driver->msg_mask_lock);
-	mutex_init(&driver->hdlc_recovery_mutex);
 	for (i = 0; i < NUM_PERIPHERALS; i++)
 		mutex_init(&driver->diagfwd_channel_mutex[i]);
 	init_waitqueue_head(&driver->wait_q);

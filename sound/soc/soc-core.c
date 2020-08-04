@@ -968,8 +968,9 @@ static int soc_bind_dai_link(struct snd_soc_card *card, int num)
 	for (i = 0; i < rtd->num_codecs; i++) {
 		codec_dais[i] = snd_soc_find_dai(&codecs[i]);
 		if (!codec_dais[i]) {
-			dev_err(card->dev, "ASoC: CODEC DAI %s not registered\n",
-				codecs[i].dai_name);
+			dev_err(card->dev, "ASoC: CODEC DAI %s Name: %s, not registered\n",
+				codecs[i].dai_name, codecs[i].name);
+
 			return -EPROBE_DEFER;
 		}
 	}
@@ -2265,6 +2266,7 @@ EXPORT_SYMBOL_GPL(snd_soc_free_ac97_codec);
  *
  * Returns 0 for success, else error.
  */
+ #if 0
 struct snd_kcontrol *snd_soc_cnew(const struct snd_kcontrol_new *_template,
 				  void *data, const char *long_name,
 				  const char *prefix)
@@ -2295,7 +2297,69 @@ struct snd_kcontrol *snd_soc_cnew(const struct snd_kcontrol_new *_template,
 
 	return kcontrol;
 }
+#endif
+struct snd_kcontrol *snd_soc_cnew(const struct snd_kcontrol_new *_template,
+				  void *data, char *long_name,
+				  const char *prefix)
+{
+	struct snd_kcontrol_new template;
+	struct snd_kcontrol *kcontrol;
+	char *name = NULL;
+	int name_len;
+	memcpy(&template, _template, sizeof(template));
+	template.index = 0;
+	if (!long_name)
+		long_name = template.name;
+
+	if (prefix) {
+		name_len = strlen(long_name) + strlen(prefix) + 2;
+		name = kmalloc(name_len, GFP_ATOMIC);
+		if (!name)
+			return NULL;
+		snprintf(name, name_len, "%s %s", prefix, long_name);
+
+		template.name = name;
+	} else {
+		template.name = long_name;
+	}
+	kcontrol = snd_ctl_new1(&template, data);
+	kfree(name);
+
+	return kcontrol;
+}
 EXPORT_SYMBOL_GPL(snd_soc_cnew);
+
+/**
+ * snd_soc_add_controls - add an array of controls to a codec.
+ * Convienience function to add a list of controls. Many codecs were
+ * duplicating this code.
+ *
+ * @codec: codec to add controls to
+ * @controls: array of controls to add
+ * @num_controls: number of elements in the array
+ *
+ * Return 0 for success, else error.
+ */
+int snd_soc_add_controls_1(struct snd_soc_codec *codec,
+	const struct snd_kcontrol_new *controls, int num_controls)
+{
+	struct snd_card *card = codec->card->snd_card;
+	int err, i;
+	for (i = 0; i < num_controls; i++) {
+		const struct snd_kcontrol_new *control = &controls[i];
+		err = snd_ctl_add(card, snd_soc_cnew(control, codec,
+						     control->name,
+						     codec->name_prefix));
+		if (err < 0) {
+			dev_err(codec->dev, "%s: Failed to add %s: %d\n",
+				codec->name, control->name, err);
+			return err;
+		}
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(snd_soc_add_controls_1);
 
 static int snd_soc_add_controls(struct snd_card *card, struct device *dev,
 	const struct snd_kcontrol_new *controls, int num_controls,
@@ -5022,3 +5086,4 @@ MODULE_AUTHOR("Liam Girdwood, lrg@slimlogic.co.uk");
 MODULE_DESCRIPTION("ALSA SoC Core");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:soc-audio");
+

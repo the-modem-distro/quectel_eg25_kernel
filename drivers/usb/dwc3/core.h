@@ -881,6 +881,7 @@ struct dwc3 {
 	u32			num_event_buffers;
 	u32			num_normal_event_buffers;
 	u32			num_gsi_event_buffers;
+	u32			core_id;
 
 	u32			u1;
 	u32			u1u2;
@@ -947,6 +948,7 @@ struct dwc3 {
 	unsigned		pullups_connected:1;
 	unsigned		resize_fifos:1;
 	unsigned		setup_packet_pending:1;
+	unsigned		start_config_issued:1;
 	unsigned		three_stage_setup:1;
 	unsigned		is_drd:1;
 
@@ -982,6 +984,8 @@ struct dwc3 {
 	unsigned                irq_completion_time[MAX_INTR_STATS];
 	unsigned                irq_event_count[MAX_INTR_STATS];
 	unsigned                irq_dbg_index;
+
+	unsigned long		l1_remote_wakeup_cnt;
 
 	wait_queue_head_t	wait_linkstate;
 	void			*dwc_ipc_log_ctxt;

@@ -19,7 +19,7 @@
 #include <linux/timer.h>
 #include "f_gsi.h"
 #include "rndis.h"
-#include "../debug.h"
+#include "debug.h"
 
 static unsigned int gsi_in_aggr_size;
 module_param(gsi_in_aggr_size, uint, S_IRUGO | S_IWUSR);
@@ -873,6 +873,7 @@ static void ipa_data_path_enable(struct gsi_data_port *d_port)
 	usb_gsi_ep_op(d_port->in_ep, (void *)&block_db,
 				GSI_EP_OP_SET_CLR_BLOCK_DBL);
 
+	/* GSI channel DBL address for USB IN endpoint */
 	dbl_register_addr = gsi->d_port.in_db_reg_phs_addr_msb;
 	dbl_register_addr = dbl_register_addr << 32;
 	dbl_register_addr =
@@ -882,11 +883,18 @@ static void ipa_data_path_enable(struct gsi_data_port *d_port)
 	req.buf_base_addr = &dbl_register_addr;
 
 	req.num_bufs = gsi->d_port.in_request.num_bufs;
-	usb_gsi_ep_op(gsi->d_port.in_ep, &req, GSI_EP_OP_RING_IN_DB);
+	usb_gsi_ep_op(gsi->d_port.in_ep, &req, GSI_EP_OP_RING_DB);
 
 	if (gsi->d_port.out_ep) {
-		usb_gsi_ep_op(gsi->d_port.out_ep, &gsi->d_port.out_request,
-			GSI_EP_OP_UPDATEXFER);
+		/* GSI channel DBL address for USB OUT endpoint */
+		dbl_register_addr = gsi->d_port.out_db_reg_phs_addr_msb;
+		dbl_register_addr = dbl_register_addr << 32;
+		dbl_register_addr = dbl_register_addr |
+					gsi->d_port.out_db_reg_phs_addr_lsb;
+		/* use temp request to pass 64 bit dbl reg addr and num_bufs */
+		req.buf_base_addr = &dbl_register_addr;
+		req.num_bufs = gsi->d_port.out_request.num_bufs;
+		usb_gsi_ep_op(gsi->d_port.out_ep, &req, GSI_EP_OP_RING_DB);
 	}
 }
 
@@ -1438,7 +1446,7 @@ gsi_ctrl_dev_read(struct file *fp, char __user *buf, size_t count, loff_t *pos)
 	log_event_dbg("%s: cpkt size:%d", __func__, cpkt->len);
 	if (qti_packet_debug)
 		print_hex_dump(KERN_DEBUG, "READ:", DUMP_PREFIX_OFFSET, 16, 1,
-			cpkt->buf, min_t(int, 30, cpkt->len), false);
+			buf, min_t(int, 30, cpkt->len), false);
 
 	ret = copy_to_user(buf, cpkt->buf, cpkt->len);
 	if (ret) {
@@ -1511,7 +1519,7 @@ static ssize_t gsi_ctrl_dev_write(struct file *fp, const char __user *buf,
 	c_port->copied_from_modem++;
 	if (qti_packet_debug)
 		print_hex_dump(KERN_DEBUG, "WRITE:", DUMP_PREFIX_OFFSET, 16, 1,
-			cpkt->buf, min_t(int, 30, count), false);
+			buf, min_t(int, 30, count), false);
 
 	spin_lock_irqsave(&c_port->lock, flags);
 	list_add_tail(&cpkt->list, &c_port->cpkt_resp_q);
@@ -2014,13 +2022,6 @@ static void gsi_ctrl_notify_resp_complete(struct usb_ep *ep,
 			event->bNotificationType, req->status);
 		/* FALLTHROUGH */
 	case 0:
-		/*
-		  * handle multiple pending resp available
-		  * notifications by queuing same until we're done,
-		  * rest of the notification require queuing new
-		  * request.
-		  */
-		gsi_ctrl_send_notification(gsi);
 		break;
 	}
 }
@@ -2115,6 +2116,14 @@ static void gsi_ctrl_reset_cmd_complete(struct usb_ep *ep,
 	gsi_ctrl_send_cpkt_tomodem(gsi, req->buf, 0);
 }
 
+static void gsi_ctrl_send_response_complete(struct usb_ep *ep,
+		struct usb_request *req)
+{
+	struct f_gsi *gsi = req->context;
+
+	gsi_ctrl_send_notification(gsi);
+}
+
 static int
 gsi_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 {
@@ -2200,6 +2209,8 @@ gsi_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 		memcpy(req->buf, cpkt->buf, value);
 		gsi_ctrl_pkt_free(cpkt);
 
+		req->complete = gsi_ctrl_send_response_complete;
+		req->context = gsi;
 		log_event_dbg("copied encap_resp %d bytes",
 			value);
 		break;
@@ -2300,7 +2311,11 @@ static int gsi_get_alt(struct usb_function *f, unsigned intf)
 {
 	struct f_gsi *gsi = func_to_gsi(f);
 
-	if (intf == gsi->ctrl_id)
+	/* RNDIS, RMNET and DPL only support alt 0*/
+	if (intf == gsi->ctrl_id ||
+			gsi->prot_id == IPA_USB_RNDIS ||
+			gsi->prot_id == IPA_USB_RMNET ||
+			gsi->prot_id == IPA_USB_DIAG)
 		return 0;
 	else if (intf == gsi->data_id)
 		return gsi->data_interface_up;
@@ -3077,7 +3092,7 @@ static int gsi_bind(struct usb_configuration *c, struct usb_function *f)
 		info.in_req_num_buf = num_in_bufs;
 		gsi->d_port.out_aggr_size = GSI_ECM_AGGR_SIZE;
 		info.out_req_buf_len = GSI_OUT_ECM_BUF_LEN;
-		info.out_req_num_buf = GSI_ECM_NUM_OUT_BUFFERS;
+		info.out_req_num_buf = num_out_bufs;
 		info.notify_buf_len = GSI_CTRL_NOTIFY_BUFF_LEN;
 
 		/* export host's Ethernet address in CDC format */

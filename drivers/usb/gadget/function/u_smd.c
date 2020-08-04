@@ -30,6 +30,74 @@
 
 #include "u_serial.h"
 
+#define QUECTEL_SLEEP_CTRL
+
+#ifdef QUECTEL_SLEEP_CTRL
+extern bool quectel_otg_resume;
+#endif
+
+#ifndef CONFIG_QUECTEL_ESCAPE_FEATURE
+#define CONFIG_QUECTEL_ESCAPE_FEATURE
+#endif
+
+#define QUECTEL_SECOND_USB_AT_PORT
+
+//#define QUECTEL_ESCAPE_FUNC_DBG_CTL
+
+#ifdef CONFIG_QUECTEL_ESCAPE_FEATURE
+
+#include <linux/remote_spinlock.h>
+
+#define QUECTEL_ESCAPE_DETECTED       43
+#define QUECTEL_ESCAPE_UNDETECTED     0
+
+#define MODEM_MODE_CMD			0
+
+#ifdef QUECTEL_SECOND_USB_AT_PORT
+
+#define MODEM_MODE_AT_DATA		2  //AT PORT
+#define MODEM_MODE_MODEM_DATA   1  //Modem PORT
+
+#else
+
+#define MODEM_MODE_AT_DATA		1  //AT PORT
+#define MODEM_MODE_MODEM_DATA           2  //Modem PORT
+
+#endif
+
+typedef struct quectel_escape
+{
+    unsigned int  smem_escape_spinlock;
+    unsigned char escape;   
+}QUECTEL_ESCAPE_T;
+
+QUECTEL_ESCAPE_T *quectel_escape_addr = NULL;
+
+#define SMEM_SPINLOCK_SMEM_ALLOC       "S:3"
+static remote_spinlock_t remote_spinlock;
+static int spinlocks_initialized = 0;
+
+struct timer_list escape_timer;
+bool escape_ok=false;
+int escape_wait = 0;
+bool escape_check=false;
+unsigned long LastDataTime = 0;
+char *escape_buf = NULL;
+
+volatile int q_modemmode = MODEM_MODE_CMD; //default cmd mode
+volatile int q_linuxmode = MODEM_MODE_CMD; //default cmd mode
+volatile int q_current_mode = MODEM_MODE_AT_DATA;
+
+struct quectel_escape_work
+{
+	bool dtr_flag;
+    struct gsmd_port *port;
+    struct work_struct qescape_work;
+};
+struct quectel_escape_work qescape;
+
+#endif
+
 #define SMD_RX_QUEUE_SIZE		8
 #define SMD_RX_BUF_SIZE			2048
 
@@ -47,6 +115,16 @@ struct smd_port_info {
 	unsigned long		flags;
 };
 
+#ifdef  QUECTEL_SECOND_USB_AT_PORT
+struct smd_port_info smd_pi[SMD_N_PORTS] = {
+	{
+		.name = "DATA11",
+	},
+	{
+		.name = "DS", 
+	},
+};
+#else
 struct smd_port_info smd_pi[SMD_N_PORTS] = {
 	{
 		.name = "DS",
@@ -55,6 +133,7 @@ struct smd_port_info smd_pi[SMD_N_PORTS] = {
 		.name = "UNUSED",
 	},
 };
+#endif
 
 struct gsmd_port {
 	unsigned		port_num;
@@ -209,6 +288,87 @@ start_rx_end:
 	spin_unlock_irqrestore(&port->port_lock, flags);
 }
 
+#ifdef CONFIG_QUECTEL_ESCAPE_FEATURE
+
+static void qescape_handle(struct work_struct *work)
+{
+	unsigned long flags = 0;
+
+    struct quectel_escape_work *qescape_t = container_of(work, struct quectel_escape_work,qescape_work);
+
+    if(!qescape_t->dtr_flag)
+    {
+        quectel_escape_addr = smem_find(SMEM_ID_VENDOR0,sizeof(QUECTEL_ESCAPE_T),SMEM_MODEM,0);
+
+        if (spinlocks_initialized)
+        {
+            remote_spin_lock_irqsave(&remote_spinlock, flags);
+        }
+        
+		if(quectel_escape_addr)
+        {
+			quectel_escape_addr->escape = QUECTEL_ESCAPE_DETECTED;
+		}
+        
+		if (spinlocks_initialized)
+        {
+            remote_spin_unlock_irqrestore(&remote_spinlock, flags);
+        }
+
+		q_modemmode = MODEM_MODE_CMD;
+	}
+	return;
+}
+
+void escape_timer_expire(unsigned long data)
+{
+	escape_check = false;
+	qescape.dtr_flag = false;
+
+    printk("+++ detected ok\n");
+
+    if(MODEM_MODE_CMD != q_linuxmode && q_linuxmode == q_current_mode)
+    {
+        q_linuxmode = MODEM_MODE_CMD;
+        q_current_mode = MODEM_MODE_CMD;
+	}
+    
+	schedule_work(&qescape.qescape_work);
+	del_timer(&escape_timer);
+	return;
+}
+
+void escape_timer_start(struct gsmd_port *port)
+{
+    init_timer(&(escape_timer));
+    escape_timer.function = escape_timer_expire;
+    escape_timer.expires = jiffies + HZ;
+    qescape.port = port;
+    add_timer(&escape_timer);
+
+    return;
+}
+
+inline char* kmalloc_escape_buf(char *packet,unsigned int *size,unsigned int exlen)
+{
+	unsigned int len = *size;
+
+	escape_buf = kmalloc(len + exlen,GFP_ATOMIC);
+
+    memset(escape_buf,0,len + exlen);
+    memcpy(&escape_buf[exlen],packet,len);
+
+    *size += exlen;
+    
+	do
+    {
+        escape_buf[exlen--]='+';
+	}while(exlen > 0);
+    
+	return escape_buf;
+}
+#endif
+
 static void gsmd_rx_push(struct work_struct *w)
 {
 	struct gsmd_port *port = container_of(w, struct gsmd_port, push);
@@ -255,6 +415,131 @@ static void gsmd_rx_push(struct work_struct *w)
 				packet += n;
 				size -= n;
 			}
+            
+#ifdef CONFIG_QUECTEL_ESCAPE_FEATURE
+			if(port->port_num)
+            {
+                q_current_mode = MODEM_MODE_MODEM_DATA;
+            }
+			else
+            {
+                q_current_mode = MODEM_MODE_AT_DATA;
+            }
+#ifdef QUECTEL_ESCAPE_FUNC_DBG_CTL	
+            printk("[Max][printk] port=%p,port_num=%d,q_modemmode=%d, q_current_mode=%d,q_linuxmode=%d,escape_wait=%d,escape_ok=%d,size=%d\n",port, port->port_num, q_modemmode,q_current_mode,q_linuxmode,escape_wait,escape_ok,size);  
+#endif			
+			if(((MODEM_MODE_CMD != q_modemmode && q_modemmode == q_current_mode) \
+			    || (MODEM_MODE_CMD != q_linuxmode && q_linuxmode == q_current_mode)))
+			{
+				if(escape_wait == 1)
+				{
+					if(size == escape_wait && packet[0] =='+') 
+                    {
+                        escape_ok = true;
+                    }
+					else
+					{
+						escape_ok = false;
+                        escape_wait = 0;
+						packet=kmalloc_escape_buf(packet,&size,2);
+					}
+				}				
+				else if(escape_wait == 2)
+				{
+					if(size == escape_wait && packet[0] =='+' && packet[1] =='+')
+                    {
+						escape_ok = true;
+                    }
+					else if(size == 1 && packet[0] =='+') 
+					{
+						escape_wait = 1;
+						port->nbytes_tomodem += size;
+                        port->n_read = 0;
+                        list_move(&req->list, &port->read_pool);
+                        goto rx_push_end;
+					}
+					else
+					{
+						escape_ok = false;
+                        escape_wait = 0;
+						packet=kmalloc_escape_buf(packet,&size,1);
+                    }
+                }
+				else
+                {
+				#ifdef QUECTEL_ESCAPE_FUNC_DBG_CTL
+					{
+						int  i = 0;
+						bool bRet = (bool)0;
+
+						bRet = time_after(jiffies,LastDataTime+50);
+						printk("[Max][CodeFlag] time_after(LastDataTime+50)=%d\n",bRet);
+						bRet = time_after(jiffies,LastDataTime+HZ);
+						printk("[Max][CodeFlag] time_after(LastDataTime+HZ)=%d\n",bRet);
+
+						for(i=0; i<10 && i<size; i++)
+						{
+							printk("[Max][CodeFlag] [%c,0x%X]",packet[i],packet[i]);
+						}
+						if(size > 0)
+						{
+							printk("\n\n");
+						}
+					}
+				#endif
+
+                    if(size == 3 && !escape_ok && packet[0] =='+' && packet[1] =='+' && packet[2] =='+' && time_after(jiffies,LastDataTime + 50))
+                    {
+						printk("[Max][CodeFlag] size = 3 && detect +++\n");
+                        escape_ok = true;
+                    }
+                    else if(size == 2 && !escape_ok && packet[0] =='+' && packet[1] =='+' && time_after(jiffies,LastDataTime + HZ))
+                    {
+						printk("[Max][CodeFlag] size = 2 && detect + +\n");
+                        escape_wait = 1;
+                        port->nbytes_tomodem += size;
+                        port->n_read = 0;
+                        list_move(&req->list, &port->read_pool);
+                        goto rx_push_end;
+                     }
+                    else if(size == 1 && !escape_ok && packet[0] =='+' && time_after(jiffies,LastDataTime + HZ))
+                    {
+						printk("[Max][CodeFlag] size = 1 && detect +\n");
+                        escape_wait = 2;
+                        //FistEscapeTime = jiffies;
+                        port->nbytes_tomodem += size;
+                        port->n_read = 0;
+                        list_move(&req->list, &port->read_pool);
+                        goto rx_push_end;
+                    }
+				}
+
+				if(escape_ok)
+				{
+                    escape_ok = false;
+					escape_wait = 0;
+					escape_check = true;
+					printk("+++ detected,wait 1s\n");
+					escape_timer_start(port);
+
+					port->nbytes_tomodem += size;
+                    port->n_read = 0;
+					#ifdef CONFIG_QUECTEL_ESCAPE_FEATURE
+					LastDataTime = jiffies;
+					#endif
+                    list_move(&req->list, &port->read_pool);
+                    goto rx_push_end;
+				}
+                
+				if(escape_check && time_before(jiffies,LastDataTime + HZ))
+                {
+                    printk("escape time not enough\n");
+					escape_check = false;
+					del_timer(&escape_timer);
+                    packet=kmalloc_escape_buf(packet,&size,3);
+                }
+			}
+#endif
 
 			count = smd_write(pi->ch, packet, size);
 			if (count < 0) {
@@ -269,6 +554,9 @@ static void gsmd_rx_push(struct work_struct *w)
 			}
 
 			port->nbytes_tomodem += count;
+		#ifdef CONFIG_QUECTEL_ESCAPE_FEATURE
+			LastDataTime = jiffies;
+		#endif
 		}
 
 		port->n_read = 0;
@@ -321,6 +609,13 @@ static void gsmd_tx_pull(struct work_struct *w)
 	func = &port->port_usb->func;
 	gadget = func->config->cdev->gadget;
 	if (port->is_suspended) {
+
+#ifdef QUECTEL_SLEEP_CTRL	
+		if (quectel_otg_resume == false)
+		{
+			goto tx_pull_end;
+		}
+#endif
 		spin_unlock_irq(&port->port_lock);
 		if ((gadget->speed == USB_SPEED_SUPER) &&
 		    (func->func_is_suspended))
@@ -623,6 +918,12 @@ static void gsmd_connect_work(struct work_struct *w)
 					__func__, pi->name, ret);
 		}
 	}
+	//will.shao, for usb suspend&resume, begin
+	else
+	{
+		port->is_suspended = false;
+	}
+	//will.shao, end
 }
 
 static void gsmd_disconnect_work(struct work_struct *w)
@@ -882,6 +1183,10 @@ static int gsmd_port_alloc(int portno, struct usb_cdc_line_coding *coding)
 	INIT_DELAYED_WORK(&port->connect_work, gsmd_connect_work);
 	INIT_WORK(&port->disconnect_work, gsmd_disconnect_work);
 
+#ifdef CONFIG_QUECTEL_ESCAPE_FEATURE
+    INIT_WORK(&qescape.qescape_work, qescape_handle);
+#endif
+
 	smd_ports[portno].port = port;
 	pdrv = &smd_ports[portno].pdrv;
 	pdrv->probe = gsmd_ch_probe;
@@ -1025,6 +1330,18 @@ int gsmd_setup(struct usb_gadget *g, unsigned count)
 			goto free_smd_ports;
 		}
 	}
+    
+#ifdef CONFIG_QUECTEL_ESCAPE_FEATURE
+     i = remote_spin_lock_init(&remote_spinlock, SMEM_SPINLOCK_SMEM_ALLOC);
+     if (i)
+     {
+        pr_err("%s: remote spinlock init failed %d\n", __func__, i);
+     }
+     else
+     {
+        spinlocks_initialized = 1;
+     }
+#endif
 
 	gsmd_debugfs_init();
 

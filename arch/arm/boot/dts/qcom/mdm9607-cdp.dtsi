@@ -31,23 +31,47 @@
 &soc {
 };
 
-&blsp1_uart5 {
+/* will.shao, add uart2 for debug uart */
+&blsp1_uart2 {
 	status = "ok";
 	pinctrl-names = "default";
-	pinctrl-0 = <&uart_console_sleep>;
+	pinctrl-0 = <&blsp1_uart2_sleep>;
 };
 
 &i2c_4 {
 	status = "ok";
 };
 
-&spi_1 {
+/* will.shao, remove uart5  */
+&blsp1_uart5 {
+	status = "disabled";	//disabled uart5, if need, user can enable it, by gale
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart_console_sleep>;
+};
+
+/* UART6: add gpio20,21 uart6 by gale */
+&blsp1_uart6 {
+	status = "disabled";
+	pinctrl-names = "default";
+	pinctrl-0 = <&blsp1_uart6_active>;
+};
+
+/* disable mi2s: gpio20,21,22,23 for uart6 by gale */
+&mi2s_prim {
+	status =  "disabled";
+};
+
+//culle, add spi6
+&spi_6 {
 	status = "ok";
 };
 
+
+/* will.shao, remove uart3
 &blsp1_uart3 {
 	status = "ok";
 };
+*/
 
 &qnand_1 {
 	status = "ok";
@@ -57,14 +81,17 @@
 	status = "ok";
 };
 
+//maxcodeflag20160329
 /* MPP pin 2 configs for SMB358 interrupt line */
 &pm8019_mpps {
 	mpp@a100 {
 		qcom,mode = <0>;	/* Digital input */
-		qcom,vin-sel = <3>;	/* 1.8V (L11) */
+		qcom,vin-sel = <0>;	/* 3:1.8V (L11) */
 		qcom,src-sel = <0>;	/* QPNP_PIN_SEL_FUNC_CONSTANT */
-		qcom,pull = <2>;	/* PULL UP 10KOHM */
+		/*qcom,pull = <2>;	*//* PULL UP 10KOHM */ //modify by max.tang for VBUS detect
+		qcom,pull = <1>; /*No Pull*/
 		qcom,master-en = <1>;
+        status = "ok";
 	};
 };
 
@@ -118,13 +145,13 @@
 
 /* MPP pin 4 configs for SGMII */
 &pm8019_mpps {
-	mpp@a300 { /* MPP 4 */
-		qcom,mode = <1>;		/* Digital output */
-		qcom,vin-sel = <2>;		/* 1.8V */
-		qcom,src-sel = <0>;		/* Constant */
-		qcom,master-en = <1>;		/* Enable GPIO */
-		status = "okay";
-	};
+	//mpp@a300 { /* MPP 4 */
+	//	qcom,mode = <1>;		/* Digital output */
+	//	qcom,vin-sel = <2>;		/* 1.8V */
+	//	qcom,src-sel = <0>;		/* Constant */
+	//	qcom,master-en = <1>;		/* Enable GPIO */
+	//	status = "disabled";		/* modify by gale 2017-08-22, MPP4 for adc function */
+	//};
 };
 
 &i2c_4 {
@@ -159,10 +186,12 @@
 	status = "ok";
 };
 
+//2016-01-22, comment out by jun wu, no smb_otg_vreg useid 
+/*
 &usb_otg {
 	vbus_otg-supply = <&smb358_otg_vreg>;
 };
-
+*/
 &hsic {
 	status = "ok";
 };

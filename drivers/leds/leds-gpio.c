@@ -268,6 +268,10 @@ static int gpio_led_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, priv);
 
+	for (i = 0; i < priv->num_leds; i++)
+	{
+		gpio_free(priv->leds[i].gpio);
+	};
 	return 0;
 }
 

@@ -40,18 +40,13 @@
 #define DRV_NAME "ipa"
 #define NAT_DEV_NAME "ipaNatTable"
 #define IPA_COOKIE 0x57831603
-#define IPA_RT_RULE_COOKIE 0x57831604
-#define IPA_RT_TBL_COOKIE 0x57831605
-#define IPA_FLT_COOKIE 0x57831606
-#define IPA_HDR_COOKIE 0x57831607
-#define IPA_PROC_HDR_COOKIE 0x57831608
-
 #define MTU_BYTE 1500
 
 #define IPA_EP_NOT_ALLOCATED (-1)
 #define IPA3_MAX_NUM_PIPES 31
 #define IPA_SYS_DESC_FIFO_SZ 0x800
 #define IPA_SYS_TX_DATA_DESC_FIFO_SZ 0x1000
+#define IPA_COMMON_EVENT_RING_SIZE 0x7C00
 #define IPA_LAN_RX_HEADER_LENGTH (2)
 #define IPA_QMAP_HEADER_LENGTH (4)
 #define IPA_DL_CHECKSUM_LENGTH (8)
@@ -87,18 +82,6 @@
 #define IPAERR(fmt, args...) \
 	do { \
 		pr_err(DRV_NAME " %s:%d " fmt, __func__, __LINE__, ## args);\
-		if (ipa3_ctx) { \
-			IPA_IPC_LOGGING(ipa3_ctx->logbuf, \
-				DRV_NAME " %s:%d " fmt, ## args); \
-			IPA_IPC_LOGGING(ipa3_ctx->logbuf_low, \
-				DRV_NAME " %s:%d " fmt, ## args); \
-		} \
-	} while (0)
-
-#define IPAERR_RL(fmt, args...) \
-	do { \
-		pr_err_ratelimited(DRV_NAME " %s:%d " fmt, __func__,\
-		__LINE__, ## args);\
 		if (ipa3_ctx) { \
 			IPA_IPC_LOGGING(ipa3_ctx->logbuf, \
 				DRV_NAME " %s:%d " fmt, ## args); \
@@ -272,8 +255,8 @@ struct ipa_smmu_cb_ctx {
  */
 struct ipa3_flt_entry {
 	struct list_head link;
-	u32 cookie;
 	struct ipa_flt_rule rule;
+	u32 cookie;
 	struct ipa3_flt_tbl *tbl;
 	struct ipa3_rt_tbl *rt_tbl;
 	u32 hw_len;
@@ -301,13 +284,13 @@ struct ipa3_flt_entry {
  */
 struct ipa3_rt_tbl {
 	struct list_head link;
-	u32 cookie;
 	struct list_head head_rt_rule_list;
 	char name[IPA_RESOURCE_NAME_MAX];
 	u32 idx;
 	u32 rule_cnt;
 	u32 ref_cnt;
 	struct ipa3_rt_tbl_set *set;
+	u32 cookie;
 	bool in_sys[IPA_RULE_TYPE_MAX];
 	u32 sz[IPA_RULE_TYPE_MAX];
 	struct ipa_mem_buffer curr_mem[IPA_RULE_TYPE_MAX];
@@ -339,7 +322,6 @@ struct ipa3_rt_tbl {
  */
 struct ipa3_hdr_entry {
 	struct list_head link;
-	u32 cookie;
 	u8 hdr[IPA_HDR_MAX_SIZE];
 	u32 hdr_len;
 	char name[IPA_RESOURCE_NAME_MAX];
@@ -349,6 +331,7 @@ struct ipa3_hdr_entry {
 	dma_addr_t phys_base;
 	struct ipa3_hdr_proc_ctx_entry *proc_ctx;
 	struct ipa_hdr_offset_entry *offset_entry;
+	u32 cookie;
 	u32 ref_cnt;
 	int id;
 	u8 is_eth2_ofst_valid;
@@ -397,10 +380,10 @@ struct ipa3_hdr_proc_ctx_offset_entry {
  */
 struct ipa3_hdr_proc_ctx_entry {
 	struct list_head link;
-	u32 cookie;
 	enum ipa_hdr_proc_type type;
 	struct ipa3_hdr_proc_ctx_offset_entry *offset_entry;
 	struct ipa3_hdr_entry *hdr;
+	u32 cookie;
 	u32 ref_cnt;
 	int id;
 	bool user_deleted;
@@ -462,8 +445,8 @@ struct ipa3_flt_tbl {
  */
 struct ipa3_rt_entry {
 	struct list_head link;
-	u32 cookie;
 	struct ipa_rt_rule rule;
+	u32 cookie;
 	struct ipa3_rt_tbl *tbl;
 	struct ipa3_hdr_entry *hdr;
 	struct ipa3_hdr_proc_ctx_entry *proc_ctx;
@@ -669,10 +652,12 @@ struct ipa3_repl_ctx {
  */
 struct ipa3_sys_context {
 	u32 len;
+	u32 len_pending_xfer;
 	struct sps_register_event event;
 	atomic_t curr_polling_state;
 	struct delayed_work switch_to_intr_work;
 	enum ipa3_sys_pipe_policy policy;
+	bool use_comm_evt_ring;
 	int (*pyld_hdlr)(struct sk_buff *skb, struct ipa3_sys_context *sys);
 	struct sk_buff * (*get_skb)(unsigned int len, gfp_t flags);
 	void (*free_skb)(struct sk_buff *skb);
@@ -697,6 +682,7 @@ struct ipa3_sys_context {
 	struct list_head head_desc_list;
 	struct list_head rcycl_list;
 	spinlock_t spinlock;
+	struct hrtimer db_timer;
 	struct workqueue_struct *wq;
 	struct workqueue_struct *repl_wq;
 	struct ipa3_status_stats *status_stat;
@@ -786,6 +772,7 @@ struct ipa3_dma_xfer_wrapper {
  * @user1: cookie1 for above callback
  * @user2: cookie2 for above callback
  * @xfer_done: completion object for sync completion
+ * @skip_db_ring: specifies whether GSI doorbell should not be rang
  */
 struct ipa3_desc {
 	enum ipa3_desc_type type;
@@ -799,6 +786,7 @@ struct ipa3_desc {
 	void *user1;
 	int user2;
 	struct completion xfer_done;
+	bool skip_db_ring;
 };
 
 /**
@@ -1090,6 +1078,11 @@ struct ipa3_ready_cb_info {
 	void *user_data;
 };
 
+struct ipa_dma_task_info {
+	struct ipa_mem_buffer mem;
+	struct ipahal_imm_cmd_pyld *cmd_pyld;
+};
+
 /**
  * struct ipa3_context - IPA context
  * @class: pointer to the struct class
@@ -1242,6 +1235,8 @@ struct ipa3_context {
 	struct workqueue_struct *transport_power_mgmt_wq;
 	bool tag_process_before_gating;
 	struct ipa3_transport_pm transport_pm;
+	unsigned long gsi_evt_comm_hdl;
+	u32 gsi_evt_comm_ring_rem;
 	u32 clnt_hdl_cmd;
 	u32 clnt_hdl_data_in;
 	u32 clnt_hdl_data_out;
@@ -1275,6 +1270,7 @@ struct ipa3_context {
 	u32 curr_ipa_clk_rate;
 	bool q6_proxy_clk_vote_valid;
 	u32 ipa_num_pipes;
+	dma_addr_t pkt_init_imm[IPA3_MAX_NUM_PIPES];
 
 	struct ipa3_wlan_comm_memb wc_memb;
 
@@ -1312,6 +1308,7 @@ struct ipa3_context {
 	struct ipa3_smp2p_info smp2p_info;
 	u32 ipa_tz_unlock_reg_num;
 	struct ipa_tz_unlock_reg_info *ipa_tz_unlock_reg;
+	struct ipa_dma_task_info dma_task_info;
 };
 
 /**
@@ -1406,6 +1403,8 @@ struct ipa3_mem_partition {
 	u16 modem_comp_decomp_size;
 	u16 modem_ofst;
 	u16 modem_size;
+	u16 uc_event_ring_ofst;
+	u16 uc_event_ring_size;
 	u16 apps_v4_flt_hash_ofst;
 	u16 apps_v4_flt_hash_size;
 	u16 apps_v4_flt_nhash_ofst;
@@ -1685,6 +1684,8 @@ int ipa3_setup_uc_ntn_pipes(struct ipa_ntn_conn_in_params *in,
 		ipa_notify_cb notify, void *priv, u8 hdr_len,
 		struct ipa_ntn_conn_out_params *outp);
 int ipa3_tear_down_uc_offload_pipes(int ipa_ep_idx_ul, int ipa_ep_idx_dl);
+int ipa3_ntn_uc_reg_rdyCB(void (*ipauc_ready_cb)(void *), void *priv);
+void ipa3_ntn_uc_dereg_rdyCB(void);
 
 /*
  * To retrieve doorbell physical address of
@@ -1901,6 +1902,8 @@ int ipa3_teth_bridge_driver_init(void);
 void ipa3_lan_rx_cb(void *priv, enum ipa_dp_evt_type evt, unsigned long data);
 
 int _ipa_init_sram_v3_0(void);
+int _ipa_init_sram_v3_5(void);
+
 int _ipa_init_hdr_v3_0(void);
 int _ipa_init_rt4_v3(void);
 int _ipa_init_rt6_v3(void);
@@ -2051,4 +2054,7 @@ int ipa3_tz_unlock_reg(struct ipa_tz_unlock_reg_info *reg_info, u16 num_regs);
 struct device *ipa3_get_pdev(void);
 void ipa3_enable_dcd(void);
 void ipa3_disable_prefetch(enum ipa_client_type client);
+int ipa3_alloc_common_event_ring(void);
+int ipa3_allocate_dma_task_for_gsi(void);
+void ipa3_free_dma_task_for_gsi(void);
 #endif /* _IPA3_I_H_ */

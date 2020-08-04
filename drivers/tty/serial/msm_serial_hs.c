@@ -3,7 +3,7 @@
  * MSM 7k High speed uart driver
  *
  * Copyright (c) 2008 Google Inc.
- * Copyright (c) 2007-2016, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2007-2017, The Linux Foundation. All rights reserved.
  * Modified: Nick Pelly <npelly@google.com>
  *
  * All source code in this file is licensed under the following license
@@ -76,6 +76,8 @@
 #define IPC_MSM_HS_LOG_DATA_PAGES 3
 #define UART_DMA_DESC_NR 8
 #define BUF_DUMP_SIZE 32
+
+#define QUECTEL_UART_SUSPEND
 
 /* If the debug_mask gets set to FATAL_LEV,
  * a fatal error has happened and further IPC logging
@@ -260,6 +262,12 @@ struct msm_hs_port {
 	void *ipc_msm_hs_log_ctxt;
 	void *ipc_msm_hs_pwr_ctxt;
 	int ipc_debug_mask;
+#ifdef QUECTEL_UART_SUSPEND
+	atomic_t wlock_count;
+	struct mutex wlock_mutex;
+	atomic_t startup_count;
+	struct wakeup_source serial_ws;
+#endif
 };
 
 static struct of_device_id msm_hs_match_table[] = {
@@ -390,6 +398,7 @@ static void msm_hs_clk_bus_unvote(struct msm_hs_port *msm_uport)
  /* Remove vote for resources when done */
 static void msm_hs_resource_unvote(struct msm_hs_port *msm_uport)
 {
+#ifndef QUECTEL_UART_SUSPEND
 	struct uart_port *uport = &(msm_uport->uport);
 	int rc = atomic_read(&msm_uport->resource_count);
 
@@ -402,11 +411,26 @@ static void msm_hs_resource_unvote(struct msm_hs_port *msm_uport)
 	atomic_dec(&msm_uport->resource_count);
 	pm_runtime_mark_last_busy(uport->dev);
 	pm_runtime_put_autosuspend(uport->dev);
+#else
+	int rc = 0;
+
+	mutex_lock(&msm_uport->wlock_mutex);
+	rc = atomic_read(&msm_uport->wlock_count);
+
+	if (rc <= 1) {
+		__pm_relax(&msm_uport->serial_ws);
+	}
+	if (rc > 0) {
+		atomic_dec(&msm_uport->wlock_count);
+	}
+	mutex_unlock(&msm_uport->wlock_mutex);
+#endif
 }
 
  /* Vote for resources before accessing them */
 static void msm_hs_resource_vote(struct msm_hs_port *msm_uport)
 {
+#ifndef QUECTEL_UART_SUSPEND
 	int ret;
 	struct uart_port *uport = &(msm_uport->uport);
 	ret = pm_runtime_get_sync(uport->dev);
@@ -417,6 +441,18 @@ static void msm_hs_resource_vote(struct msm_hs_port *msm_uport)
 		msm_hs_pm_resume(uport->dev);
 	}
 	atomic_inc(&msm_uport->resource_count);
+#else
+	struct uart_port *uport = &(msm_uport->uport);
+
+	mutex_lock(&msm_uport->wlock_mutex);
+	atomic_inc(&msm_uport->wlock_count);
+	__pm_stay_awake(&msm_uport->serial_ws);
+	mutex_unlock(&msm_uport->wlock_mutex);
+	
+	if (msm_uport->pm_state != MSM_HS_PM_ACTIVE) {
+		msm_hs_pm_resume(uport->dev);
+	}
+#endif
 }
 
 /* Check if the uport line number matches with user id stored in pdata.
@@ -729,6 +765,10 @@ static int msm_hs_remove(struct platform_device *pdev)
 
 	msm_uport->rx.buffer = NULL;
 	msm_uport->rx.rbuffer = 0;
+
+#ifdef QUECTEL_UART_SUSPEND
+	wakeup_source_trash(&msm_uport->serial_ws);
+#endif
 
 	destroy_workqueue(msm_uport->hsuart_wq);
 	mutex_destroy(&msm_uport->mtx);
@@ -1436,13 +1476,13 @@ static void msm_hs_submit_tx_locked(struct uart_port *uport)
 	hex_dump_ipc(msm_uport, tx->ipc_tx_ctxt, "Tx",
 			&tx_buf->buf[tx_buf->tail], (u64)src_addr, tx_count);
 	sps_pipe_handle = tx->cons.pipe_handle;
-	/* Queue transfer request to SPS */
-	ret = sps_transfer_one(sps_pipe_handle, src_addr, tx_count,
-				msm_uport, flags);
 
 	/* Set 1 second timeout */
 	mod_timer(&tx->tx_timeout_timer,
 		jiffies + msecs_to_jiffies(MSEC_PER_SEC));
+	/* Queue transfer request to SPS */
+	ret = sps_transfer_one(sps_pipe_handle, src_addr, tx_count,
+				msm_uport, flags);
 
 	MSM_HS_DBG("%s:Enqueue Tx Cmd, ret %d\n", __func__, ret);
 }
@@ -2316,6 +2356,7 @@ void msm_hs_resource_on(struct msm_hs_port *msm_uport)
 /* Request to turn off uart clock once pending TX is flushed */
 int msm_hs_request_clock_off(struct uart_port *uport)
 {
+#ifndef QUECTEL_UART_SUSPEND
 	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
 	int ret = 0;
 	int client_count = 0;
@@ -2351,11 +2392,16 @@ int msm_hs_request_clock_off(struct uart_port *uport)
 			client_count);
 exit_request_clock_off:
 	return ret;
+
+#else
+	return 0;
+#endif
 }
 EXPORT_SYMBOL(msm_hs_request_clock_off);
 
 int msm_hs_request_clock_on(struct uart_port *uport)
 {
+#ifndef QUECTEL_UART_SUSPEND
 	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
 	int client_count;
 	int ret = 0;
@@ -2386,6 +2432,9 @@ int msm_hs_request_clock_on(struct uart_port *uport)
 		atomic_set(&msm_uport->client_req_state, 0);
 exit_request_clock_on:
 	return ret;
+#else
+	return 0;
+#endif
 }
 EXPORT_SYMBOL(msm_hs_request_clock_on);
 
@@ -2733,6 +2782,9 @@ static int msm_hs_startup(struct uart_port *uport)
 	msm_hs_start_rx_locked(uport);
 
 	spin_unlock_irqrestore(&uport->lock, flags);
+#ifdef QUECTEL_UART_SUSPEND
+	atomic_set(&msm_uport->startup_count, 1);
+#endif
 
 	msm_hs_resource_unvote(msm_uport);
 	return 0;
@@ -3152,11 +3204,21 @@ static void msm_hs_pm_suspend(struct device *dev)
 
 	if (!msm_uport)
 		goto err_suspend;
+	
+#ifndef QUECTEL_UART_SUSPEND
 	mutex_lock(&msm_uport->mtx);
+#endif
 
+	dev_err(&pdev->dev, "enter sleep, msm_uport->obs: %d\n", msm_uport->obs);
 	client_count = atomic_read(&msm_uport->client_count);
+	msm_uport->pm_state = MSM_HS_PM_SUSPENDED;
+	msm_hs_resource_off(msm_uport);
+	obs_manage_irq(msm_uport, false);
+	msm_hs_clk_bus_unvote(msm_uport);
+
 	/* For OBS, don't use wakeup interrupt, set gpio to suspended state */
-	if (msm_uport->obs) {
+	//if (msm_uport->obs) {	//2018/04/27, change by Quinn.zhao, for main uart sleep pin contrl
+	if(1){
 		ret = pinctrl_select_state(msm_uport->pinctrl,
 			msm_uport->gpio_state_suspend);
 		if (ret)
@@ -3164,16 +3226,15 @@ static void msm_hs_pm_suspend(struct device *dev)
 				__func__);
 	}
 
-	msm_uport->pm_state = MSM_HS_PM_SUSPENDED;
-	msm_hs_resource_off(msm_uport);
-	obs_manage_irq(msm_uport, false);
-	msm_hs_clk_bus_unvote(msm_uport);
 	if (!atomic_read(&msm_uport->client_req_state))
 		enable_wakeup_interrupt(msm_uport);
 	LOG_USR_MSG(msm_uport->ipc_msm_hs_pwr_ctxt,
 		"%s: PM State Suspended client_count %d\n", __func__,
 								client_count);
+#ifndef QUECTEL_UART_SUSPEND
 	mutex_unlock(&msm_uport->mtx);
+#endif
+
 	return;
 err_suspend:
 	pr_err("%s(): invalid uport", __func__);
@@ -3198,6 +3259,16 @@ static int msm_hs_pm_resume(struct device *dev)
 		goto exit_pm_resume;
 	if (!atomic_read(&msm_uport->client_req_state))
 		disable_wakeup_interrupt(msm_uport);
+
+	/* For OBS, don't use wakeup interrupt, set gpio to active state */
+	if (msm_uport->obs) {
+		ret = pinctrl_select_state(msm_uport->pinctrl,
+				msm_uport->gpio_state_active);
+		if (ret)
+			MSM_HS_ERR("%s():Error selecting active state",
+				 __func__);
+	}
+
 	ret = msm_hs_clk_bus_vote(msm_uport);
 	if (ret) {
 		MSM_HS_ERR("%s:Failed clock vote %d\n", __func__, ret);
@@ -3208,8 +3279,10 @@ static int msm_hs_pm_resume(struct device *dev)
 	msm_uport->pm_state = MSM_HS_PM_ACTIVE;
 	msm_hs_resource_on(msm_uport);
 
+	dev_err(&pdev->dev, "resule from sleep, msm_uport->obs: %d\n", msm_uport->obs);
 	/* For OBS, don't use wakeup interrupt, set gpio to active state */
-	if (msm_uport->obs) {
+	//if (msm_uport->obs) {	//2018/04/27, change by Quinn.zhao, for main uart sleep pin contrl
+	if(1){
 		ret = pinctrl_select_state(msm_uport->pinctrl,
 			msm_uport->gpio_state_active);
 		if (ret)
@@ -3222,6 +3295,58 @@ static int msm_hs_pm_resume(struct device *dev)
 exit_pm_resume:
 	mutex_unlock(&msm_uport->mtx);
 	return ret;
+}
+
+static void quec_hs_pm_suspend(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct msm_hs_port *msm_uport = get_matching_hs_port(pdev);
+	int ret;
+
+	if (!msm_uport)
+		goto err_suspend;
+
+	dev_dbg(&pdev->dev, "resule from sleep, msm_uport->obs: %d\n", msm_uport->obs);
+	/* For OBS, don't use wakeup interrupt, set gpio to suspended state */
+	if (msm_uport->obs) {
+		ret = pinctrl_select_state(msm_uport->pinctrl,
+			msm_uport->gpio_state_suspend);
+		if (ret)
+			MSM_HS_ERR("%s(): Error selecting suspend state",
+				__func__);
+	}
+
+	obs_manage_irq(msm_uport, false);
+	return;
+err_suspend:
+	pr_err("%s(): invalid uport", __func__);
+	return;
+}
+
+static int quec_hs_pm_resume(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct msm_hs_port *msm_uport = get_matching_hs_port(pdev);
+	int ret;
+
+	if (!msm_uport)
+		goto err_resume;
+	obs_manage_irq(msm_uport, true);
+
+	dev_dbg(&pdev->dev, "resule from sleep, msm_uport->obs: %d\n", msm_uport->obs);
+	/* For OBS, don't use wakeup interrupt, set gpio to active state */
+	if (msm_uport->obs) {
+		ret = pinctrl_select_state(msm_uport->pinctrl,
+			msm_uport->gpio_state_active);
+		if (ret)
+			MSM_HS_ERR("%s(): Error selecting active state",
+				__func__);
+	}
+
+	return 0;
+err_resume:
+	pr_err("%s(): invalid uport", __func__);
+	return 0;
 }
 
 #ifdef CONFIG_PM
@@ -3246,8 +3371,13 @@ static int msm_hs_pm_sys_suspend_noirq(struct device *dev)
 	if (msm_uport->pm_state == MSM_HS_PM_ACTIVE) {
 		MSM_HS_WARN("%s:Fail Suspend.clk_cnt:%d,clnt_count:%d\n",
 				 __func__, clk_cnt, client_count);
+				 
+#ifndef QUECTEL_UART_SUSPEND
 		ret = -EBUSY;
 		goto exit_suspend_noirq;
+#else
+		msm_hs_pm_suspend(dev);
+#endif		
 	}
 
 	prev_pwr_state = msm_uport->pm_state;
@@ -3281,6 +3411,35 @@ static int msm_hs_pm_sys_resume_noirq(struct device *dev)
 	mutex_unlock(&msm_uport->mtx);
 	return 0;
 }
+
+#ifdef QUECTEL_UART_SUSPEND
+static int msm_hs_pm_sys_resume(struct device *dev)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct msm_hs_port *msm_uport = get_matching_hs_port(pdev);
+	int ret = 0;
+
+	if (atomic_read(&msm_uport->startup_count) > 0) {
+		ret = msm_hs_pm_resume(dev);
+	}
+	
+	return ret;
+}
+static int msm_serial_hs_suspend(struct device *dev)
+{
+	pr_err("%s(): jun test", __func__);
+	pinctrl_pm_select_sleep_state(dev); //add bu jun.wu for uart sleep
+	return 0;
+}
+
+static int msm_serial_hs_resume(struct device *dev)
+{
+	pr_err("%s(): jun test", __func__);
+	pinctrl_pm_select_default_state(dev);	//add by jun.wu for UART sleep \
+	return 0;
+}
+#endif
+
 #endif
 
 #ifdef CONFIG_PM_RUNTIME
@@ -3300,12 +3459,14 @@ static void  msm_serial_hs_rt_init(struct uart_port *uport)
 
 static int msm_hs_runtime_suspend(struct device *dev)
 {
+	pr_err("%s(): jun test", __func__);
 	msm_hs_pm_suspend(dev);
 	return 0;
 }
 
 static int msm_hs_runtime_resume(struct device *dev)
 {
+	pr_err("%s(): jun test", __func__);
 	return msm_hs_pm_resume(dev);
 }
 #else
@@ -3363,6 +3524,13 @@ static int msm_hs_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Memory allocation failed\n");
 		return -ENOMEM;
 	}
+
+#ifdef QUECTEL_UART_SUSPEND
+	msm_uport->pm_state = MSM_HS_PM_SUSPENDED;
+	atomic_set(&msm_uport->startup_count, 0);
+	atomic_set(&msm_uport->wlock_count, 0);
+	mutex_init(&msm_uport->wlock_mutex);
+#endif
 
 	msm_uport->uport.type = PORT_UNKNOWN;
 	uport = &msm_uport->uport;
@@ -3582,6 +3750,9 @@ static int msm_hs_probe(struct platform_device *pdev)
 		uport->line = pdata->userid;
 	ret = uart_add_one_port(&msm_hs_driver, uport);
 	if (!ret) {
+#ifdef QUECTEL_UART_SUSPEND
+		wakeup_source_init(&msm_uport->serial_ws, dev_name(&pdev->dev));
+#endif	
 		msm_hs_clk_bus_unvote(msm_uport);
 		msm_serial_hs_rt_init(uport);
 		return ret;
@@ -3723,6 +3894,7 @@ static void msm_hs_shutdown(struct uart_port *uport)
 	dma_unmap_single(uport->dev, msm_uport->tx.dma_base,
 			 UART_XMIT_SIZE, DMA_TO_DEVICE);
 
+#ifndef QUECTEL_UART_SUSPEND
 	msm_hs_resource_unvote(msm_uport);
 	rc = atomic_read(&msm_uport->resource_count);
 	if (rc) {
@@ -3730,6 +3902,12 @@ static void msm_hs_shutdown(struct uart_port *uport)
 		MSM_HS_WARN("%s(): removing extra vote\n", __func__);
 		msm_hs_resource_unvote(msm_uport);
 	}
+#else
+	atomic_set(&msm_uport->startup_count, 0);
+	msm_hs_pm_suspend(uport->dev);
+	atomic_set(&msm_uport->wlock_count, 0);
+	msm_hs_resource_unvote(msm_uport);
+#endif
 	if (atomic_read(&msm_uport->client_req_state)) {
 		MSM_HS_WARN("%s: Client clock vote imbalance\n", __func__);
 		atomic_set(&msm_uport->client_req_state, 0);
@@ -3753,11 +3931,23 @@ static void __exit msm_serial_hs_exit(void)
 }
 
 static const struct dev_pm_ops msm_hs_dev_pm_ops = {
+#ifdef QUECTEL_UART_SUSPEND
+	.runtime_suspend = NULL,
+	.runtime_resume = NULL,
+	.suspend = msm_serial_hs_suspend,
+	.resume = msm_serial_hs_resume,
+#else
 	.runtime_suspend = msm_hs_runtime_suspend,
 	.runtime_resume = msm_hs_runtime_resume,
+#endif
 	.runtime_idle = NULL,
 	.suspend_noirq = msm_hs_pm_sys_suspend_noirq,
 	.resume_noirq = msm_hs_pm_sys_resume_noirq,
+	
+#ifdef QUECTEL_UART_SUSPEND
+	.resume = msm_hs_pm_sys_resume,
+#endif
+
 };
 
 static struct platform_driver msm_serial_hs_platform_driver = {

@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2014, 2017,  The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -44,9 +44,9 @@ static ssize_t rsc_ops_write(struct file *fp, const char __user *user_buffer,
 {
 	char buf[MAX_MSG_BUFFER], rsc_type_str[6] = {}, rpm_set[8] = {},
 						key_str[6] = {};
-	int i, pos = -1, set = -1, nelems = -1;
+	int i, pos, set = -1, nelems;
 	char *cmp;
-	uint32_t rsc_type = 0, rsc_id = 0, key = 0, data = 0;
+	uint32_t rsc_type, rsc_id, key, data;
 	struct msm_rpm_request *req;
 
 	count = min(count, sizeof(buf) - 1);
@@ -55,12 +55,8 @@ static ssize_t rsc_ops_write(struct file *fp, const char __user *user_buffer,
 	buf[count] = '\0';
 	cmp = strstrip(buf);
 
-	if (sscanf(cmp, "%7s %5s %u %d %n", rpm_set, rsc_type_str,
-				&rsc_id, &nelems, &pos) != 4) {
-		pr_err("Invalid number of arguments passed\n");
-		goto err;
-	}
-
+	sscanf(cmp, "%7s %5s %u %d %n", rpm_set, rsc_type_str, &rsc_id,
+							&nelems, &pos);
 	if (strlen(rpm_set) > 6 || strlen(rsc_type_str) > 4) {
 		pr_err("Invalid value of set or resource type\n");
 		goto err;
@@ -88,11 +84,7 @@ static ssize_t rsc_ops_write(struct file *fp, const char __user *user_buffer,
 
 	for (i = 0; i < nelems; i++) {
 		cmp += pos;
-		if (sscanf(cmp, "%5s %n", key_str, &pos) != 1) {
-			pr_err("Invalid number of arguments passed\n");
-			goto err;
-		}
-
+		sscanf(cmp, "%5s %n", key_str, &pos);
 		if (strlen(key_str) > 4) {
 			pr_err("Key value cannot be more than 4 charecters");
 			goto err;
@@ -104,11 +96,7 @@ static ssize_t rsc_ops_write(struct file *fp, const char __user *user_buffer,
 		}
 
 		cmp += pos;
-		if (sscanf(cmp, "%u %n", &data, &pos) != 1) {
-			pr_err("Invalid number of arguments passed\n");
-			goto err;
-		}
-
+		sscanf(cmp, "%u %n", &data, &pos);
 		if (msm_rpm_add_kvp_data(req, key,
 				(void *)&data, sizeof(data)))
 			goto err_request;
