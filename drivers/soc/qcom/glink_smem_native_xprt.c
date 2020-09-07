@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2017, 2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -441,6 +441,8 @@ static int fifo_read(struct edge_info *einfo, void *_data, int len)
 	uint32_t fifo_size = einfo->rx_fifo_size;
 	uint32_t n;
 
+	if (read_index >= fifo_size || write_index >= fifo_size)
+		return 0;
 	while (len) {
 		ptr = einfo->rx_fifo + read_index;
 		if (read_index <= write_index)
@@ -484,6 +486,8 @@ static uint32_t fifo_write_body(struct edge_info *einfo, const void *_data,
 	uint32_t fifo_size = einfo->tx_fifo_size;
 	uint32_t n;
 
+	if (read_index >= fifo_size || *write_index >= fifo_size)
+		return 0;
 	while (len) {
 		ptr = einfo->tx_fifo + *write_index;
 		if (*write_index < read_index) {
@@ -788,6 +792,12 @@ static bool get_rx_fifo(struct edge_info *einfo)
 							&einfo->rx_fifo_size,
 							einfo->remote_proc_id,
 							SMEM_ITEM_CACHED_FLAG);
+		if (!einfo->rx_fifo)
+			einfo->rx_fifo = (void __iomem *)smem_get_entry(
+						SMEM_GLINK_NATIVE_XPRT_FIFO_1,
+							&einfo->rx_fifo_size,
+							einfo->remote_proc_id,
+							0);
 		if (!einfo->rx_fifo)
 			return false;
 	}
@@ -2313,7 +2323,7 @@ static int glink_smem_native_probe(struct platform_device *pdev)
 	einfo->tx_fifo = smem_alloc(SMEM_GLINK_NATIVE_XPRT_FIFO_0,
 							einfo->tx_fifo_size,
 							einfo->remote_proc_id,
-							SMEM_ITEM_CACHED_FLAG);
+							0);
 	if (!einfo->tx_fifo) {
 		pr_err("%s: smem alloc of tx fifo failed\n", __func__);
 		rc = -ENOMEM;

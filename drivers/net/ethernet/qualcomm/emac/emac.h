@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -46,6 +46,18 @@
 #define EMAC_GPIO_CNT		2
 
 #define EMAC_ADPT_RESET_WAIT_TIME	20
+
+/**
+ * Requested EMAC votes for BUS bandwidth
+ *
+ * EMAC_NO_PERF_VOTE      BUS Vote for inactive EMAC session or disconnect
+ * EMAC_MAX_PERF_VOTE    Maximum BUS bandwidth vote
+ *
+ */
+enum emac_bus_vote {
+	EMAC_NO_PERF_VOTE = 0,
+	EMAC_MAX_PERF_VOTE
+};
 
 enum emac_vreg_id {
 	EMAC_VREG1,
@@ -726,6 +738,9 @@ struct emac_adapter {
 	int	(*gpio_on)(struct emac_adapter *adpt, bool mdio, bool ephy);
 	int	(*gpio_off)(struct emac_adapter *adpt, bool mdio, bool ephy);
 	struct wakeup_source link_wlock;
+
+	u32       bus_cl_hdl;
+	struct msm_bus_scale_pdata *bus_scale_table;
 };
 
 static inline struct emac_adapter *emac_hw_get_adap(struct emac_hw *hw)
@@ -760,5 +775,6 @@ int emac_clk_set_rate(struct emac_adapter *adpt, enum emac_clk_id id,
 		      enum emac_clk_rate rate);
 void emac_task_schedule(struct emac_adapter *adpt);
 void emac_check_lsc(struct emac_adapter *adpt);
+void emac_wol_gpio_irq(struct emac_adapter *adpt, bool enable);
 
 #endif /* _QCOM_EMAC_H_ */

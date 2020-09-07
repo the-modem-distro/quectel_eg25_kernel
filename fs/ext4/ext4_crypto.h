@@ -78,7 +78,6 @@ struct ext4_crypt_info {
 	char		ci_filename_mode;
 	char		ci_flags;
 	struct crypto_ablkcipher *ci_ctfm;
-	struct key	*ci_keyring_key;
 	char		ci_master_key[EXT4_KEY_DESCRIPTOR_SIZE];
 };
 
@@ -121,6 +120,10 @@ static inline int ext4_encryption_key_size(int mode)
 		return EXT4_AES_256_CBC_KEY_SIZE;
 	case EXT4_ENCRYPTION_MODE_AES_256_CTS:
 		return EXT4_AES_256_CTS_KEY_SIZE;
+	case EXT4_ENCRYPTION_MODE_SPECK128_256_XTS:
+		return 64;
+	case EXT4_ENCRYPTION_MODE_SPECK128_256_CTS:
+		return 32;
 	default:
 		BUG();
 	}

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -278,21 +278,29 @@ enum multi_stream msm_comm_get_stream_output_mode(struct msm_vidc_inst *inst)
 	}
 }
 
-static int msm_comm_get_mbs_per_sec(struct msm_vidc_inst *inst)
+static int msm_comm_get_mbs_per_frame(struct msm_vidc_inst *inst)
 {
 	int output_port_mbs, capture_port_mbs;
-	int rc;
-	u32 fps;
-	struct v4l2_control ctrl;
 
 	output_port_mbs = inst->in_reconfig ?
 			NUM_MBS_PER_FRAME(inst->reconfig_width,
 				inst->reconfig_height) :
 			NUM_MBS_PER_FRAME(inst->prop.width[OUTPUT_PORT],
 				inst->prop.height[OUTPUT_PORT]);
-
 	capture_port_mbs = NUM_MBS_PER_FRAME(inst->prop.width[CAPTURE_PORT],
 		inst->prop.height[CAPTURE_PORT]);
+
+	return max(output_port_mbs, capture_port_mbs);
+}
+
+static int msm_comm_get_mbs_per_sec(struct msm_vidc_inst *inst)
+{
+	int rc;
+	u32 fps;
+	struct v4l2_control ctrl;
+	int mb_per_frame;
+
+	mb_per_frame = msm_comm_get_mbs_per_frame(inst);
 
 	ctrl.id = V4L2_CID_MPEG_VIDC_VIDEO_OPERATING_RATE;
 	rc = msm_comm_g_ctrl(inst, &ctrl);
@@ -302,10 +310,10 @@ static int msm_comm_get_mbs_per_sec(struct msm_vidc_inst *inst)
 		 * Check if operating rate is less than fps.
 		 * If Yes, then use fps to scale the clocks
 		*/
-		fps = max(fps, inst->prop.fps);
-		return max(output_port_mbs, capture_port_mbs) * fps;
+		fps = fps > inst->prop.fps ? fps : inst->prop.fps;
+		return (mb_per_frame * fps);
 	} else
-		return max(output_port_mbs, capture_port_mbs) * inst->prop.fps;
+		return (mb_per_frame * inst->prop.fps);
 }
 
 int msm_comm_get_inst_load(struct msm_vidc_inst *inst,
@@ -1090,8 +1098,7 @@ static void handle_event_change(enum hal_command_response cmd, void *data)
 		rc = msm_comm_g_ctrl_for_id(inst,
 			V4L2_CID_MPEG_VIDC_VIDEO_CONTINUE_DATA_TRANSFER);
 
-		if ((!IS_ERR_VALUE(rc) && rc == true) ||
-				is_thumbnail_session(inst)) {
+		if (!IS_ERR_VALUE(rc) && rc == true) {
 			event = V4L2_EVENT_SEQ_CHANGED_SUFFICIENT;
 
 			if (msm_comm_get_stream_output_mode(inst) ==
@@ -1219,6 +1226,7 @@ static void handle_event_change(enum hal_command_response cmd, void *data)
 	}
 
 	if (inst->fmts[CAPTURE_PORT].fourcc == V4L2_PIX_FMT_NV12 &&
+		event_notify->pic_struct != MSM_VIDC_PIC_STRUCT_UNKNOWN &&
 		inst->pic_struct != event_notify->pic_struct) {
 		inst->pic_struct = event_notify->pic_struct;
 		event = V4L2_EVENT_SEQ_CHANGED_INSUFFICIENT;
@@ -2439,7 +2447,6 @@ static int msm_comm_session_abort(struct msm_vidc_inst *inst)
 	}
 	hdev = inst->core->device;
 	abort_completion = SESSION_MSG_INDEX(HAL_SESSION_ABORT_DONE);
-	init_completion(&inst->completions[abort_completion]);
 
 	rc = call_hfi_op(hdev, session_abort, (void *)inst->session);
 	if (rc) {
@@ -2598,8 +2605,6 @@ static int msm_comm_init_core(struct msm_vidc_inst *inst)
 			__func__);
 	}
 
-	init_completion(&core->completions
-			[SYS_MSG_INDEX(HAL_SYS_INIT_DONE)]);
 	rc = call_hfi_op(hdev, core_init, hdev->hfi_device_data);
 	if (rc) {
 		dprintk(VIDC_ERR, "Failed to init core, id = %d\n",
@@ -2703,8 +2708,6 @@ static int msm_comm_session_init(int flipped_state,
 		dprintk(VIDC_ERR, "Invalid session\n");
 		return -EINVAL;
 	}
-	init_completion(
-		&inst->completions[SESSION_MSG_INDEX(HAL_SESSION_INIT_DONE)]);
 
 	rc = call_hfi_op(hdev, session_init, hdev->hfi_device_data,
 			inst, get_hal_domain(inst->session_type),
@@ -2842,8 +2845,6 @@ static int msm_vidc_start(int flipped_state, struct msm_vidc_inst *inst)
 			inst, inst->state);
 		goto exit;
 	}
-	init_completion(
-		&inst->completions[SESSION_MSG_INDEX(HAL_SESSION_START_DONE)]);
 	rc = call_hfi_op(hdev, session_start, (void *) inst->session);
 	if (rc) {
 		dprintk(VIDC_ERR,
@@ -2873,8 +2874,6 @@ static int msm_vidc_stop(int flipped_state, struct msm_vidc_inst *inst)
 		goto exit;
 	}
 	dprintk(VIDC_DBG, "Send Stop to hal\n");
-	init_completion(
-		&inst->completions[SESSION_MSG_INDEX(HAL_SESSION_STOP_DONE)]);
 	rc = call_hfi_op(hdev, session_stop, (void *) inst->session);
 	if (rc) {
 		dprintk(VIDC_ERR, "Failed to send stop\n");
@@ -2904,8 +2903,6 @@ static int msm_vidc_release_res(int flipped_state, struct msm_vidc_inst *inst)
 	}
 	dprintk(VIDC_DBG,
 		"Send release res to hal\n");
-	init_completion(&inst->completions[
-			SESSION_MSG_INDEX(HAL_SESSION_RELEASE_RESOURCE_DONE)]);
 	rc = call_hfi_op(hdev, session_release_res, (void *) inst->session);
 	if (rc) {
 		dprintk(VIDC_ERR,
@@ -2936,8 +2933,6 @@ static int msm_comm_session_close(int flipped_state,
 	}
 	dprintk(VIDC_DBG,
 		"Send session close to hal\n");
-	init_completion(
-		&inst->completions[SESSION_MSG_INDEX(HAL_SESSION_END_DONE)]);
 	rc = call_hfi_op(hdev, session_end, (void *) inst->session);
 	if (rc) {
 		dprintk(VIDC_ERR,
@@ -3975,8 +3970,6 @@ int msm_comm_try_get_prop(struct msm_vidc_inst *inst, enum hal_property ptype,
 	}
 	mutex_unlock(&inst->sync_lock);
 
-	init_completion(&inst->completions[
-			SESSION_MSG_INDEX(HAL_SESSION_PROPERTY_INFO)]);
 	switch (ptype) {
 	case HAL_PARAM_PROFILE_LEVEL_CURRENT:
 	case HAL_CONFIG_VDEC_ENTROPY:
@@ -4200,8 +4193,6 @@ int msm_comm_release_scratch_buffers(struct msm_vidc_inst *inst,
 		if (inst->state != MSM_VIDC_CORE_INVALID &&
 				core->state != VIDC_CORE_INVALID) {
 			buffer_info.response_required = true;
-			init_completion(&inst->completions[SESSION_MSG_INDEX
-			   (HAL_SESSION_RELEASE_BUFFER_DONE)]);
 			rc = call_hfi_op(hdev, session_release_buffers,
 				(void *)inst->session, &buffer_info);
 			if (rc) {
@@ -4272,9 +4263,6 @@ int msm_comm_release_persist_buffers(struct msm_vidc_inst *inst)
 		if (inst->state != MSM_VIDC_CORE_INVALID &&
 				core->state != VIDC_CORE_INVALID) {
 			buffer_info.response_required = true;
-			init_completion(
-			   &inst->completions[SESSION_MSG_INDEX
-			   (HAL_SESSION_RELEASE_BUFFER_DONE)]);
 			rc = call_hfi_op(hdev, session_release_buffers,
 				(void *)inst->session, &buffer_info);
 			if (rc) {
@@ -4879,6 +4867,7 @@ int msm_vidc_check_session_supported(struct msm_vidc_inst *inst)
 	int rc = 0;
 	struct hfi_device *hdev;
 	struct msm_vidc_core *core;
+	int mbs_per_frame = 0;
 
 	if (!inst || !inst->core || !inst->core->device) {
 		dprintk(VIDC_WARN, "%s: Invalid parameter\n", __func__);
@@ -4923,14 +4912,21 @@ int msm_vidc_check_session_supported(struct msm_vidc_inst *inst)
 				rc = -ENOTSUPP;
 		}
 
-		if (!rc && inst->prop.height[CAPTURE_PORT]
-			* inst->prop.width[CAPTURE_PORT] >
-			capability->width.max * capability->height.max) {
+		if (!rc && inst->prop.height[CAPTURE_PORT] >
+			capability->height.max) {
 			dprintk(VIDC_ERR,
-			"Unsupported WxH = (%u)x(%u), max supported is - (%u)x(%u)\n",
-			inst->prop.width[CAPTURE_PORT],
-			inst->prop.height[CAPTURE_PORT],
-			capability->width.max, capability->height.max);
+				"Unsupported height = %u supported max height = %u",
+				inst->prop.height[CAPTURE_PORT],
+				capability->height.max);
+				rc = -ENOTSUPP;
+		}
+
+		mbs_per_frame = msm_comm_get_mbs_per_frame(inst);
+		if (!rc && mbs_per_frame > capability->mbs_per_frame.max) {
+			dprintk(VIDC_ERR,
+			"Unsupported mbs per frame = %u, max supported is - %u\n",
+			mbs_per_frame,
+			capability->mbs_per_frame.max);
 			rc = -ENOTSUPP;
 		}
 	}

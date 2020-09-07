@@ -39,7 +39,6 @@
 
 #include <asm/current.h>
 
-#define QUECTEL_RESET_SYSTEM
 #include "peripheral-loader.h"
 
 #define DISABLE_SSR 0x9889deed
@@ -209,35 +208,10 @@ static ssize_t name_show(struct device *dev, struct device_attribute *attr,
 	return snprintf(buf, PAGE_SIZE, "%s\n", to_subsys(dev)->desc->name);
 }
 
-#ifdef CONFIG_QUECTEL_MODEM_RESTART_LEVEL  //jun20160728 subsystem restart config
-
-#define TRUE 1
-#define FALSE 0
-
-#include <linux/wait.h>
-
-wait_queue_head_t quectel_check_modem_state_wait;
-int quectel_restart_modem = FALSE;
-
-static ssize_t quec_state_show(struct device *dev, struct device_attribute *attr,
-		char *buf)
-{
-	pr_info("[%p]: line: %d, quectel_restart_modem: %d\n", current, __LINE__, quectel_restart_modem);
-	//wait_event(quectel_check_modem_state_wait, (quectel_restart_modem == TRUE));	
-	wait_event_freezable(quectel_check_modem_state_wait, (quectel_restart_modem == TRUE));
-	pr_info("[%p]: line: %d, quectel_restart_modem: %d\n", current, __LINE__, quectel_restart_modem);
-	quectel_restart_modem = FALSE; 
-	pr_info("[%p]: state %s\n", current, subsys_states[to_subsys(dev)->track.state]);
-	return snprintf(buf, PAGE_SIZE, "%d\n", TRUE);
-}
-#endif
-//end jun.wu
-
 static ssize_t state_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
 	enum subsys_state state = to_subsys(dev)->track.state;
-	pr_info("[%p]: state %s\n", current, subsys_states[state]);
 	return snprintf(buf, PAGE_SIZE, "%s\n", subsys_states[state]);
 }
 
@@ -247,32 +221,10 @@ static ssize_t crash_count_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "%d\n", to_subsys(dev)->crash_count);
 }
 
-#ifdef QUECTEL_RESET_SYSTEM
-static int system_reset_mode = 1; //0 - dload, 1 - reset
-extern void quectel_set_system_reset_mode(int mode);
-static ssize_t
-system_reset_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-        return snprintf(buf, PAGE_SIZE, "%d\n", system_reset_mode);
-}
-
-static ssize_t system_reset_mode_store(struct device *dev,
-                struct device_attribute *attr, const char *buf, size_t count)
-{
-	sscanf(buf, "%d", &system_reset_mode);
-
-	quectel_set_system_reset_mode((system_reset_mode == 0) ? 1 : 0);
-
-        return count;
-}
-#endif
-
 static ssize_t
 restart_level_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int level = to_subsys(dev)->restart_level;
-	
-	pr_info("[%p]: level %d\n", current, level);
 	return snprintf(buf, PAGE_SIZE, "%s\n", restart_levels[level]);
 }
 
@@ -389,22 +341,9 @@ static void subsys_set_state(struct subsys_device *subsys,
 			     enum subsys_state state)
 {
 	unsigned long flags;
-	
-	pr_info("[%p]: subsys_set_state %d\n", current, state);
 
 	spin_lock_irqsave(&subsys->track.s_lock, flags);
 	if (subsys->track.state != state) {
-		
-#ifdef CONFIG_QUECTEL_MODEM_RESTART_LEVEL  // Ramos 20160623 add  for modem subsystem restart config
-		if((subsys->track.state == SUBSYS_ONLINE)
-		&& (state == SUBSYS_OFFLINE) 
-		)
-		{
-			quectel_restart_modem = TRUE; 
-			pr_info("[%p]: set quectel_restart_modem: %d\n", current, quectel_restart_modem);
-			wake_up(&quectel_check_modem_state_wait);
-		}
-#endif
 		subsys->track.state = state;
 		spin_unlock_irqrestore(&subsys->track.s_lock, flags);
 		sysfs_notify(&subsys->dev.kobj, NULL, "state");
@@ -436,17 +375,11 @@ EXPORT_SYMBOL(subsys_default_online);
 static struct device_attribute subsys_attrs[] = {
 	__ATTR_RO(name),
 	__ATTR_RO(state),
-#ifdef CONFIG_QUECTEL_MODEM_RESTART_LEVEL	//jun20160728 subsystem restart config
-	__ATTR_RO(quec_state),
-#endif										//jun20160728
 	__ATTR_RO(crash_count),
 	__ATTR_RO(error),
 	__ATTR(restart_level, 0644, restart_level_show, restart_level_store),
 	__ATTR(firmware_name, 0644, firmware_name_show, firmware_name_store),
 	__ATTR(system_debug, 0644, system_debug_show, system_debug_store),
-#ifdef QUECTEL_RESET_SYSTEM	
-	__ATTR(system_reset_mode, 0644, system_reset_mode_show, system_reset_mode_store),
-#endif
 	__ATTR(keep_alive, 0644, keep_alive_show, keep_alive_store),
 	__ATTR_NULL,
 };
@@ -753,13 +686,16 @@ static int subsystem_powerup(struct subsys_device *dev, void *data)
 	if (ret < 0) {
 		notify_each_subsys_device(&dev, 1, SUBSYS_POWERUP_FAILURE,
 								NULL);
-		if (!dev->desc->ignore_ssr_failure)
+		if (system_state == SYSTEM_RESTART
+			|| system_state == SYSTEM_POWER_OFF)
+			WARN(1, "SSR aborted: %s, system reboot/shutdown is under way\n",
+				name);
+		else if (!dev->desc->ignore_ssr_failure)
 			panic("[%s:%d]: Powerup error: %s!",
 				current->comm, current->pid, name);
-		else {
+		else
 			pr_err("Powerup failure on %s\n", name);
-			return ret;
-		}
+		return ret;
 	}
 	enable_all_irqs(dev);
 
@@ -1257,8 +1193,11 @@ bool subsys_get_crash_status(struct subsys_device *dev)
 
 void subsys_set_error(struct subsys_device *dev, const char *error_msg)
 {
-	snprintf(dev->error_buf, sizeof(dev->error_buf), "%s", error_msg);
-	sysfs_notify(&dev->dev.kobj, NULL, "error");
+	if (dev) {
+		snprintf(dev->error_buf, sizeof(dev->error_buf), "%s",
+							   error_msg);
+		sysfs_notify(&dev->dev.kobj, NULL, "error");
+	}
 }
 
 static struct subsys_device *desc_to_subsys(struct device *d)
@@ -1725,20 +1664,6 @@ struct subsys_device *subsys_register(struct subsys_desc *desc)
 	}
 
 	dev_set_name(&subsys->dev, "subsys%d", subsys->id);
-
-#ifdef CONFIG_QUECTEL_MODEM_RESTART_LEVEL  // Ramos 20160623 add  for modem subsystem restart config
-	init_waitqueue_head(&quectel_check_modem_state_wait);
-#if 1
-    pr_info("@Ramos  desc->name =[%s]  , subsys->desc name=[%s]  fw_name=[%s]\n",desc->name,  subsys->desc->name , subsys->desc->fw_name);
-    if(strncasecmp("modem", desc->name, sizeof("modem")) == 0)
-    {
-		init_waitqueue_head(&quectel_check_modem_state_wait);
-		/*set default restart levle to 1, restart modem only */
-		pr_info("@Ramosr  set modem restart level 1");
-        subsys->restart_level = 0;//modify by dawn 2018-8-29 
-    }
-#endif
-#endif
 
 	mutex_init(&subsys->track.lock);
 

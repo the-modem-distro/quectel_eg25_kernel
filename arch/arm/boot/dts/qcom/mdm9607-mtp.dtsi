@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -36,52 +36,22 @@
 		pinctrl-0 = <&ntn_rst_gpio_default>;
 		ntn-rst-gpio = <&tlmm_pinmux 30 1>;
 		ntn-phy-id = <7>;
+		ntn-timestamp-valid-window = <4>; /* Each unit is 16.75ms */
+		ntn-timestamp-valid-window-disable = <1>; /* 1: To Disable */
 	};
 
 };
-/* will.shao, add uart2 for debug uart*/
-&blsp1_uart2 {
-	status = "ok";
-	pinctrl-names = "default","sleep";
-	pinctrl-0 = <&blsp1_uart2_active>;
-	pinctrl-1 = <&blsp1_uart2_sleep>;
-};
 
-/*
 &blsp1_uart5 {
-	status = "disabled";	//disabled uart5, if need, user can enable it, by gale
-	pinctrl-names ="sleep", "default";
+	status = "ok";
+	pinctrl-names = "default";
 	pinctrl-0 = <&uart_console_sleep>;
-	pinctrl-1 = <&uart_console_active>;
-};*/
-
-/* larryzhang-20190225:The default is high speed for BLSP1_UART5(gpio8,9,10,11)*/
- &blsp1_uart5 {
- 	status = "ok";
- };
-
-/* UART6: enable gpio20, 21 uart6 by gale */
-&blsp1_uart6 {
-	status = "disabled";
-	pinctrl-names = "default","sleep";
-	pinctrl-0 = <&blsp1_uart6_active>;
-	pinctrl-1 = <&blsp1_uart6_sleep>;
-};
-
-/* disable mi2s_pri gpio20,21,22,23 for enable uart6 by gale */
-&mi2s_prim {
-	status = "disabled";
 };
 
 &i2c_4 {
 	status = "ok";
 };
 
-&i2c_2 {
-	status = "ok";
-};
-
-/* will.shao, remove spi1 
 &spi_1 {
 	status = "ok";
 
@@ -90,31 +60,14 @@
 		spi-max-frequency = <4800000>;
 		reg = <0>;
 		interrupt-parent = <&tlmm_pinmux>;
-		interrupts = <25 0>;
+		interrupts = <25 1>;
 		reset-gpio = <&tlmm_pinmux 11 0x1>;
 		pinctrl-names = "active", "sleep";
 		pinctrl-0 = <&can_rst_on>;
 		pinctrl-1 = <&can_rst_off>;
 	};
 };
-*/
 
-/* Add spi3 node ---> gpio0,1,2,3, gale 2018-3-14 */
-&spi_3 {
-	status = "disabled";
-};
-
-/* Add spi5 node ---> gpio8,9,10,11, gale 2018-3-14 */
-&spi_5 {
-        status = "disabled";
-};
-
-//add by cullen
-&spi_6 {
-        status = "ok";
-};
-
-//Darren open uart3
 &blsp1_uart3 {
 	status = "ok";
 };
@@ -127,17 +80,14 @@
 	status = "ok";
 };
 
-//maxcodeflag20160329
 /* MPP pin 2 configs for SMB358 interrupt line */
 &pm8019_mpps {
 	mpp@a100 {
 		qcom,mode = <0>;	/* Digital input */
-		qcom,vin-sel = <0>;	/*3: 1.8V (L11) */
+		qcom,vin-sel = <3>;	/* 1.8V (L11) */
 		qcom,src-sel = <0>;	/* QPNP_PIN_SEL_FUNC_CONSTANT */
-		/*qcom,pull = <2>; modified by max.tang for VBUS detect*/	/* PULL UP 10KOHM */
-        qcom,pull = <1>;
+		qcom,pull = <2>;	/* PULL UP 10KOHM */
 		qcom,master-en = <1>;
-        status = "ok";
 	};
 };
 
@@ -156,7 +106,7 @@
 	gpio@c200 {
 		qcom,mode = <1>;		/* Digital output */
 		qcom,output-type = <0>;		/* CMOS logic */
-		qcom,invert = <0>;		/* Output high */ /* carl.yin do not active PM_ENABLE_WIFI when bootup time, control by /etc/init.d/wlan */
+		qcom,invert = <1>;		/* Output high */
 		qcom,vin-sel = <3>;		/* VPH_PWR */
 		qcom,src-sel = <0>;		/* Constant */
 		qcom,out-strength = <1>;	/* High drive strength */
@@ -185,35 +135,23 @@
 
 	pinctrl-names = "active", "sleep";
 	pinctrl-0 = <&pmx_sdc1_clk_on &pmx_sdc1_cmd_on &pmx_sdc1_data_on
-						/*&sdc1_wlan_gpio_active*/>; /*edison.yang /sys/class/gpio/gpio54*/
+						&sdc1_wlan_gpio_active>;
 	pinctrl-1 = <&pmx_sdc1_clk_off &pmx_sdc1_cmd_off &pmx_sdc1_data_off
-						/*&sdc1_wlan_gpio_sleep*/>;
-	/* qcom,nonremovable; */
+						&sdc1_wlan_gpio_sleep>;
+	qcom,nonremovable;
 	qcom,core_3_0v_support;
 	status = "ok";
 };
 
-&pm8019_gpios {
-	gpio@c300 { /* GPIO 4 */
-		qcom,mode = <1>;		/* Digital output */
-		qcom,output-type = <0>;		/* CMOS logic */
-		qcom,invert = <0>;		/* Output high */
-		qcom,vin-sel = <0>;		/* VPH_PWR */
-		qcom,src-sel = <0>;		/* GPIO */
-		qcom,out-strength = <1>;	/* Low drive strength */
-		qcom,master-en = <1>;		/* Enable GPIO */
-	};
-};
-
 /* MPP pin 4 configs for SGMII */
 &pm8019_mpps {
-	//mpp@a300 { /* MPP 4 */
-	//	qcom,mode = <1>;		/* Digital output */
-	//	qcom,vin-sel = <2>;		/* 1.8V */
-	//	qcom,src-sel = <0>;		/* Constant */
-	//	qcom,master-en = <1>;		/* Enable GPIO */
-	//	status = "disabled";		/* modify by gale 2017-08-22, MPP4 for adc function */
-	//};
+	mpp@a300 { /* MPP 4 */
+		qcom,mode = <1>;		/* Digital output */
+		qcom,vin-sel = <2>;		/* 1.8V */
+		qcom,src-sel = <0>;		/* Constant */
+		qcom,master-en = <1>;		/* Enable GPIO */
+		status = "okay";
+	};
 };
 
 &i2c_4 {
@@ -233,13 +171,12 @@
 };
 
 &sdhc_2 {
-	/*vdd-supply = <&sdcard_ext_vreg>;*/
+	vdd-supply = <&sdcard_ext_vreg>;
 	qcom,vdd-voltage-level = <2850000 2850000>;
 	qcom,vdd-current-level = <15000 400000>;
 
 	vdd-io-supply = <&mdm9607_l13>;
-	qcom,vdd-io-always-on;                  //20170915,add by cullen
-	qcom,vdd-io-voltage-level = <1800000 1800000>;
+	qcom,vdd-io-voltage-level = <1800000 2850000>;
 	qcom,vdd-io-current-level = <200 50000>;
 
 	#address-cells = <0>;
@@ -251,13 +188,13 @@
 			1 &intc 0 221 0
 			2 &tlmm_pinmux 26 0>;
 	interrupt-names = "hc_irq", "pwr_irq", "status_irq";
-   	/*cd-gpios = <&tlmm_pinmux 26 0x1>;*/
- 	qcom,nonhotplug;
+	cd-gpios = <&tlmm_pinmux 26 0x1>;
+
 	pinctrl-names = "active", "sleep";
 	pinctrl-0 = <&sdc2_clk_on &sdc2_cmd_on &sdc2_data_on &sdc2_cd_on>;
 	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off>;
 
-	status = "ok";
+	status = "disabled";
 };
 
 /* Display */

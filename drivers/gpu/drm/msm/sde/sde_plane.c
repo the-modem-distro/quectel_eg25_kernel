@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017, 2018 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1258,7 +1258,9 @@ static void _sde_plane_install_properties(struct drm_plane *plane,
 	sde_kms_info_add_keyint(info, "max_horizontal_deci", maxhdeciexp);
 	sde_kms_info_add_keyint(info, "max_vertical_deci", maxvdeciexp);
 	msm_property_set_blob(&psde->property_info, &psde->blob_info,
-			info->data, info->len, PLANE_PROP_INFO);
+			SDE_KMS_INFO_DATA(info),
+			SDE_KMS_INFO_DATALEN(info),
+			PLANE_PROP_INFO);
 
 	kfree(info);
 }
@@ -1504,7 +1506,7 @@ u32 sde_plane_num_of_phy_pipe(struct drm_plane *plane)
 	struct sde_plane *sde_plane = to_sde_plane(plane);
 
 	if (!plane || !sde_plane) {
-		SDE_ERROR("plane=%p or sde_plane=%p is NULL\n",
+		SDE_ERROR("plane=%pK or sde_plane=%pK is NULL\n",
 			plane, sde_plane);
 		return 0;
 	}

@@ -108,6 +108,7 @@
 #define DWC3_GPRTBIMAP_HS1	0xc184
 #define DWC3_GPRTBIMAP_FS0	0xc188
 #define DWC3_GPRTBIMAP_FS1	0xc18c
+#define DWC3_GUCTL2		0xc19c
 
 #define DWC3_GUSB2PHYCFG(n)	(0xc200 + (n * 0x04))
 #define DWC3_GUSB2I2CCTL(n)	(0xc240 + (n * 0x04))
@@ -193,6 +194,9 @@
 
 /* Global Debug LTSSM Register */
 #define DWC3_GDBGLTSSM_LINKSTATE_MASK	(0xF << 22)
+
+/* Global User Control 2 Register */
+#define DWC3_GUCTL2_ENABLE_EP_CACHE_EVICT	(1 << 12)
 
 /* Global USB2 PHY Configuration Register */
 #define DWC3_GUSB2PHYCFG_PHYSOFTRST	(1 << 31)
@@ -543,6 +547,7 @@ struct dwc3_ep_events {
  * @dbg_ep_events: different events counter for endpoint
  * @dbg_ep_events_diff: differential events counter for endpoint
  * @dbg_ep_events_ts: timestamp for previous event counters
+ * @fifo_depth: allocated TXFIFO depth
  */
 struct dwc3_ep {
 	struct usb_ep		endpoint;
@@ -585,6 +590,7 @@ struct dwc3_ep {
 	struct dwc3_ep_events	dbg_ep_events;
 	struct dwc3_ep_events	dbg_ep_events_diff;
 	struct timespec		dbg_ep_events_ts;
+	int			fifo_depth;
 };
 
 enum dwc3_phy {
@@ -816,7 +822,6 @@ struct dwc3_scratchpad_array {
  * @is_selfpowered: true when we are selfpowered
  * @needs_fifo_resize: not all users might want fifo resizing, flag it
  * @pullups_connected: true when Run/Stop bit is set
- * @resize_fifos: tells us it's ok to reconfigure our TxFIFO sizes.
  * @setup_packet_pending: true when there's a Setup Packet in FIFO. Workaround
  * @start_config_issued: true when StartConfig command has been issued
  * @three_stage_setup: set if we perform a three phase setup
@@ -834,6 +839,7 @@ struct dwc3_scratchpad_array {
  * @wait_linkstate: waitqueue for waiting LINK to move into required state
  * @vbus_draw: current to be drawn from USB
  * @dwc_ipc_log_ctxt: dwc3 ipa log context
+ * @last_fifo_depth: total TXFIFO depth of all enabled USB IN/INT endpoints
  */
 struct dwc3 {
 	struct usb_ctrlrequest	*ctrl_req;
@@ -907,6 +913,9 @@ struct dwc3 {
 #define DWC3_REVISION_260A	0x5533260a
 #define DWC3_REVISION_270A	0x5533270a
 #define DWC3_REVISION_280A	0x5533280a
+#define DWC3_REVISION_300A	0x5533300a
+#define DWC3_REVISION_310A	0x5533310a
+#define DWC3_REVISION_320A	0x5533320a
 
 	enum dwc3_ep0_next	ep0_next_event;
 	enum dwc3_ep0_state	ep0state;
@@ -946,9 +955,7 @@ struct dwc3 {
 	unsigned		is_selfpowered:1;
 	unsigned		needs_fifo_resize:1;
 	unsigned		pullups_connected:1;
-	unsigned		resize_fifos:1;
 	unsigned		setup_packet_pending:1;
-	unsigned		start_config_issued:1;
 	unsigned		three_stage_setup:1;
 	unsigned		is_drd:1;
 
@@ -989,6 +996,7 @@ struct dwc3 {
 
 	wait_queue_head_t	wait_linkstate;
 	void			*dwc_ipc_log_ctxt;
+	int			last_fifo_depth;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -1138,7 +1146,7 @@ struct dwc3_gadget_ep_cmd_params {
 
 /* prototypes */
 void dwc3_set_mode(struct dwc3 *dwc, u32 mode);
-int dwc3_gadget_resize_tx_fifos(struct dwc3 *dwc);
+int dwc3_gadget_resize_tx_fifos(struct dwc3 *dwc, struct dwc3_ep *dep);
 
 #if IS_ENABLED(CONFIG_USB_DWC3_HOST) || IS_ENABLED(CONFIG_USB_DWC3_DUAL_ROLE)
 int dwc3_host_init(struct dwc3 *dwc);

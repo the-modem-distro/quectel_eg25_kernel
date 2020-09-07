@@ -1539,7 +1539,6 @@ static void f_audio_free_inst(struct usb_function_instance *f)
 	struct f_uac1_opts *opts;
 
 	opts = container_of(f, struct f_uac1_opts, func_inst);
-	gaudio_cleanup(opts->card);
 	if (opts->fn_play_alloc)
 		kfree(opts->fn_play);
 	if (opts->fn_cap_alloc)
@@ -1582,6 +1581,7 @@ static void f_audio_free(struct usb_function *f)
 	struct f_audio *audio = func_to_audio(f);
 	struct f_uac1_opts *opts;
 
+	gaudio_cleanup(&audio->card);
 	opts = container_of(f->fi, struct f_uac1_opts, func_inst);
 	kfree(audio);
 	mutex_lock(&opts->lock);
@@ -1636,29 +1636,9 @@ static struct usb_function *f_audio_alloc(struct usb_function_instance *fi)
 	INIT_WORK(&audio->capture_work, f_audio_capture_work);
 	INIT_WORK(&audio->close_work, f_audio_close_work);
 	mutex_init(&audio->mutex);
-#ifdef QUECTEL_UAC_FEATURE
-	audio->card.usb_snd_opened = 0;
-	audio->card.usb_snd_setuped = 0;
-#endif
+
 	return &audio->card.func;
 }
-#ifdef QUECTEL_UAC_FEATURE
-int quec_uac_open_snd_dev(struct gaudio *card, int open);
-
-int quec_audio_enable(struct usb_function *func, int enable)
-{
-	struct f_audio		*audio;
-	
-	if (!func) {
-		return -1;
-	}
-	
-	audio = func_to_audio(func);
-	
-	
-	return quec_uac_open_snd_dev(&audio->card, enable);
-}
-#endif
 
 DECLARE_USB_FUNCTION_INIT(uac1, f_audio_alloc_inst, f_audio_alloc);
 MODULE_LICENSE("GPL");

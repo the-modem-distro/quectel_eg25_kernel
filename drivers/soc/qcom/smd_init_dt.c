@@ -45,43 +45,6 @@
 #define SMSM_DBG(x...) do { } while (0)
 #endif
 
-extern void quec_set_smd_debug_value(int value);
-extern int quec_get_smd_debug_value(void);
-
-static ssize_t quec_smd_debug_show
-(
-	struct device *pdev,
-	struct device_attribute *attr,
-	char *buf
-)
-{	
-	return snprintf(buf, PAGE_SIZE, "%d\n", quec_get_smd_debug_value());
-}
-
-static ssize_t quec_smd_debug_store
-(
-	struct device *pdev,
-	struct device_attribute *attr,
-	const char *buff, size_t size
-)
-{
-	int value;
-	
-	sscanf(buff, "%d", &value);
-
-	if(value == 0 || value == 1)
-	{
-		quec_set_smd_debug_value(value);
-	}
-	else
-	{
-		pr_err("debug value is error: %d\n", value);
-	}
-	
-	return size;
-}
-
-static DEVICE_ATTR(smd_debug, S_IRUSR | S_IWUSR, quec_smd_debug_show, quec_smd_debug_store);
 static DEFINE_MUTEX(smd_probe_lock);
 static int first_probe_done;
 
@@ -316,12 +279,6 @@ static int msm_smd_probe(struct platform_device *pdev)
 
 	smd_set_edge_initialized(edge);
 	smd_post_init(remote_pid);
-	
-	if (device_create_file(&pdev->dev, &dev_attr_smd_debug) < 0)
-    {
-        printk("%s: dev file creation for wakeup_in failed\n", __func__);
-    }
-	
 	return 0;
 
 missing_key:

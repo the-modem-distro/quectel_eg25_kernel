@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1755,7 +1755,7 @@ end:
 
 int mdss_mode_switch(struct msm_fb_data_type *mfd, u32 mode)
 {
-	struct mdss_rect l_roi, r_roi;
+	struct mdss_rect l_roi  = {0}, r_roi = {0};
 	struct mdss_mdp_ctl *ctl = mfd_to_ctl(mfd);
 	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
 	struct mdss_mdp_ctl *sctl;
@@ -2900,7 +2900,6 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 
 	mdss_mdp_check_ctl_reset_status(ctl);
-	__vsync_set_vsync_handler(mfd);
 	__validate_and_set_roi(mfd, data);
 
 	if (ctl->ops.wait_pingpong && mdp5_data->mdata->serialize_wait4pp)
@@ -2954,6 +2953,7 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 			&commit_cb);
 		ATRACE_END("display_commit");
 	}
+	__vsync_set_vsync_handler(mfd);
 
 	/*
 	 * release the commit pending flag; we are releasing this flag
@@ -3622,12 +3622,14 @@ int mdss_mdp_overlay_vsync_ctrl(struct msm_fb_data_type *mfd, int en)
 		goto end;
 	}
 
+	mdp5_data->vsync_en = en;
+
 	if (!ctl->panel_data->panel_info.cont_splash_enabled
 		&& (!mdss_mdp_ctl_is_power_on(ctl) ||
 		mdss_panel_is_power_on_ulp(ctl->power_state))) {
 		pr_debug("fb%d vsync pending first update en=%d, ctl power state:%d\n",
 				mfd->index, en, ctl->power_state);
-		rc = -EPERM;
+		rc = 0;
 		goto end;
 	}
 
@@ -4658,7 +4660,7 @@ static int mdss_mdp_hw_cursor_pipe_update(struct msm_fb_data_type *mfd,
 	if (!mfd->cursor_buf && (cursor->set & FB_CUR_SETIMAGE)) {
 		ret = mdss_smmu_dma_alloc_coherent(&pdev->dev,
 			cursor_frame_size, (dma_addr_t *) &mfd->cursor_buf_phys,
-			&mfd->cursor_buf_iova, mfd->cursor_buf,
+			&mfd->cursor_buf_iova, &mfd->cursor_buf,
 			GFP_KERNEL, MDSS_IOMMU_DOMAIN_UNSECURE);
 		if (ret) {
 			pr_err("can't allocate cursor buffer rc:%d\n", ret);
@@ -4846,7 +4848,7 @@ static int mdss_mdp_hw_cursor_update(struct msm_fb_data_type *mfd,
 	if (!mfd->cursor_buf && (cursor->set & FB_CUR_SETIMAGE)) {
 		ret = mdss_smmu_dma_alloc_coherent(&pdev->dev,
 			cursor_frame_size, (dma_addr_t *) &mfd->cursor_buf_phys,
-			&mfd->cursor_buf_iova, mfd->cursor_buf,
+			&mfd->cursor_buf_iova, &mfd->cursor_buf,
 			GFP_KERNEL, MDSS_IOMMU_DOMAIN_UNSECURE);
 		if (ret) {
 			pr_err("can't allocate cursor buffer rc:%d\n", ret);
@@ -4894,7 +4896,7 @@ static int mdss_mdp_hw_cursor_update(struct msm_fb_data_type *mfd,
 
 	mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 
-	if (cursor->set & FB_CUR_SETIMAGE) {
+	if (mfd->cursor_buf && (cursor->set & FB_CUR_SETIMAGE)) {
 		u32 cursor_addr;
 		ret = copy_from_user(mfd->cursor_buf, img->data,
 				     img->width * img->height * 4);
@@ -4972,8 +4974,10 @@ static int mdss_bl_scale_config(struct msm_fb_data_type *mfd,
 	pr_debug("update scale = %d, min_lvl = %d\n", mfd->bl_scale,
 							mfd->bl_min_lvl);
 
-	/* update current backlight to use new scaling*/
-	mdss_fb_set_backlight(mfd, curr_bl);
+	/* Update current backlight to use new scaling, if it is not zero */
+	if (curr_bl)
+		mdss_fb_set_backlight(mfd, curr_bl);
+
 	mutex_unlock(&mfd->bl_lock);
 	return ret;
 }
@@ -5212,12 +5216,16 @@ static int mdss_fb_get_metadata(struct msm_fb_data_type *mfd,
 		ret = mdss_fb_get_hw_caps(mfd, &metadata->data.caps);
 		break;
 	case metadata_op_get_ion_fd:
-		if (mfd->fb_ion_handle) {
+		if (mfd->fb_ion_handle && mfd->fb_ion_client) {
+			get_dma_buf(mfd->fbmem_buf);
 			metadata->data.fbmem_ionfd =
-				dma_buf_fd(mfd->fbmem_buf, 0);
-			if (metadata->data.fbmem_ionfd < 0)
+				ion_share_dma_buf_fd(mfd->fb_ion_client,
+					mfd->fb_ion_handle);
+			if (metadata->data.fbmem_ionfd < 0) {
+				dma_buf_put(mfd->fbmem_buf);
 				pr_err("fd allocation failed. fd = %d\n",
 						metadata->data.fbmem_ionfd);
+			}
 		}
 		break;
 	case metadata_op_crc:
@@ -5941,6 +5949,13 @@ static int mdss_mdp_overlay_on(struct msm_fb_data_type *mfd)
 	}
 
 panel_on:
+	if (mdp5_data->vsync_en) {
+		pr_info("reenabling vsync for fb%d\n", mfd->index);
+		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
+		rc = ctl->ops.add_vsync_handler(ctl, &ctl->vsync_handler);
+		mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
+	}
+
 	if (IS_ERR_VALUE(rc)) {
 		pr_err("Failed to turn on fb%d\n", mfd->index);
 		mdss_mdp_overlay_off(mfd);
@@ -6074,6 +6089,7 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 		goto end;
 	}
 
+ctl_stop:
 	/*
 	 * If retire fences are still active wait for a vsync time
 	 * for retire fence to be updated.
@@ -6102,10 +6118,9 @@ static int mdss_mdp_overlay_off(struct msm_fb_data_type *mfd)
 		 * retire_signal api checks for retire_cnt with sync_mutex lock.
 		 */
 
-		flush_work(&mdp5_data->retire_work);
+		flush_kthread_work(&mdp5_data->vsync_work);
 	}
 
-ctl_stop:
 	mutex_lock(&mdp5_data->ov_lock);
 	/* set the correct pipe_mapped before ctl_stop */
 	mdss_mdp_mixer_update_pipe_map(mdp5_data->ctl,
@@ -6307,13 +6322,13 @@ static void __vsync_retire_handle_vsync(struct mdss_mdp_ctl *ctl, ktime_t t)
 	}
 
 	mdp5_data = mfd_to_mdp5_data(mfd);
-	schedule_work(&mdp5_data->retire_work);
+	queue_kthread_work(&mdp5_data->worker, &mdp5_data->vsync_work);
 }
 
-static void __vsync_retire_work_handler(struct work_struct *work)
+static void __vsync_retire_work_handler(struct kthread_work *work)
 {
 	struct mdss_overlay_private *mdp5_data =
-		container_of(work, typeof(*mdp5_data), retire_work);
+		container_of(work, typeof(*mdp5_data), vsync_work);
 
 	if (!mdp5_data->ctl || !mdp5_data->ctl->mfd)
 		return;
@@ -6331,8 +6346,11 @@ static void __vsync_retire_signal(struct msm_fb_data_type *mfd, int val)
 	mutex_lock(&mfd->mdp_sync_pt_data.sync_mutex);
 	if (mdp5_data->retire_cnt > 0) {
 		sw_sync_timeline_inc(mdp5_data->vsync_timeline, val);
-
 		mdp5_data->retire_cnt -= min(val, mdp5_data->retire_cnt);
+		pr_debug("Retire signaled! timeline val=%d remaining=%d\n",
+				mdp5_data->vsync_timeline->value,
+				mdp5_data->retire_cnt);
+
 		if (mdp5_data->retire_cnt == 0) {
 			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
 			mdp5_data->ctl->ops.remove_vsync_handler(mdp5_data->ctl,
@@ -6404,6 +6422,7 @@ static int __vsync_retire_setup(struct msm_fb_data_type *mfd)
 {
 	struct mdss_overlay_private *mdp5_data = mfd_to_mdp5_data(mfd);
 	char name[24];
+	struct sched_param param = { .sched_priority = 5 };
 
 	snprintf(name, sizeof(name), "mdss_fb%d_retire", mfd->index);
 	mdp5_data->vsync_timeline = sw_sync_timeline_create(name);
@@ -6411,12 +6430,26 @@ static int __vsync_retire_setup(struct msm_fb_data_type *mfd)
 		pr_err("cannot vsync create time line");
 		return -ENOMEM;
 	}
+
+	init_kthread_worker(&mdp5_data->worker);
+	init_kthread_work(&mdp5_data->vsync_work, __vsync_retire_work_handler);
+
+	mdp5_data->thread = kthread_run(kthread_worker_fn,
+					&mdp5_data->worker, "vsync_retire_work");
+
+	if (IS_ERR(mdp5_data->thread)) {
+		pr_err("unable to start vsync thread\n");
+		mdp5_data->thread = NULL;
+		return -ENOMEM;
+	}
+
+	sched_setscheduler(mdp5_data->thread, SCHED_FIFO, &param);
+
 	mfd->mdp_sync_pt_data.get_retire_fence = __vsync_retire_get_fence;
 
 	mdp5_data->vsync_retire_handler.vsync_handler =
 		__vsync_retire_handle_vsync;
 	mdp5_data->vsync_retire_handler.cmd_post_flush = false;
-	INIT_WORK(&mdp5_data->retire_work, __vsync_retire_work_handler);
 
 	return 0;
 }
@@ -6509,6 +6542,13 @@ int mdss_mdp_input_event_handler(struct msm_fb_data_type *mfd)
 	return rc;
 }
 
+static void mdss_mdp_signal_retire_fence(struct msm_fb_data_type *mfd,
+						int retire_cnt)
+{
+	__vsync_retire_signal(mfd, retire_cnt);
+	pr_debug("Signaled (%d) pending retire fence\n", retire_cnt);
+}
+
 int mdss_mdp_overlay_init(struct msm_fb_data_type *mfd)
 {
 	struct device *dev = mfd->fbi->dev;
@@ -6557,6 +6597,8 @@ int mdss_mdp_overlay_init(struct msm_fb_data_type *mfd)
 	mdp5_interface->splash_init_fnc = mdss_mdp_splash_init;
 	mdp5_interface->configure_panel = mdss_mdp_update_panel_info;
 	mdp5_interface->input_event_handler = mdss_mdp_input_event_handler;
+	mdp5_interface->signal_retire_fence = mdss_mdp_signal_retire_fence;
+	mdp5_interface->is_twm_en = NULL;
 
 	if (mfd->panel_info->type == WRITEBACK_PANEL) {
 		mdp5_interface->atomic_validate =
@@ -6689,6 +6731,7 @@ int mdss_mdp_overlay_init(struct msm_fb_data_type *mfd)
 		}
 	}
 	mfd->mdp_sync_pt_data.async_wait_fences = true;
+	mdp5_data->vsync_en = false;
 
 	pm_runtime_set_suspended(&mfd->pdev->dev);
 	pm_runtime_enable(&mfd->pdev->dev);
@@ -6757,14 +6800,18 @@ static int mdss_mdp_scaler_lut_init(struct mdss_data_type *mdata,
 	if (!mdata->scaler_off)
 		return -EFAULT;
 
+	mutex_lock(&mdata->scaler_off->scaler_lock);
+
 	qseed3_lut_tbl = &mdata->scaler_off->lut_tbl;
 	if ((lut_tbl->dir_lut_size !=
 		DIR_LUT_IDX * DIR_LUT_COEFFS * sizeof(uint32_t)) ||
 		(lut_tbl->cir_lut_size !=
 		 CIR_LUT_IDX * CIR_LUT_COEFFS * sizeof(uint32_t)) ||
 		(lut_tbl->sep_lut_size !=
-		 SEP_LUT_IDX * SEP_LUT_COEFFS * sizeof(uint32_t)))
-			return -EINVAL;
+		SEP_LUT_IDX * SEP_LUT_COEFFS * sizeof(uint32_t))) {
+		mutex_unlock(&mdata->scaler_off->scaler_lock);
+		return -EINVAL;
+	}
 
 	if (!qseed3_lut_tbl->dir_lut) {
 		qseed3_lut_tbl->dir_lut = devm_kzalloc(&mdata->pdev->dev,
@@ -6772,7 +6819,7 @@ static int mdss_mdp_scaler_lut_init(struct mdss_data_type *mdata,
 				GFP_KERNEL);
 		if (!qseed3_lut_tbl->dir_lut) {
 			ret = -ENOMEM;
-			goto fail;
+			goto err;
 		}
 	}
 
@@ -6782,7 +6829,7 @@ static int mdss_mdp_scaler_lut_init(struct mdss_data_type *mdata,
 				GFP_KERNEL);
 		if (!qseed3_lut_tbl->cir_lut) {
 			ret = -ENOMEM;
-			goto fail;
+			goto fail_free_dir_lut;
 		}
 	}
 
@@ -6792,44 +6839,52 @@ static int mdss_mdp_scaler_lut_init(struct mdss_data_type *mdata,
 				GFP_KERNEL);
 		if (!qseed3_lut_tbl->sep_lut) {
 			ret = -ENOMEM;
-			goto fail;
+			goto fail_free_cir_lut;
 		}
 	}
 
 	/* Invalidate before updating */
 	qseed3_lut_tbl->valid = false;
 
-
 	if (copy_from_user(qseed3_lut_tbl->dir_lut,
 				(void *)(unsigned long)lut_tbl->dir_lut,
 				lut_tbl->dir_lut_size)) {
 			ret = -EINVAL;
-			goto err;
+			goto fail_free_sep_lut;
 	}
 
 	if (copy_from_user(qseed3_lut_tbl->cir_lut,
 				(void *)(unsigned long)lut_tbl->cir_lut,
 				lut_tbl->cir_lut_size)) {
 			ret = -EINVAL;
-			goto err;
+			goto fail_free_sep_lut;
 	}
 
 	if (copy_from_user(qseed3_lut_tbl->sep_lut,
 				(void *)(unsigned long)lut_tbl->sep_lut,
 				lut_tbl->sep_lut_size)) {
 			ret = -EINVAL;
-			goto err;
+			goto fail_free_sep_lut;
 	}
 
 	qseed3_lut_tbl->valid = true;
+	mutex_unlock(&mdata->scaler_off->scaler_lock);
+
 	return ret;
 
-fail:
-	kfree(qseed3_lut_tbl->dir_lut);
-	kfree(qseed3_lut_tbl->cir_lut);
-	kfree(qseed3_lut_tbl->sep_lut);
+fail_free_sep_lut:
+	devm_kfree(&mdata->pdev->dev, qseed3_lut_tbl->sep_lut);
+fail_free_cir_lut:
+	devm_kfree(&mdata->pdev->dev, qseed3_lut_tbl->cir_lut);
+fail_free_dir_lut:
+	devm_kfree(&mdata->pdev->dev, qseed3_lut_tbl->dir_lut);
 err:
+	qseed3_lut_tbl->dir_lut = NULL;
+	qseed3_lut_tbl->cir_lut = NULL;
+	qseed3_lut_tbl->sep_lut = NULL;
 	qseed3_lut_tbl->valid = false;
+	mutex_unlock(&mdata->scaler_off->scaler_lock);
+
 	return ret;
 }
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -28,6 +28,8 @@
 #define AUD_VOL_BLOCK_SIZE	4096
 #define AUDIO_RX_CALIBRATION_SIZE	(AUD_PROC_BLOCK_SIZE + \
 						AUD_VOL_BLOCK_SIZE)
+#define SESSION_TYPE_RX 0
+#define SESSION_TYPE_TX 1
 enum {
 	ADM_CUSTOM_TOP_CAL = 0,
 	ADM_AUDPROC_CAL,
@@ -64,6 +66,20 @@ struct route_payload {
 	unsigned int session_id;
 };
 
+struct default_chmixer_param_id_coeff {
+	uint32_t index;
+	uint16_t num_output_channels;
+	uint16_t num_input_channels;
+};
+
+struct msm_pcm_channel_mixer {
+	int output_channel;
+	int input_channels[ADM_MAX_CHANNELS];
+	bool enable;
+	int rule;
+	int channel_weight[ADM_MAX_CHANNELS][ADM_MAX_CHANNELS];
+};
+
 int srs_trumedia_open(int port_id, int copp_idx, __s32 srs_tech_id,
 		      void *srs_params);
 
@@ -86,7 +102,7 @@ int adm_dolby_dap_send_params(int port_id, int copp_idx, char *params,
 
 int adm_open(int port, int path, int rate, int mode, int topology,
 			   int perf_mode, uint16_t bits_per_sample,
-			   int app_type, int acdbdev_id);
+			   int app_type, int acdbdev_id, int session_type);
 
 int adm_map_rtac_block(struct rtac_cal_block_data *cal_block);
 
@@ -163,4 +179,9 @@ int adm_get_sound_focus(int port_id, int copp_idx,
 			struct sound_focus_param *soundFocusData);
 int adm_get_source_tracking(int port_id, int copp_idx,
 			    struct source_tracking_param *sourceTrackingData);
+int adm_programable_channel_mixer(int port_id, int copp_idx, int session_id,
+			int session_type,
+			struct msm_pcm_channel_mixer *ch_mixer,
+			int channel_index, bool use_default_chmap,
+			char *ch_map);
 #endif /* __Q6_ADM_V2_H__ */

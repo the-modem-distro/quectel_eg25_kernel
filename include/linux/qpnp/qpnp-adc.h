@@ -242,6 +242,7 @@ enum qpnp_iadc_channels {
 #define QPNP_ADC_HWMON_NAME_LENGTH				64
 #define QPNP_MAX_PROP_NAME_LEN					32
 #define QPNP_THERMALNODE_NAME_LENGTH                            25
+#define QPNP_ADC_1P25_UV					1250000
 
 /* Structure device for qpnp vadc */
 struct qpnp_vadc_chip;
@@ -957,6 +958,7 @@ enum qpnp_state_request {
  * @low_temp: Low temperature threshold for which notification is requested.
  * @high_thr_voltage: High voltage for which notification is requested.
  * @low_thr_voltage: Low voltage for which notification is requested.
+ * @adc_tm_hc: Represents the refreshed BTM register design.
  * @state_request: Enable/disable the corresponding high and low temperature
  *		thresholds.
  * @timer_interval1: Select polling rate from qpnp_adc_meas_timer_1 type.
@@ -979,6 +981,7 @@ struct qpnp_adc_tm_btm_param {
 	int32_t					low_thr;
 	int32_t					gain_num;
 	int32_t					gain_den;
+	bool					adc_tm_hc;
 	enum qpnp_vadc_channels			channel;
 	enum qpnp_state_request			state_request;
 	enum qpnp_adc_meas_timer_1		timer_interval;
@@ -1069,7 +1072,7 @@ struct qpnp_vadc_chan_properties {
 	enum qpnp_adc_tm_channel_select		tm_channel_select;
 	enum qpnp_state_request			state_request;
 	enum qpnp_adc_calib_type		calib_type;
-	struct qpnp_vadc_linear_graph	adc_graph[2];
+	struct qpnp_vadc_linear_graph	adc_graph[ADC_HC_CAL_SEL_NONE];
 };
 
 /**
@@ -1249,6 +1252,10 @@ struct qpnp_adc_drv {
  * @fast_avg_setup - Ability to provide single result from the ADC
  *			that is an average of multiple measurements.
  * @trigger_channel - HW trigger channel for conversion sequencer.
+ * @calib_type - Used to store the calibration type for the channel
+ *		 absolute/ratiometric.
+ * @cal_val - Used to determine if fresh calibration value or timer
+ *	      updated calibration value is to be used.
  * @chan_prop - Represent the channel properties of the ADC.
  */
 struct qpnp_adc_amux_properties {
@@ -1258,6 +1265,8 @@ struct qpnp_adc_amux_properties {
 	uint32_t				hw_settle_time;
 	uint32_t				fast_avg_setup;
 	enum qpnp_vadc_trigger			trigger_channel;
+	enum qpnp_adc_calib_type		calib_type;
+	enum qpnp_adc_cal_val			cal_val;
 	struct qpnp_vadc_chan_properties	chan_prop[0];
 };
 
@@ -1739,19 +1748,25 @@ int32_t qpnp_adc_qrd_skue_btm_scaler(struct qpnp_vadc_chip *dev,
  *		and convert given temperature to voltage on supported
  *		thermistor channels using 100k pull-up.
  * @dev:	Structure device for qpnp vadc
+ * @adc_prop:	adc properties of the qpnp adc such as bit resolution,
+ *		reference voltage.
  * @param:	The input temperature values.
  */
 int32_t qpnp_adc_tm_scale_therm_voltage_pu2(struct qpnp_vadc_chip *dev,
+		const struct qpnp_adc_properties *adc_properties,
 				struct qpnp_adc_tm_config *param);
 /**
  * qpnp_adc_tm_scale_therm_voltage_pu2() - Performs reverse calibration
  *		and converts the given ADC code to temperature for
  *		thermistor channels using 100k pull-up.
  * @dev:	Structure device for qpnp vadc
+ * @adc_prop:	adc properties of the qpnp adc such as bit resolution,
+ *		reference voltage.
  * @reg:	The input ADC code.
  * @result:	The physical measurement temperature on the thermistor.
  */
 int32_t qpnp_adc_tm_scale_voltage_therm_pu2(struct qpnp_vadc_chip *dev,
+			const struct qpnp_adc_properties *adc_prop,
 				uint32_t reg, int64_t *result);
 /**
  * qpnp_adc_usb_scaler() - Performs reverse calibration on the low/high
@@ -2089,11 +2104,13 @@ static inline int32_t qpnp_adc_scale_millidegc_pmic_voltage_thr(
 { return -ENXIO; }
 static inline int32_t qpnp_adc_tm_scale_therm_voltage_pu2(
 				struct qpnp_vadc_chip *dev,
+			const struct qpnp_adc_properties *adc_properties,
 				struct qpnp_adc_tm_config *param)
 { return -ENXIO; }
 static inline int32_t qpnp_adc_tm_scale_voltage_therm_pu2(
 				struct qpnp_vadc_chip *dev,
-				uint32_t reg, int64_t *result)
+			const struct qpnp_adc_properties *adc_prop,
+			uint32_t reg, int64_t *result)
 { return -ENXIO; }
 static inline int32_t qpnp_adc_smb_btm_rscaler(struct qpnp_vadc_chip *dev,
 		struct qpnp_adc_tm_btm_param *param,

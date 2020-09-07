@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -56,6 +56,9 @@
 #define DWC3_HVDCP_CHG_MAX 1800
 #define DWC3_WAKEUP_SRC_TIMEOUT 5000
 
+#define MICRO_5V    5000000
+#define MICRO_9V    9000000
+
 /* AHB2PHY register offsets */
 #define PERIPH_SS_AHB2PHY_TOP_CFG 0x10
 
@@ -87,6 +90,8 @@ MODULE_PARM_DESC(dcp_max_current, "max current drawn for DCP charger");
 
 /* XHCI registers */
 #define USB3_HCSPARAMS1		(0x4)
+#define USB3_HCCPARAMS2		(0x1c)
+#define HCC_CTC(p)		((p) & (1 << 3))
 #define USB3_PORTSC		(0x420)
 
 /**
@@ -233,6 +238,7 @@ struct dwc3_msm {
 	u32			bus_perf_client;
 	struct msm_bus_scale_pdata	*bus_scale_table;
 	struct power_supply	usb_psy;
+	enum power_supply_type	usb_supply_type;
 	unsigned int		online;
 	bool			in_host_mode;
 	unsigned int		voltage_max;
@@ -258,6 +264,7 @@ struct dwc3_msm {
 	bool			no_wakeup_src_in_hostmode;
 	bool			host_only_mode;
 	bool			psy_not_used;
+	bool			xhci_ss_compliance_enable;
 
 	int  pwr_event_irq;
 	atomic_t                in_p3;
@@ -945,13 +952,17 @@ static void gsi_ring_db(struct usb_ep *ep, struct usb_gsi_request *request)
 
 	gsi_dbl_address_lsb = devm_ioremap_nocache(mdwc->dev,
 					dbl_lo_addr, sizeof(u32));
-	if (!gsi_dbl_address_lsb)
-		dev_dbg(mdwc->dev, "Failed to get GSI DBL address LSB\n");
+	if (!gsi_dbl_address_lsb) {
+		dev_err(mdwc->dev, "Failed to get GSI DBL address LSB\n");
+		return;
+	}
 
 	gsi_dbl_address_msb = devm_ioremap_nocache(mdwc->dev,
 					dbl_hi_addr, sizeof(u32));
-	if (!gsi_dbl_address_msb)
-		dev_dbg(mdwc->dev, "Failed to get GSI DBL address MSB\n");
+	if (!gsi_dbl_address_msb) {
+		dev_err(mdwc->dev, "Failed to get GSI DBL address MSB\n");
+		return;
+	}
 
 	offset = dwc3_trb_dma_offset(dep, &dep->trb_pool[num_trbs-1]);
 	dev_dbg(mdwc->dev, "Writing link TRB addr:%pKa to %pK (%x) for ep:%s\n",
@@ -1163,7 +1174,8 @@ static void gsi_configure_ep(struct usb_ep *ep, struct usb_gsi_request *request)
 	struct dwc3_gadget_ep_cmd_params params;
 	const struct usb_endpoint_descriptor *desc = ep->desc;
 	const struct usb_ss_ep_comp_descriptor *comp_desc = ep->comp_desc;
-	u32			reg;
+	u32 reg;
+	int ret;
 
 	memset(&params, 0x00, sizeof(params));
 
@@ -1212,6 +1224,10 @@ static void gsi_configure_ep(struct usb_ep *ep, struct usb_gsi_request *request)
 
 	/* Set XferRsc Index for GSI EP */
 	if (!(dep->flags & DWC3_EP_ENABLED)) {
+		ret = dwc3_gadget_resize_tx_fifos(dwc, dep);
+		if (ret)
+			return;
+
 		memset(&params, 0x00, sizeof(params));
 		params.param0 = DWC3_DEPXFERCFG_NUM_XFER_RES(1);
 		dwc3_send_gadget_ep_cmd(dwc, dep->number,
@@ -2079,6 +2095,12 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc)
 		return -EBUSY;
 	}
 
+	if (!mdwc->in_host_mode && (mdwc->vbus_active && !mdwc->suspend)) {
+		dev_dbg(mdwc->dev,
+			"Received wakeup event before the core suspend\n");
+		return -EBUSY;
+	}
+
 	ret = dwc3_msm_prepare_suspend(mdwc);
 	if (ret)
 		return ret;
@@ -2158,10 +2180,9 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc)
 	 * with DCP or during cable disconnect, we dont require wakeup
 	 * using HS_PHY_IRQ or SS_PHY_IRQ. Hence enable wakeup only in
 	 * case of host bus suspend and device bus suspend.
-	 * In host mode if wakeup_sources are not used then don't enable.
 	 */
 	if ((mdwc->vbus_active && mdwc->otg_state == OTG_STATE_B_SUSPEND)
-		  || (mdwc->in_host_mode && !mdwc->no_wakeup_src_in_hostmode)) {
+			|| mdwc->in_host_mode) {
 		enable_irq_wake(mdwc->hs_phy_irq);
 		enable_irq(mdwc->hs_phy_irq);
 		if (mdwc->ss_phy_irq) {
@@ -2497,6 +2518,9 @@ static int dwc3_msm_power_get_property_usb(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = mdwc->online;
 		break;
+	case POWER_SUPPLY_PROP_REAL_TYPE:
+		val->intval = mdwc->usb_supply_type;
+		break;
 	case POWER_SUPPLY_PROP_TYPE:
 		val->intval = psy->type;
 		break;
@@ -2605,22 +2629,38 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 						mdwc->bc1p2_current_max);
 		}
 		break;
-	case POWER_SUPPLY_PROP_TYPE:
-		psy->type = val->intval;
-
-		switch (psy->type) {
+	case POWER_SUPPLY_PROP_REAL_TYPE:
+		mdwc->usb_supply_type = val->intval;
+		/*
+		 * Update TYPE property to DCP for HVDCP/HVDCP3 charger types
+		 * so that they can be recongized as AC chargers by healthd.
+		 * Don't report UNKNOWN charger type to prevent healthd missing
+		 * detecting this power_supply status change.
+		 */
+		if (mdwc->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP_3
+			|| mdwc->usb_supply_type == POWER_SUPPLY_TYPE_USB_HVDCP)
+			psy->type = POWER_SUPPLY_TYPE_USB_DCP;
+		else if (mdwc->usb_supply_type == POWER_SUPPLY_TYPE_UNKNOWN)
+			psy->type = POWER_SUPPLY_TYPE_USB;
+		else
+			psy->type = mdwc->usb_supply_type;
+		switch (mdwc->usb_supply_type) {
 		case POWER_SUPPLY_TYPE_USB:
 			mdwc->chg_type = DWC3_SDP_CHARGER;
+			mdwc->voltage_max = MICRO_5V;
 			break;
 		case POWER_SUPPLY_TYPE_USB_DCP:
 			mdwc->chg_type = DWC3_DCP_CHARGER;
+			mdwc->voltage_max = MICRO_5V;
 			break;
 		case POWER_SUPPLY_TYPE_USB_HVDCP:
 			mdwc->chg_type = DWC3_DCP_CHARGER;
+			mdwc->voltage_max = MICRO_9V;
 			dwc3_msm_gadget_vbus_draw(mdwc, hvdcp_max_current);
 			break;
 		case POWER_SUPPLY_TYPE_USB_CDP:
 			mdwc->chg_type = DWC3_CDP_CHARGER;
+			mdwc->voltage_max = MICRO_5V;
 			break;
 		case POWER_SUPPLY_TYPE_USB_ACA:
 			mdwc->chg_type = DWC3_PROPRIETARY_CHARGER;
@@ -2656,7 +2696,7 @@ dwc3_msm_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_PRESENT:
 	case POWER_SUPPLY_PROP_VOLTAGE_MAX:
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_MAX:
-	case POWER_SUPPLY_PROP_TYPE:
+	case POWER_SUPPLY_PROP_REAL_TYPE:
 		return 1;
 	default:
 		break;
@@ -2680,6 +2720,7 @@ static enum power_supply_property dwc3_msm_pm_power_props_usb[] = {
 	POWER_SUPPLY_PROP_TYPE,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_USB_OTG,
+	POWER_SUPPLY_PROP_REAL_TYPE,
 };
 
 static irqreturn_t dwc3_pmic_id_irq(int irq, void *data)
@@ -2853,6 +2894,35 @@ static ssize_t mode_store(struct device *dev, struct device_attribute *attr,
 }
 
 static DEVICE_ATTR_RW(mode);
+
+static ssize_t xhci_link_compliance_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct dwc3_msm *mdwc = dev_get_drvdata(dev);
+
+	if (mdwc->xhci_ss_compliance_enable)
+		return snprintf(buf, PAGE_SIZE, "y\n");
+	else
+		return snprintf(buf, PAGE_SIZE, "n\n");
+}
+
+static ssize_t xhci_link_compliance_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct dwc3_msm *mdwc = dev_get_drvdata(dev);
+	bool value;
+	int ret;
+
+	ret = strtobool(buf, &value);
+	if (!ret) {
+		mdwc->xhci_ss_compliance_enable = value;
+		return count;
+	}
+
+	return ret;
+}
+
+static DEVICE_ATTR_RW(xhci_link_compliance);
 
 static int dwc3_msm_probe(struct platform_device *pdev)
 {
@@ -3239,13 +3309,16 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 		enable_irq_wake(mdwc->pmic_id_irq);
 	}
 
-	if (dwc->is_drd)
+	if (dwc->is_drd) {
 		device_create_file(&pdev->dev, &dev_attr_mode);
+		device_create_file(&pdev->dev, &dev_attr_xhci_link_compliance);
+	}
 
 	if (!dwc->is_drd && host_mode) {
 		dev_dbg(&pdev->dev, "DWC3 in host only mode\n");
 		mdwc->host_only_mode = true;
 		mdwc->id_state = DWC3_ID_GROUND;
+		device_create_file(&pdev->dev, &dev_attr_xhci_link_compliance);
 		dwc3_ext_event_notify(mdwc);
 	}
 
@@ -3284,8 +3357,12 @@ static int dwc3_msm_remove(struct platform_device *pdev)
 	struct dwc3 *dwc = platform_get_drvdata(mdwc->dwc3);
 	int ret_pm;
 
-	if (dwc->is_drd)
+	if (dwc->is_drd) {
 		device_remove_file(&pdev->dev, &dev_attr_mode);
+		device_remove_file(&pdev->dev, &dev_attr_xhci_link_compliance);
+	} else if (mdwc->host_only_mode) {
+		device_remove_file(&pdev->dev, &dev_attr_xhci_link_compliance);
+	}
 
 	if (cpu_to_affin)
 		unregister_cpu_notifier(&mdwc->dwc3_cpu_notifier);
@@ -3543,6 +3620,25 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 		}
 
 		/*
+		 * If the Compliance Transition Capability(CTC) flag of
+		 * HCCPARAMS2 register is set and xhci_link_compliance sysfs
+		 * param has been enabled by the user for the SuperSpeed host
+		 * controller, then write 10 (Link in Compliance Mode State)
+		 * onto the Port Link State(PLS) field of the PORTSC register
+		 * for 3.0 host controller which is at an offset of USB3_PORTSC
+		 * + 0x10 from the DWC3 base address. Also, disable the runtime
+		 * PM of 3.0 root hub (root hub of shared_hcd of xhci device)
+		 */
+		if (HCC_CTC(dwc3_msm_read_reg(mdwc->base, USB3_HCCPARAMS2))
+				&& mdwc->xhci_ss_compliance_enable
+				&& dwc->maximum_speed == USB_SPEED_SUPER) {
+			dwc3_msm_write_reg(mdwc->base, USB3_PORTSC + 0x10,
+					0x10340);
+			pm_runtime_disable(&hcd_to_xhci(platform_get_drvdata(
+				dwc->xhci))->shared_hcd->self.root_hub->dev);
+		}
+
+		/*
 		 * In some cases it is observed that USB PHY is not going into
 		 * suspend with host mode suspend functionality. Hence disable
 		 * XHCI's runtime PM here if disable_host_mode_pm is set.
@@ -3681,6 +3777,7 @@ static int dwc3_otg_start_peripheral(struct dwc3_msm *mdwc, int on)
 static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned mA)
 {
 	enum power_supply_type power_supply_type;
+	union power_supply_propval propval;
 
 	if (mdwc->charging_disabled)
 		return 0;
@@ -3705,7 +3802,9 @@ static int dwc3_msm_gadget_vbus_draw(struct dwc3_msm *mdwc, unsigned mA)
 	else
 		power_supply_type = POWER_SUPPLY_TYPE_UNKNOWN;
 
-	power_supply_set_supply_type(&mdwc->usb_psy, power_supply_type);
+	propval.intval = power_supply_type;
+	mdwc->usb_psy.set_property(&mdwc->usb_psy,
+			POWER_SUPPLY_PROP_REAL_TYPE, &propval);
 
 skip_psy_type:
 
@@ -3898,7 +3997,8 @@ static void dwc3_msm_otg_sm_work(struct work_struct *w)
 				pm_runtime_get_noresume(mdwc->dev);
 				dwc3_initialize(mdwc);
 				/* check dp/dm for SDP & runtime_put if !SDP */
-				if (mdwc->detect_dpdm_floating) {
+				if (mdwc->detect_dpdm_floating &&
+					mdwc->chg_type == DWC3_SDP_CHARGER) {
 					dwc3_check_float_lines(mdwc);
 					if (mdwc->chg_type != DWC3_SDP_CHARGER)
 						break;

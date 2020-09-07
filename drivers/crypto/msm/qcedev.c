@@ -201,7 +201,7 @@ static int qcedev_release(struct inode *inode, struct file *file)
 	handle =  file->private_data;
 	podev =  handle->cntl;
 	if (podev != NULL && podev->magic != QCEDEV_MAGIC) {
-		pr_err("%s: invalid handle %p\n",
+		pr_err("%s: invalid handle %pK\n",
 					__func__, podev);
 	}
 	kzfree(handle);
@@ -273,8 +273,6 @@ void qcedev_sha_req_cb(void *cookie, unsigned char *digest,
 	if (authdata) {
 		handle->sha_ctxt.auth_data[0] = auth32[0];
 		handle->sha_ctxt.auth_data[1] = auth32[1];
-		handle->sha_ctxt.auth_data[2] = auth32[2];
-		handle->sha_ctxt.auth_data[3] = auth32[3];
 	}
 
 	tasklet_schedule(&pdev->done_tasklet);
@@ -1607,7 +1605,7 @@ long qcedev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 	podev =  handle->cntl;
 	qcedev_areq.handle = handle;
 	if (podev == NULL || podev->magic != QCEDEV_MAGIC) {
-		pr_err("%s: invalid handle %p\n",
+		pr_err("%s: invalid handle %pK\n",
 			__func__, podev);
 		return -ENOENT;
 	}
@@ -1741,6 +1739,12 @@ long qcedev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 			mutex_unlock(&hash_access_lock);
 			return err;
 		}
+		if (handle->sha_ctxt.diglen > QCEDEV_MAX_SHA_DIGEST) {
+			pr_err("Invalid sha_ctxt.diglen %d\n",
+					handle->sha_ctxt.diglen);
+			mutex_unlock(&hash_access_lock);
+			return -EINVAL;
+		}
 		qcedev_areq.sha_op_req.diglen = handle->sha_ctxt.diglen;
 		memcpy(&qcedev_areq.sha_op_req.digest[0],
 				&handle->sha_ctxt.digest[0],
@@ -1776,6 +1780,12 @@ long qcedev_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 		if (err) {
 			mutex_unlock(&hash_access_lock);
 			return err;
+		}
+		if (handle->sha_ctxt.diglen > QCEDEV_MAX_SHA_DIGEST) {
+			pr_err("Invalid sha_ctxt.diglen %d\n",
+					handle->sha_ctxt.diglen);
+			mutex_unlock(&hash_access_lock);
+			return -EINVAL;
 		}
 		qcedev_areq.sha_op_req.diglen =	handle->sha_ctxt.diglen;
 		memcpy(&qcedev_areq.sha_op_req.digest[0],

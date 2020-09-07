@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -36,7 +36,7 @@
 #define MAX_PAYLOAD_SIZE		4076
 #define RTAC_MAX_ACTIVE_VOICE_COMBOS	2
 #define RTAC_MAX_ACTIVE_POPP		8
-#define RTAC_BUF_SIZE			163840
+#define RTAC_BUF_SIZE			57344
 
 #define TIMEOUT_MS	1000
 
@@ -54,6 +54,7 @@ struct rtac_cal_block_data	rtac_cal[MAX_RTAC_BLOCKS] = {
 struct rtac_common_data {
 	atomic_t			usage_count;
 	atomic_t			apr_err_code;
+	struct mutex			rtac_fops_mutex;
 };
 
 static struct rtac_common_data		rtac_common;
@@ -320,7 +321,9 @@ static int rtac_open(struct inode *inode, struct file *f)
 	int	result = 0;
 	pr_debug("%s\n", __func__);
 
+	mutex_lock(&rtac_common.rtac_fops_mutex);
 	atomic_inc(&rtac_common.usage_count);
+	mutex_unlock(&rtac_common.rtac_fops_mutex);
 	return result;
 }
 
@@ -331,12 +334,15 @@ static int rtac_release(struct inode *inode, struct file *f)
 	int	i;
 	pr_debug("%s\n", __func__);
 
+	mutex_lock(&rtac_common.rtac_fops_mutex);
 	atomic_dec(&rtac_common.usage_count);
 	pr_debug("%s: ref count %d!\n", __func__,
 		atomic_read(&rtac_common.usage_count));
 
-	if (atomic_read(&rtac_common.usage_count) > 0)
+	if (atomic_read(&rtac_common.usage_count) > 0) {
+		mutex_unlock(&rtac_common.rtac_fops_mutex);
 		goto done;
+	}
 
 	for (i = 0; i < MAX_RTAC_BLOCKS; i++) {
 		result2 = rtac_unmap_cal_buffer(i);
@@ -353,6 +359,7 @@ static int rtac_release(struct inode *inode, struct file *f)
 			result = result2;
 		}
 	}
+	mutex_unlock(&rtac_common.rtac_fops_mutex);
 done:
 	return result;
 }
@@ -883,6 +890,14 @@ int send_adm_apr(void *buf, u32 opcode)
 		bytes_returned = ((u32 *)rtac_cal[ADM_RTAC_CAL].cal_data.
 			kvaddr)[2] + 3 * sizeof(u32);
 
+		if (bytes_returned > rtac_cal[ADM_RTAC_CAL].
+			map_data.map_size) {
+			pr_err("%s: Invalid data size = %d\n",
+				__func__, bytes_returned);
+			result = -EINVAL;
+			goto err;
+		}
+
 		if (bytes_returned > user_buf_size) {
 			pr_err("%s: User buf not big enough, size = 0x%x, returned size = 0x%x\n",
 				__func__, user_buf_size, bytes_returned);
@@ -1104,6 +1119,14 @@ int send_rtac_asm_apr(void *buf, u32 opcode)
 	if (opcode == ASM_STREAM_CMD_GET_PP_PARAMS_V2) {
 		bytes_returned = ((u32 *)rtac_cal[ASM_RTAC_CAL].cal_data.
 			kvaddr)[2] + 3 * sizeof(u32);
+
+		if (bytes_returned > rtac_cal[ASM_RTAC_CAL].
+			map_data.map_size) {
+			pr_err("%s: Invalid data size = %d\n",
+				__func__, bytes_returned);
+			result = -EINVAL;
+			goto err;
+		}
 
 		if (bytes_returned > user_buf_size) {
 			pr_err("%s: User buf not big enough, size = 0x%x, returned size = 0x%x\n",
@@ -1364,6 +1387,14 @@ static int send_rtac_afe_apr(void *buf, uint32_t opcode)
 		bytes_returned = get_resp->param_size +
 				sizeof(struct afe_port_param_data_v2);
 
+		if (bytes_returned > rtac_cal[AFE_RTAC_CAL].
+			map_data.map_size) {
+			pr_err("%s: Invalid data size = %d\n",
+				__func__, bytes_returned);
+			result = -EINVAL;
+			goto err;
+		}
+
 		if (bytes_returned > user_afe_buf.buf_size) {
 			pr_err("%s: user size = 0x%x, returned size = 0x%x\n",
 				__func__, user_afe_buf.buf_size,
@@ -1586,6 +1617,14 @@ int send_voice_apr(u32 mode, void *buf, u32 opcode)
 		bytes_returned = ((u32 *)rtac_cal[VOICE_RTAC_CAL].cal_data.
 			kvaddr)[2] + 3 * sizeof(u32);
 
+		if (bytes_returned > rtac_cal[VOICE_RTAC_CAL].
+			map_data.map_size) {
+			pr_err("%s: Invalid data size = %d\n",
+				__func__, bytes_returned);
+			result = -EINVAL;
+			goto err;
+		}
+
 		if (bytes_returned > user_buf_size) {
 			pr_err("%s: User buf not big enough, size = 0x%x, returned size = 0x%x\n",
 				__func__, user_buf_size, bytes_returned);
@@ -1712,6 +1751,7 @@ static long rtac_ioctl(struct file *f,
 {
 	int result = 0;
 
+	mutex_lock(&rtac_common.rtac_fops_mutex);
 	if (!arg) {
 		pr_err("%s: No data sent to driver!\n", __func__);
 		result = -EFAULT;
@@ -1719,6 +1759,7 @@ static long rtac_ioctl(struct file *f,
 		result = rtac_ioctl_shared(f, cmd, (void __user *)arg);
 	}
 
+	mutex_unlock(&rtac_common.rtac_fops_mutex);
 	return result;
 }
 
@@ -1741,6 +1782,7 @@ static long rtac_compat_ioctl(struct file *f,
 {
 	int result = 0;
 
+	mutex_lock(&rtac_common.rtac_fops_mutex);
 	if (!arg) {
 		pr_err("%s: No data sent to driver!\n", __func__);
 		result = -EINVAL;
@@ -1793,6 +1835,7 @@ process:
 		break;
 	}
 done:
+	mutex_unlock(&rtac_common.rtac_fops_mutex);
 	return result;
 }
 #else
@@ -1820,6 +1863,7 @@ static int __init rtac_init(void)
 	/* Driver */
 	atomic_set(&rtac_common.usage_count, 0);
 	atomic_set(&rtac_common.apr_err_code, 0);
+	mutex_init(&rtac_common.rtac_fops_mutex);
 
 	/* ADM */
 	memset(&rtac_adm_data, 0, sizeof(rtac_adm_data));

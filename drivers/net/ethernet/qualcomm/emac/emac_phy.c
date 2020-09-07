@@ -70,7 +70,6 @@ static void emac_phy_mdio_autopoll_enable(struct emac_hw *hw)
 	wmb(); /* ensure mdio autopoll is enabled */
 }
 
-static int quectel_phy_addr = PHY_MAX_ADDR; 
 static int emac_mdio_read(struct mii_bus *bus, int addr, int regnum)
 {
 	struct emac_adapter *adpt = bus->priv;
@@ -79,9 +78,12 @@ static int emac_mdio_read(struct mii_bus *bus, int addr, int regnum)
 	u32 reg = 0;
 	int ret = 0;
 
-	if (addr == 0 && quectel_phy_addr != PHY_MAX_ADDR)
-		addr = quectel_phy_addr;
-    
+	if (pm_runtime_enabled(adpt->netdev->dev.parent) &&
+	    pm_runtime_status_suspended(adpt->netdev->dev.parent)) {
+		emac_dbg(adpt, hw, "EMAC in suspended state\n");
+		return ret;
+	}
+
 	if (phy->external) {
 		ret = emac_phy_mdio_autopoll_disable(hw);
 		if (ret) {
@@ -91,7 +93,6 @@ static int emac_mdio_read(struct mii_bus *bus, int addr, int regnum)
 		}
 	}
 
-__retry:
 	emac_reg_update32(hw, EMAC, EMAC_PHY_STS, PHY_ADDR_BMSK,
 			  (addr << PHY_ADDR_SHFT));
 	wmb(); /* ensure PHY address is set before we proceed */
@@ -117,22 +118,6 @@ __retry:
 
 		emac_dbg(adpt, hw, "EMAC PHY ADDR %d PHY RD 0x%02x -> 0x%04x\n",
 			 addr, regnum, ret);
-
-		if (regnum == MII_PHYSID1 || regnum == MII_PHYSID2) {
-			emac_err(adpt, "EMAC PHY ADDR %d PHY RD 0x%02x -> 0x%04x\n", addr, regnum, ret);
-
-
-			if (quectel_phy_addr == PHY_MAX_ADDR) {
-				if (ret != 0xFFFF) { //get phy id 
-					quectel_phy_addr = addr;
-				} else if (addr == (PHY_MAX_ADDR - 1)) {
-					ret = (regnum == MII_PHYSID1) ? 0x1234 : 0x5678;
-				} else {
-					addr++;
-					goto __retry;
-				}
-			}
-		}
 	}
 
 	if (phy->external)
@@ -149,8 +134,11 @@ static int emac_mdio_write(struct mii_bus *bus, int addr, int regnum, u16 val)
 	u32 reg = 0;
 	int ret = 0;
 
-	if (addr == 0 && quectel_phy_addr != PHY_MAX_ADDR)
-		addr = quectel_phy_addr;
+	if (pm_runtime_enabled(adpt->netdev->dev.parent) &&
+	    pm_runtime_status_suspended(adpt->netdev->dev.parent)) {
+		emac_dbg(adpt, hw, "EMAC in suspended state\n");
+		return ret;
+	}
 
 	if (phy->external) {
 		ret = emac_phy_mdio_autopoll_disable(hw);

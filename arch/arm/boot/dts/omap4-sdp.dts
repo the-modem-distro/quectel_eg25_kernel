@@ -33,6 +33,7 @@
 		gpio = <&gpio2 16 0>;  /* gpio line 48 */
 		enable-active-high;
 		regulator-boot-on;
+		startup-delay-us = <25000>;
 	};
 
 	vbat: fixedregulator-vbat {
@@ -487,6 +488,17 @@
 	non-removable;
 	bus-width = <4>;
 	cap-power-off-card;
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+	wlcore: wlcore@2 {
+		compatible = "ti,wl1281";
+		reg = <2>;
+		interrupt-parent = <&gpio1>;
+		interrupts = <21 IRQ_TYPE_LEVEL_HIGH>; /* gpio 53 */
+		ref-clock-frequency = <26000000>;
+		tcxo-clock-frequency = <26000000>;
+	};
 };
 
 &emif1 {

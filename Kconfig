@@ -9,6 +9,3 @@ config SRCARCH
 	option env="SRCARCH"
 
 source "arch/$SRCARCH/Kconfig"
-
-#2015-12-05, add by jun.wu, for quectel global configs
-source "qconfig/Kconfig"

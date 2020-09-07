@@ -859,7 +859,12 @@ static void __init log_buf_len_update(unsigned size)
 /* save requested log_buf_len since it's too early to process it */
 static int __init log_buf_len_setup(char *str)
 {
-	unsigned size = memparse(str, &str);
+	unsigned int size;
+
+	if (!str)
+		return -EINVAL;
+
+	size = memparse(str, &str);
 
 	log_buf_len_update(size);
 
@@ -1403,10 +1408,6 @@ SYSCALL_DEFINE3(syslog, int, type, char __user *, buf, int, len)
 	return do_syslog(type, buf, len, SYSLOG_FROM_READER);
 }
 
-#ifndef CONFIG_DYNAMIC_DEBUG //carl, use this macro indicate mdm9607-perf_config
-static int __read_mostly perf_mode_console = 0;
-module_param(perf_mode_console, int, 0644);
-#endif
 /*
  * Call the console drivers, asking them to write out
  * log_buf[start] to log_buf[end - 1].
@@ -1422,10 +1423,6 @@ static void call_console_drivers(int level, const char *text, size_t len)
 		return;
 	if (!console_drivers)
 		return;
-#ifndef CONFIG_DYNAMIC_DEBUG
-	if (!perf_mode_console)
-		return;
-#endif
 
 	for_each_console(con) {
 		if (exclusive_console && con != exclusive_console)

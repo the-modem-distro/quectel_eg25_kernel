@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -60,7 +60,7 @@ enum fps_resolution {
 #define WRITEBACK_PANEL		10	/* Wifi display */
 #define LVDS_PANEL		11	/* LVDS */
 #define EDP_PANEL		12	/* LVDS */
-
+#define SPI_PANEL		13
 #define DSC_PPS_LEN		128
 
 /* HDR propeties count */
@@ -108,6 +108,7 @@ enum {
 	MDSS_PANEL_INTF_DSI,
 	MDSS_PANEL_INTF_EDP,
 	MDSS_PANEL_INTF_HDMI,
+	MDSS_PANEL_INTF_SPI,
 };
 
 enum {
@@ -115,6 +116,18 @@ enum {
 	MDSS_PANEL_POWER_ON,
 	MDSS_PANEL_POWER_LP1,
 	MDSS_PANEL_POWER_LP2,
+};
+
+enum {
+	MDSS_PANEL_BLANK_BLANK = 0,
+	MDSS_PANEL_BLANK_UNBLANK,
+	MDSS_PANEL_BLANK_LOW_POWER,
+};
+
+
+enum {
+	MDSS_PANEL_LOW_PERSIST_MODE_OFF = 0,
+	MDSS_PANEL_LOW_PERSIST_MODE_ON,
 };
 
 enum {
@@ -265,6 +278,7 @@ enum mdss_intf_events {
 	MDSS_EVENT_DSI_RECONFIG_CMD,
 	MDSS_EVENT_DSI_RESET_WRITE_PTR,
 	MDSS_EVENT_PANEL_TIMING_SWITCH,
+	MDSS_EVENT_UPDATE_PARAMS,
 	MDSS_EVENT_MAX,
 };
 
@@ -390,6 +404,7 @@ struct mipi_panel_info {
 	char traffic_mode;
 	char frame_rate;
 	/* command mode */
+	char frame_rate_idle;
 	char interleave_max;
 	char insert_dcs_cmd;
 	char wr_mem_continue;
@@ -414,10 +429,15 @@ struct mipi_panel_info {
 	char lp11_init;
 	u32  init_delay;
 	u32  post_init_delay;
+	u8 default_lanes;
 };
 
 struct edp_panel_info {
 	char frame_rate;	/* fps */
+};
+
+struct spi_panel_info {
+	char frame_rate;
 };
 
 /**
@@ -667,6 +687,7 @@ struct mdss_panel_info {
 	u32 partial_update_roi_merge;
 	struct ion_handle *splash_ihdl;
 	int panel_power_state;
+	int blank_state;
 	int compression_mode;
 
 	uint32_t panel_dead;
@@ -726,6 +747,7 @@ struct mdss_panel_info {
 	struct lcd_panel_info lcdc;
 	struct fbc_panel_info fbc;
 	struct mipi_panel_info mipi;
+	struct spi_panel_info spi;
 	struct lvds_panel_info lvds;
 	struct edp_panel_info edp;
 
@@ -739,6 +761,9 @@ struct mdss_panel_info {
 
 	/* debugfs structure for the panel */
 	struct mdss_panel_debugfs_info *debugfs_info;
+
+	/* persistence mode on/off */
+	bool persist_mode;
 
 	/* HDR properties of display panel*/
 	struct mdss_panel_hdr_properties hdr_properties;
@@ -781,6 +806,7 @@ struct mdss_panel_timing {
 struct mdss_panel_data {
 	struct mdss_panel_info panel_info;
 	void (*set_backlight) (struct mdss_panel_data *pdata, u32 bl_level);
+	int (*apply_display_setting)(struct mdss_panel_data *pdata, u32 mode);
 	unsigned char *mmss_cc_base;
 
 	/**
@@ -797,6 +823,7 @@ struct mdss_panel_data {
 	 */
 	int (*event_handler) (struct mdss_panel_data *pdata, int e, void *arg);
 	struct device_node *(*get_fb_node)(struct platform_device *pdev);
+	bool (*get_idle)(struct mdss_panel_data *pdata);
 
 	struct list_head timings_list;
 	struct mdss_panel_timing *current_timing;
@@ -805,6 +832,10 @@ struct mdss_panel_data {
 	/* To store dsc cfg name passed by bootloader */
 	char dsc_cfg_np_name[MDSS_MAX_PANEL_LEN];
 	struct mdss_panel_data *next;
+
+	int panel_te_gpio;
+	int panel_en_gpio;
+	struct completion te_done;
 };
 
 struct mdss_panel_debugfs_info {
@@ -824,6 +855,10 @@ static inline u32 mdss_panel_get_framerate(struct mdss_panel_info *panel_info,
 {
 	u32 frame_rate, pixel_total;
 	u64 rate;
+	struct mdss_panel_data *panel_data =
+			container_of(panel_info, typeof(*panel_data),
+					panel_info);
+	bool idle = false;
 
 	if (panel_info == NULL) {
 		frame_rate = DEFAULT_FRAME_RATE;
@@ -834,12 +869,21 @@ static inline u32 mdss_panel_get_framerate(struct mdss_panel_info *panel_info,
 	case MIPI_VIDEO_PANEL:
 	case MIPI_CMD_PANEL:
 		frame_rate = panel_info->mipi.frame_rate;
+		if (panel_data->get_idle)
+			idle = panel_data->get_idle(panel_data);
+		if (idle)
+			frame_rate = panel_info->mipi.frame_rate_idle;
+		else
+			frame_rate = panel_info->mipi.frame_rate;
 		break;
 	case EDP_PANEL:
 		frame_rate = panel_info->edp.frame_rate;
 		break;
 	case WRITEBACK_PANEL:
 		frame_rate = DEFAULT_FRAME_RATE;
+		break;
+	case SPI_PANEL:
+		frame_rate = panel_info->spi.frame_rate;
 		break;
 	case DTV_PANEL:
 		if (panel_info->dynamic_fps) {

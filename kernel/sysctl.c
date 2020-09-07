@@ -115,14 +115,6 @@ extern int sysctl_nr_open_min, sysctl_nr_open_max;
 extern int sysctl_nr_trim_pages;
 #endif
 
-#ifndef SYS_CONFIG_QUECTEL_ESCAPE_FEATURE ////MaxCodeFlagForEscapeFunc
-#define SYS_CONFIG_QUECTEL_ESCAPE_FEATURE
-#endif
-
-#ifdef SYS_CONFIG_QUECTEL_ESCAPE_FEATURE ////MaxCodeFlagForEscapeFunc
-extern int q_modemmode;
-#endif
-
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
@@ -134,7 +126,9 @@ static int zero;
 static int __maybe_unused one = 1;
 static int __maybe_unused two = 2;
 static int __maybe_unused four = 4;
+static unsigned long zero_ul;
 static unsigned long one_ul = 1;
+static unsigned long long_max = LONG_MAX;
 static int one_hundred = 100;
 #ifdef CONFIG_PRINTK
 static int ten_thousand = 10000;
@@ -183,7 +177,7 @@ extern int no_unaligned_warning;
 #define SYSCTL_WRITES_WARN	 0
 #define SYSCTL_WRITES_STRICT	 1
 
-static int sysctl_writes_strict = SYSCTL_WRITES_WARN;
+static int sysctl_writes_strict = SYSCTL_WRITES_STRICT;
 
 static int proc_do_cad_pid(struct ctl_table *table, int write,
 		  void __user *buffer, size_t *lenp, loff_t *ppos);
@@ -601,7 +595,8 @@ static struct ctl_table kern_table[] = {
 		.data		= &sysctl_sched_time_avg,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
-		.proc_handler	= proc_dointvec,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= &one,
 	},
 	{
 		.procname	= "sched_shares_window_ns",
@@ -1067,20 +1062,6 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_jiffies,
 	},
-	
-#ifdef SYS_CONFIG_QUECTEL_ESCAPE_FEATURE
-     /* 2015/4/20 added by tommy for modem mode */
-    {
-        .procname       = "qmodem_mode",
-        .data           = &q_modemmode,
-        .maxlen         = sizeof(int),
-        .mode           = 0644,
-        .proc_handler   = proc_dointvec,
-    },
-#else
-#error "max cmp tag: donot get expect src code!"
-#endif
-	
 	{
 		.procname	= "printk_ratelimit_burst",
 		.data		= &printk_ratelimit_state.burst,
@@ -1902,6 +1883,8 @@ static struct ctl_table fs_table[] = {
 		.maxlen		= sizeof(files_stat.max_files),
 		.mode		= 0644,
 		.proc_handler	= proc_doulongvec_minmax,
+		.extra1		= &zero_ul,
+		.extra2		= &long_max,
 	},
 	{
 		.procname	= "nr_open",
@@ -2534,7 +2517,16 @@ static int do_proc_dointvec_minmax_conv(bool *negp, unsigned long *lvalp,
 {
 	struct do_proc_dointvec_minmax_conv_param *param = data;
 	if (write) {
-		int val = *negp ? -*lvalp : *lvalp;
+		int val;
+		if (*negp) {
+			if (*lvalp > (unsigned long) INT_MAX + 1)
+				return -EINVAL;
+			val = -*lvalp;
+		} else {
+			if (*lvalp > (unsigned long) INT_MAX)
+				return -EINVAL;
+			val = *lvalp;
+		}
 		if ((param->min && *param->min > val) ||
 		    (param->max && *param->max < val))
 			return -EINVAL;

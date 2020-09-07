@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -12,6 +12,7 @@
 
 #include <linux/ipa_mhi.h>
 #include <linux/ipa_uc_offload.h>
+#include <linux/ipa_wdi3.h>
 #include "ipa_common_i.h"
 
 #ifndef _IPA_API_H_
@@ -69,11 +70,13 @@ struct ipa_api_controller {
 
 	int (*ipa_add_hdr)(struct ipa_ioc_add_hdr *hdrs);
 
+	int (*ipa_add_hdr_usr)(struct ipa_ioc_add_hdr *hdrs, bool user_only);
+
 	int (*ipa_del_hdr)(struct ipa_ioc_del_hdr *hdls);
 
 	int (*ipa_commit_hdr)(void);
 
-	int (*ipa_reset_hdr)(void);
+	int (*ipa_reset_hdr)(bool user_only);
 
 	int (*ipa_get_hdr)(struct ipa_ioc_get_hdr *lookup);
 
@@ -81,17 +84,21 @@ struct ipa_api_controller {
 
 	int (*ipa_copy_hdr)(struct ipa_ioc_copy_hdr *copy);
 
-	int (*ipa_add_hdr_proc_ctx)(struct ipa_ioc_add_hdr_proc_ctx *proc_ctxs);
+	int (*ipa_add_hdr_proc_ctx)(struct ipa_ioc_add_hdr_proc_ctx *proc_ctxs,
+								bool user_only);
 
 	int (*ipa_del_hdr_proc_ctx)(struct ipa_ioc_del_hdr_proc_ctx *hdls);
 
 	int (*ipa_add_rt_rule)(struct ipa_ioc_add_rt_rule *rules);
 
+	int (*ipa_add_rt_rule_usr)(struct ipa_ioc_add_rt_rule *rules,
+							bool user_only);
+
 	int (*ipa_del_rt_rule)(struct ipa_ioc_del_rt_rule *hdls);
 
 	int (*ipa_commit_rt)(enum ipa_ip_type ip);
 
-	int (*ipa_reset_rt)(enum ipa_ip_type ip);
+	int (*ipa_reset_rt)(enum ipa_ip_type ip, bool user_only);
 
 	int (*ipa_get_rt_tbl)(struct ipa_ioc_get_rt_tbl *lookup);
 
@@ -103,13 +110,16 @@ struct ipa_api_controller {
 
 	int (*ipa_add_flt_rule)(struct ipa_ioc_add_flt_rule *rules);
 
+	int (*ipa_add_flt_rule_usr)(struct ipa_ioc_add_flt_rule *rules,
+								bool user_only);
+
 	int (*ipa_del_flt_rule)(struct ipa_ioc_del_flt_rule *hdls);
 
 	int (*ipa_mdfy_flt_rule)(struct ipa_ioc_mdfy_flt_rule *rules);
 
 	int (*ipa_commit_flt)(enum ipa_ip_type ip);
 
-	int (*ipa_reset_flt)(enum ipa_ip_type ip);
+	int (*ipa_reset_flt)(enum ipa_ip_type ip, bool user_only);
 
 	int (*allocate_nat_device)(struct ipa_ioc_nat_alloc_mem *mem);
 
@@ -318,6 +328,8 @@ struct ipa_api_controller {
 
 	int (*ipa_stop_gsi_channel)(u32 clnt_hdl);
 
+	int (*ipa_start_gsi_channel)(u32 clnt_hdl);
+
 	struct iommu_domain *(*ipa_get_smmu_domain)(void);
 
 	int (*ipa_disable_apps_wan_cons_deaggr)(uint32_t agg_size,
@@ -376,6 +388,18 @@ struct ipa_api_controller {
 		void *user_data);
 
 	void (*ipa_ntn_uc_dereg_rdyCB)(void);
+
+	int (*ipa_conn_wdi3_pipes)(struct ipa_wdi3_conn_in_params *in,
+		struct ipa_wdi3_conn_out_params *out);
+
+	int (*ipa_disconn_wdi3_pipes)(int ipa_ep_idx_tx,
+		int ipa_ep_idx_rx);
+
+	int (*ipa_enable_wdi3_pipes)(int ipa_ep_idx_tx,
+		int ipa_ep_idx_rx);
+
+	int (*ipa_disable_wdi3_pipes)(int ipa_ep_idx_tx,
+		int ipa_ep_idx_rx);
 };
 
 #ifdef CONFIG_IPA

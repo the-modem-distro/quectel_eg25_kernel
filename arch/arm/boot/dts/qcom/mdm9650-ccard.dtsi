@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -30,16 +30,89 @@
 		compatible = "qcom,mdm-audio-auto";
 		qcom,model = "mdm-auto-i2s-snd-card";
 
-		qcom,mi2s-interface-mode = "pri_mi2s_master", "sec_mi2s_master";
-		qcom,auxpcm-interface-mode = "pri_pcm_master", "sec_pcm_master";
+		qcom,msm-gpios =
+			"pri_mi2s_aux_master",
+			"pri_mi2s_aux_slave",
+			"sec_mi2s_aux_master",
+			"sec_mi2s_aux_slave";
+		qcom,pinctrl-names =
+			"all_off",
+			"pri_mi2s_aux_master_active",
+			"pri_mi2s_aux_slave_active",
+			"invalid_state_1",
+			"sec_mi2s_aux_master_active",
+			"pri_master_active_sec_master_active",
+			"pri_slave_active_sec_master_active",
+			"invalid_state_2",
+			"sec_mi2s_aux_slave_active",
+			"pri_master_active_sec_slave_active",
+			"pri_slave_active_sec_slave_active";
+		pinctrl-names =
+			"all_off",
+			"pri_mi2s_aux_master_active",
+			"pri_mi2s_aux_slave_active",
+			"invalid_state_1",
+			"sec_mi2s_aux_master_active",
+			"pri_master_active_sec_master_active",
+			"pri_slave_active_sec_master_active",
+			"invalid_state_2",
+			"sec_mi2s_aux_slave_active",
+			"pri_master_active_sec_slave_active",
+			"pri_slave_active_sec_slave_active";
+		pinctrl-0 = <&pri_ws_sleep &pri_sck_sleep
+				&pri_dout_sleep &pri_din_sleep
+				&sec_ws_sleep &sec_sck_sleep
+				&sec_dout_sleep &sec_din_sleep>;
+		pinctrl-1 = <&pri_ws_active_master &pri_sck_active_master
+				&pri_dout_active &pri_din_active
+				&sec_ws_sleep &sec_sck_sleep
+				&sec_dout_sleep &sec_din_sleep>;
+		pinctrl-2 = <&pri_ws_active_slave &pri_sck_active_slave
+				&pri_dout_active &pri_din_active
+				&sec_ws_sleep &sec_sck_sleep
+				&sec_dout_sleep &sec_din_sleep>;
+		pinctrl-3 = <&pri_ws_sleep &pri_sck_sleep
+				&pri_dout_sleep &pri_din_sleep
+				&sec_ws_sleep &sec_sck_sleep
+				&sec_dout_sleep &sec_din_sleep>;
+		pinctrl-4 = <&pri_ws_sleep &pri_sck_sleep
+				&pri_dout_sleep &pri_din_sleep
+				&sec_ws_active_master &sec_sck_active_master
+				&sec_dout_active &sec_din_active>;
+		pinctrl-5 = <&pri_ws_active_master &pri_sck_active_master
+				&pri_dout_active &pri_din_active
+				&sec_ws_active_master &sec_sck_active_master
+				&sec_dout_active &sec_din_active>;
+		pinctrl-6 = <&pri_ws_active_slave &pri_sck_active_slave
+				&pri_dout_active &pri_din_active
+				&sec_ws_active_master &sec_sck_active_master
+				&sec_dout_active &sec_din_active>;
+		pinctrl-7 = <&pri_ws_sleep &pri_sck_sleep
+				&pri_dout_sleep &pri_din_sleep
+				&sec_ws_sleep &sec_sck_sleep
+				&sec_dout_sleep &sec_din_sleep>;
+		pinctrl-8 = <&pri_ws_sleep &pri_sck_sleep
+				&pri_dout_sleep &pri_din_sleep
+				&sec_ws_active_slave &sec_sck_active_slave
+				&sec_dout_active &sec_din_active>;
+		pinctrl-9 = <&pri_ws_active_master &pri_sck_active_master
+				&pri_dout_active &pri_din_active
+				&sec_ws_active_slave &sec_sck_active_slave
+				&sec_dout_active &sec_din_active>;
+		pinctrl-10 = <&pri_ws_active_slave &pri_sck_active_slave
+				&pri_dout_active &pri_din_active
+				&sec_ws_active_slave &sec_sck_active_slave
+				&sec_dout_active &sec_din_active>;
+
 		asoc-platform = <&pcm0>, <&pcm1>, <&voip>, <&voice>,
 				<&loopback>, <&hostless>, <&afe>, <&routing>,
-				<&pcm_dtmf>, <&host_pcm>;
+				<&pcm_dtmf>, <&host_pcm>, <&compress>;
 		asoc-platform-names = "msm-pcm-dsp.0", "msm-pcm-dsp.1",
 				"msm-voip-dsp", "msm-pcm-voice",
 				"msm-pcm-loopback", "msm-pcm-hostless",
 				"msm-pcm-afe", "msm-pcm-routing",
-				"msm-pcm-dtmf", "msm-voice-host-pcm";
+				"msm-pcm-dtmf", "msm-voice-host-pcm",
+				"msm-compress-dsp";
 		asoc-cpu = <&dai_pri_auxpcm>, <&mi2s_prim>, <&mi2s_sec>,
 				<&dtmf_tx>,
 				<&rx_capture_tx>, <&rx_playback_rx>,
@@ -61,7 +134,7 @@
 		asoc-codec-names = "tlv320aic3x-codec", "msm-stub-codec.1";
 	};
 
-	qcom,ntn_avb {
+	ethernet {
 		compatible = "qcom,ntn_avb";
 		qcom,ntn-rst-delay-msec = <100>;
 		qcom,ntn-rc-num = <0>;
@@ -80,18 +153,6 @@
 	bt_qca6174 {
 		qca,bt-vdd-core-supply = <&wlan_ext_vreg>;
 		/delete-property/ qca,bt-vdd-xtal-supply;
-	};
-
-	/* 1.1V/1.2V/1.8V/3.3V regulator for ethernet */
-	ntn_vreg: regulator-ntn-tps65051 {
-		compatible = "regulator-fixed";
-		regulator-name = "ntn_vreg";
-		startup-delay-us = <170>;
-		gpio = <&tlmm_pinmux 69 0>;
-		pinctrl-names = "default";
-		pinctrl-0 = <&ntn_supply_gpio>;
-		enable-active-high;
-		regulator-always-on;
 	};
 
 	/* 4V regulator for peripherals */
@@ -161,8 +222,9 @@
 &tlmm_pinmux {
 	/* Set these up as hogs */
 	pinctrl-names = "default";
-	pinctrl-0 = <&can_reset_gpio>, <&ant_switch_gpio1>, <&ant_switch_gpio2>,
-		<&ant_switch_gpio3>;
+	pinctrl-0 = <&ant_switch_gpio1>, <&ant_switch_gpio2>,
+		<&ant_switch_gpio3>, <&eth_can_supply_gpio>,
+		<&oabr_enable_gpio>;
 
 	periph_vreg_gpio: periph_vreg_gpio {
 		mux {
@@ -176,8 +238,8 @@
 		};
 	};
 
-
-	ntn_supply_gpio: ntn_supply_gpio {
+	/* This gpio controls ETH supply on v1 and CAN supply on v2 */
+	eth_can_supply_gpio: eth_can_supply_gpio {
 		mux {
 			pins = "gpio69";
 			function = "gpio";
@@ -185,27 +247,28 @@
 
 		config {
 			pins = "gpio69";
-			drive-strength = <2>;
-			bias-disable;
-		};
-	};
-
-	can_reset_gpio: can_reset_gpio {
-		mux {
-			pins = "gpio89";
-			function = "gpio";
-		};
-
-		config {
-			pins = "gpio89";
 			drive-strength = <2>;
 			output-high;
 			bias-pull-up;
 		};
 	};
 
-	pmx_sec_mi2s_dout {
-		sec_mi2s_ws_sleep {
+	oabr_enable_gpio: oabr_enable_gpio {
+		mux {
+			pins = "gpio29";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio29";
+			drive-strength = <2>;
+			output-high;
+			bias-pull-up;
+		};
+	};
+
+	pmx_sec_mi2s_aux {
+		sec_ws_sleep: sec_ws_sleep {
 			mux {
 				pins = "gpio20";
 				function = "gpio";
@@ -219,7 +282,7 @@
 			};
 		};
 
-		sec_mi2s_sck_sleep {
+		sec_sck_sleep: sec_sck_sleep {
 			mux {
 				pins = "gpio23";
 				function = "gpio";
@@ -233,7 +296,7 @@
 			};
 		};
 
-		sec_mi2s_dout_sleep {
+		sec_dout_sleep: sec_dout_sleep {
 			mux {
 				pins = "gpio22";
 				function = "gpio";
@@ -247,7 +310,7 @@
 			};
 		};
 
-		sec_mi2s_ws_active {
+		sec_ws_active_master: sec_ws_active_master {
 			mux {
 				pins = "gpio20";
 				function = "sec_mi2s_ws_b";
@@ -261,7 +324,7 @@
 			};
 		};
 
-		sec_mi2s_sck_active {
+		sec_sck_active_master: sec_sck_active_master {
 			mux {
 				pins = "gpio23";
 				function = "sec_mi2s_sck_b";
@@ -275,7 +338,33 @@
 			};
 		};
 
-		sec_mi2s_dout_active {
+		sec_ws_active_slave: sec_ws_active_slave {
+			mux {
+				pins = "gpio20";
+				function = "sec_mi2s_ws_b";
+			};
+
+			config {
+				pins = "gpio20";
+				drive-strength = <8>;	/* 8 mA */
+				bias-disable;		/* NO PULL*/
+			};
+		};
+
+		sec_sck_active_slave: sec_sck_active_slave {
+			mux {
+				pins = "gpio23";
+				function = "sec_mi2s_sck_b";
+			};
+
+			config {
+				pins = "gpio23";
+				drive-strength = <8>;	/* 8 mA */
+				bias-disable;		/* NO PULL*/
+			};
+		};
+
+		sec_dout_active: sec_dout_active {
 			mux {
 				pins = "gpio22";
 				function = "sec_mi2s_data1_b";
@@ -290,8 +379,8 @@
 		};
 	};
 
-	pmx_sec_mi2s_din {
-		sec_mi2s_din_sleep {
+	pmx_sec_mi2s_aux_din {
+		sec_din_sleep: sec_din_sleep {
 			mux {
 				pins = "gpio21";
 				function = "gpio";
@@ -305,7 +394,7 @@
 			};
 		};
 
-		sec_mi2s_din_active {
+		sec_din_active: sec_din_active {
 			mux {
 				pins = "gpio21";
 				function = "sec_mi2s_data0_b";
@@ -315,7 +404,6 @@
 				pins = "gpio21";
 				drive-strength = <8>;	/* 8 mA */
 				bias-disable;		/* NO PULL */
-				output-high;
 			};
 		};
 	};
@@ -364,6 +452,87 @@
 			};
 		};
 	};
+
+	bmi160_int1_default: bmi160_int1_default {
+		mux {
+			pins = "gpio81";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio81";
+			drive-strength = <16>; /* 16 mA */
+			bias-pull-down; /* pull down */
+		};
+	};
+
+	bmi160_int2_default: bmi160_int2_default {
+		mux {
+			pins = "gpio94";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio94";
+			drive-strength = <16>; /* 16 mA */
+			bias-pull-down; /* pull down */
+		};
+	};
+
+	i2c_1b {
+		i2c_1b_active: i2c_1b_active {
+			mux {
+				pins = "gpio84", "gpio85";
+				function = "blsp_i2c1";
+			};
+
+			config {
+				pins = "gpio84", "gpio85";
+				drive-strength = <2>;
+				bias-disable;
+			};
+		};
+
+		i2c_1b_sleep: i2c_1b_sleep {
+			mux {
+				pins = "gpio84", "gpio85";
+				function = "blsp_i2c1";
+			};
+
+			config {
+				pins = "gpio84", "gpio85";
+				drive-strength = <2>;
+				bias-pull-up;
+			};
+		};
+	};
+
+	can_reset {
+		can_rst_on: rst_on {
+			mux {
+				pins = "gpio89";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio89";
+				drive-strength = <2>; /* 2 mA */
+				bias-pull-up;
+			};
+		};
+
+		can_rst_off: rst_off {
+			mux {
+				pins = "gpio89";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio89";
+				drive-strength = <2>; /* 2 mA */
+				bias-pull-up;
+				output-high;
+			};
+		};
+	};
 };
 
 &cnss_pcie {
@@ -391,6 +560,12 @@
 	status = "ok";
 };
 
+&i2c_1 {
+	status = "ok";
+	pinctrl-0 = <&i2c_1b_active>;
+	pinctrl-1 = <&i2c_1b_sleep>;
+};
+
 &i2c_3 {
 	status = "ok";
 
@@ -415,19 +590,45 @@
 		compatible = "st,lsm330-accel";
 		reg = <0x1d>;
 	};
+
+	bmi160@68 {
+		compatible = "bosch-sensortec,bmi160";
+		reg = <0x68>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&bmi160_int1_default &bmi160_int2_default>;
+		interrupt-parent = <&tlmm_pinmux>;
+		interrupts = <81 0x2002>;
+		bmi,init-interval = <200>;
+		bmi,place = <1>;
+		bmi,gpio_irq = <&tlmm_pinmux 81 0x2002>;
+	};
 };
 
 &spi_4 {
 	status = "ok";
 	/delete-property/ qcom,use-bam;
+
+	can-controller@0 {
+		compatible = "qcom,nxp,mpc5746c";
+		reg = <0>;
+		spi-max-frequency = <9600000>;
+		interrupt-parent = <&tlmm_pinmux>;
+		interrupts = <87 2>;
+		qcom,reset-gpio = <&tlmm_pinmux 89 0x1>;
+		qcom,clk-freq-mhz = <20000000>;
+		qcom,max-can-channels = <1>;
+		qcom,bits-per-word = <8>;
+		qcom,reset-delay-msec = <200>;
+		qcom,can-fw-cmd-timeout-req;
+		qcom,can-fw-cmd-timeout-ms = <400>;
+		qcom,rem-all-buffering-timeout-ms = <2000>;
+		pinctrl-names = "active", "sleep";
+		pinctrl-0 = <&can_rst_on>;
+		pinctrl-1 = <&can_rst_off>;
+	};
 };
 
 &usb3 {
-	/* Disable pmic_id_irq due to HW glitch */
-	interrupt-map = <0x0 0 &intc 0 202 0
-			 0x0 1 &intc 0 203 0
-			 0x0 2 &intc 0 180 0>;
-	interrupt-names = "hs_phy_irq", "ss_phy_irq", "pwr_event_irq";
 	qcom,charging-disabled;
 };
 
@@ -456,7 +657,7 @@
 		qcom,master-en = <0>;		/* DISABLE GPIO */
 	};
 
-	gpio@c200 { /* GPIO 3 - CAN_EN */
+	gpio@c200 { /* GPIO 3 - CAN_ETH_EN, CAN on v1 and ETH on v2 */
 		status = "ok";
 		qcom,mode = <1>;		/* Digital output*/
 		qcom,output-type = <0>;		/* CMOS logic */

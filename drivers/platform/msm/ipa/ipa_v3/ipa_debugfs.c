@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -61,6 +61,16 @@ const char *ipa3_event_name[] = {
 	__stringify(ECM_DISCONNECT),
 	__stringify(IPA_TETHERING_STATS_UPDATE_STATS),
 	__stringify(IPA_TETHERING_STATS_UPDATE_NETWORK_STATS),
+	__stringify(IPA_PER_CLIENT_STATS_CONNECT_EVENT),
+	__stringify(IPA_PER_CLIENT_STATS_DISCONNECT_EVENT),
+	__stringify(ADD_VLAN_IFACE),
+	__stringify(DEL_VLAN_IFACE),
+	__stringify(ADD_L2TP_VLAN_MAPPING),
+	__stringify(DEL_L2TP_VLAN_MAPPING),
+	__stringify(IPA_QUOTA_REACH),
+	__stringify(IPA_SSR_BEFORE_SHUTDOWN),
+	__stringify(IPA_SSR_AFTER_POWERUP),
+	__stringify(WLAN_FWR_SSR_BEFORE_SHUTDOWN),
 };
 
 const char *ipa3_hdr_l2_type_name[] = {
@@ -75,6 +85,8 @@ const char *ipa3_hdr_proc_type_name[] = {
 	__stringify(IPA_HDR_PROC_ETHII_TO_802_3),
 	__stringify(IPA_HDR_PROC_802_3_TO_ETHII),
 	__stringify(IPA_HDR_PROC_802_3_TO_802_3),
+	__stringify(IPA_HDR_PROC_L2TP_HEADER_ADD),
+	__stringify(IPA_HDR_PROC_L2TP_HEADER_REMOVE),
 };
 
 static struct dentry *dent;
@@ -348,9 +360,11 @@ static ssize_t ipa3_read_hdr(struct file *file, char __user *ubuf, size_t count,
 
 	list_for_each_entry(entry, &ipa3_ctx->hdr_tbl.head_hdr_entry_list,
 			link) {
+		if (entry->cookie != IPA_HDR_COOKIE)
+			continue;
 		nbytes = scnprintf(
 			dbg_buff,
-			IPA_MAX_MSG_LEN,
+			IPA_MAX_MSG_LEN - 1,
 			"name:%s len=%d ref=%d partial=%d type=%s ",
 			entry->name,
 			entry->hdr_len,
@@ -361,23 +375,23 @@ static ssize_t ipa3_read_hdr(struct file *file, char __user *ubuf, size_t count,
 		if (entry->is_hdr_proc_ctx) {
 			nbytes += scnprintf(
 				dbg_buff + nbytes,
-				IPA_MAX_MSG_LEN - nbytes,
+				IPA_MAX_MSG_LEN - 1 - nbytes,
 				"phys_base=0x%pa ",
 				&entry->phys_base);
 		} else {
 			nbytes += scnprintf(
 				dbg_buff + nbytes,
-				IPA_MAX_MSG_LEN - nbytes,
+				IPA_MAX_MSG_LEN - 1 - nbytes,
 				"ofst=%u ",
 				entry->offset_entry->offset >> 2);
 		}
 		for (i = 0; i < entry->hdr_len; i++) {
 			scnprintf(dbg_buff + nbytes + i * 2,
-				  IPA_MAX_MSG_LEN - nbytes - i * 2,
+				  IPA_MAX_MSG_LEN - 1 - nbytes - i * 2,
 				  "%02x", entry->hdr[i]);
 		}
 		scnprintf(dbg_buff + nbytes + entry->hdr_len * 2,
-			  IPA_MAX_MSG_LEN - nbytes - entry->hdr_len * 2,
+			  IPA_MAX_MSG_LEN - 1 - nbytes - entry->hdr_len * 2,
 			  "\n");
 		pr_err("%s", dbg_buff);
 	}
@@ -489,12 +503,28 @@ static int ipa3_attrib_dump(struct ipa_rule_attrib *attrib,
 	}
 
 	if ((attrib->attrib_mask & IPA_FLT_MAC_DST_ADDR_ETHER_II) ||
-		(attrib->attrib_mask & IPA_FLT_MAC_DST_ADDR_802_3)) {
+		(attrib->attrib_mask & IPA_FLT_MAC_DST_ADDR_802_3) ||
+		(attrib->attrib_mask & IPA_FLT_MAC_DST_ADDR_L2TP)) {
 		pr_err("dst_mac_addr:%pM ", attrib->dst_mac_addr);
 	}
 
 	if (attrib->attrib_mask & IPA_FLT_MAC_ETHER_TYPE)
 		pr_err("ether_type:%x ", attrib->ether_type);
+
+	if (attrib->attrib_mask & IPA_FLT_TCP_SYN)
+		pr_err("tcp syn ");
+
+	if (attrib->attrib_mask & IPA_FLT_TCP_SYN_L2TP)
+		pr_err("tcp syn l2tp ");
+
+	if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IP_TYPE)
+		pr_err("l2tp inner ip type: %d ", attrib->type);
+
+	if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IPV4_DST_ADDR) {
+		addr[0] = htonl(attrib->u.v4.dst_addr);
+		mask[0] = htonl(attrib->u.v4.dst_addr_mask);
+		pr_err("dst_addr:%pI4 dst_addr_mask:%pI4 ", addr, mask);
+	}
 
 	pr_err("\n");
 	return 0;
@@ -513,12 +543,25 @@ static int ipa3_attrib_dump_eq(struct ipa_ipfltri_rule_eq *attrib)
 	if (attrib->protocol_eq_present)
 		pr_err("protocol:%d ", attrib->protocol_eq);
 
+	if (attrib->num_ihl_offset_range_16 >
+			IPA_IPFLTR_NUM_IHL_RANGE_16_EQNS) {
+		IPAERR_RL("num_ihl_offset_range_16  Max %d passed value %d\n",
+			IPA_IPFLTR_NUM_IHL_RANGE_16_EQNS,
+			attrib->num_ihl_offset_range_16);
+		 return -EPERM;
+	}
 	for (i = 0; i < attrib->num_ihl_offset_range_16; i++) {
 		pr_err(
 			   "(ihl_ofst_range16: ofst:%u lo:%u hi:%u) ",
 			   attrib->ihl_offset_range_16[i].offset,
 			   attrib->ihl_offset_range_16[i].range_low,
 			   attrib->ihl_offset_range_16[i].range_high);
+	}
+
+	if (attrib->num_offset_meq_32 > IPA_IPFLTR_NUM_MEQ_32_EQNS) {
+		IPAERR_RL("num_offset_meq_32  Max %d passed value %d\n",
+			IPA_IPFLTR_NUM_MEQ_32_EQNS, attrib->num_offset_meq_32);
+		return -EPERM;
 	}
 
 	for (i = 0; i < attrib->num_offset_meq_32; i++) {
@@ -542,12 +585,25 @@ static int ipa3_attrib_dump_eq(struct ipa_ipfltri_rule_eq *attrib)
 				attrib->ihl_offset_eq_16.value);
 	}
 
+	if (attrib->num_ihl_offset_meq_32 > IPA_IPFLTR_NUM_IHL_MEQ_32_EQNS) {
+		IPAERR_RL("num_ihl_offset_meq_32  Max %d passed value %d\n",
+			IPA_IPFLTR_NUM_IHL_MEQ_32_EQNS,
+			attrib->num_ihl_offset_meq_32);
+		return -EPERM;
+	}
+
 	for (i = 0; i < attrib->num_ihl_offset_meq_32; i++) {
 		pr_err(
 				"(ihl_ofst_meq32: ofts:%d mask:0x%x val:0x%x) ",
 				attrib->ihl_offset_meq_32[i].offset,
 				attrib->ihl_offset_meq_32[i].mask,
 				attrib->ihl_offset_meq_32[i].value);
+	}
+
+	if (attrib->num_offset_meq_128 > IPA_IPFLTR_NUM_MEQ_128_EQNS) {
+		IPAERR_RL("num_offset_meq_128  Max %d passed value %d\n",
+		IPA_IPFLTR_NUM_MEQ_128_EQNS, attrib->num_offset_meq_128);
+		return -EPERM;
 	}
 
 	for (i = 0; i < attrib->num_offset_meq_128; i++) {
@@ -686,6 +742,7 @@ static ssize_t ipa3_read_rt_hw(struct file *file, char __user *ubuf,
 	struct ipa3_debugfs_rt_entry *entry;
 	enum ipa_ip_type ip = (enum ipa_ip_type)file->private_data;
 	int num_tbls;
+	int res = 0;
 
 	if (ip == IPA_IP_v4)
 		num_tbls = IPA_MEM_PART(v4_rt_num_index);
@@ -718,7 +775,11 @@ static ssize_t ipa3_read_rt_hw(struct file *file, char __user *ubuf,
 			pr_err("rule_id:%u prio:%u retain_hdr:%u ",
 				entry[i].rule_id, entry[i].prio,
 				entry[i].retain_hdr);
-			ipa3_attrib_dump_eq(&entry[i].eq_attrib);
+			res = ipa3_attrib_dump_eq(&entry[i].eq_attrib);
+			if (res) {
+				IPAERR_RL("failed read attrib eq\n");
+				goto bail;
+			}
 		}
 
 		pr_err("== HASHABLE TABLE tbl:%d ==\n", j);
@@ -740,14 +801,20 @@ static ssize_t ipa3_read_rt_hw(struct file *file, char __user *ubuf,
 			pr_err("rule_id:%u prio:%u retain_hdr:%u ",
 				entry[i].rule_id, entry[i].prio,
 				entry[i].retain_hdr);
-			ipa3_attrib_dump_eq(&entry[i].eq_attrib);
+			res = ipa3_attrib_dump_eq(&entry[i].eq_attrib);
+			if (res) {
+				IPAERR_RL("failed read attrib eq\n");
+				goto bail;
+			}
 		}
 	}
+
+bail:
 	mutex_unlock(&ipa3_ctx->lock);
 	kfree(entry);
 	IPA_ACTIVE_CLIENTS_DEC_SIMPLE();
 
-	return 0;
+	return res;
 }
 
 static ssize_t ipa3_read_proc_ctx(struct file *file, char __user *ubuf,
@@ -812,6 +879,7 @@ static ssize_t ipa3_read_flt(struct file *file, char __user *ubuf, size_t count,
 	u32 rt_tbl_idx;
 	u32 bitmap;
 	bool eq;
+	int res = 0;
 
 	mutex_lock(&ipa3_ctx->lock);
 
@@ -827,10 +895,11 @@ static ssize_t ipa3_read_flt(struct file *file, char __user *ubuf, size_t count,
 				eq = true;
 			} else {
 				rt_tbl = ipa3_id_find(entry->rule.rt_tbl_hdl);
-				if (rt_tbl)
-					rt_tbl_idx = rt_tbl->idx;
+				if (rt_tbl == NULL ||
+					rt_tbl->cookie != IPA_RT_TBL_COOKIE)
+					rt_tbl_idx =  ~0;
 				else
-					rt_tbl_idx = ~0;
+					rt_tbl_idx = rt_tbl->idx;
 				bitmap = entry->rule.attrib.attrib_mask;
 				eq = false;
 			}
@@ -841,18 +910,23 @@ static ssize_t ipa3_read_flt(struct file *file, char __user *ubuf, size_t count,
 			pr_err("hashable:%u rule_id:%u max_prio:%u prio:%u ",
 				entry->rule.hashable, entry->rule_id,
 				entry->rule.max_prio, entry->prio);
-			if (eq)
-				ipa3_attrib_dump_eq(
+			if (eq) {
+				res = ipa3_attrib_dump_eq(
 					&entry->rule.eq_attrib);
-			else
+				if (res) {
+					IPAERR_RL("failed read attrib eq\n");
+					goto bail;
+				}
+			} else
 				ipa3_attrib_dump(
 					&entry->rule.attrib, ip);
 			i++;
 		}
 	}
+bail:
 	mutex_unlock(&ipa3_ctx->lock);
 
-	return 0;
+	return res;
 }
 
 static ssize_t ipa3_read_flt_hw(struct file *file, char __user *ubuf,
@@ -865,6 +939,7 @@ static ssize_t ipa3_read_flt_hw(struct file *file, char __user *ubuf,
 	enum ipa_ip_type ip = (enum ipa_ip_type)file->private_data;
 	u32 rt_tbl_idx;
 	u32 bitmap;
+	int res = 0;
 
 	entry = kzalloc(sizeof(*entry) * IPA_DBG_MAX_RULE_IN_TBL, GFP_KERNEL);
 	if (!entry)
@@ -887,7 +962,11 @@ static ssize_t ipa3_read_flt_hw(struct file *file, char __user *ubuf,
 				bitmap, entry[i].rule.retain_hdr);
 			pr_err("rule_id:%u prio:%u ",
 				entry[i].rule_id, entry[i].prio);
-			ipa3_attrib_dump_eq(&entry[i].rule.eq_attrib);
+			res = ipa3_attrib_dump_eq(&entry[i].rule.eq_attrib);
+			if (res) {
+				IPAERR_RL("failed read attrib eq\n");
+				goto bail;
+			}
 		}
 
 		pr_err("== HASHABLE TABLE ep:%d ==\n", j);
@@ -903,14 +982,19 @@ static ssize_t ipa3_read_flt_hw(struct file *file, char __user *ubuf,
 			pr_err("rule_id:%u max_prio:%u prio:%u ",
 				entry[i].rule_id,
 				entry[i].rule.max_prio, entry[i].prio);
-			ipa3_attrib_dump_eq(&entry[i].rule.eq_attrib);
+			res = ipa3_attrib_dump_eq(&entry[i].rule.eq_attrib);
+			if (res) {
+				IPAERR_RL("failed read attrib eq\n");
+				goto bail;
+			}
 		}
 	}
+bail:
 	mutex_unlock(&ipa3_ctx->lock);
 	kfree(entry);
 	IPA_ACTIVE_CLIENTS_DEC_SIMPLE();
 
-	return 0;
+	return res;
 }
 
 static ssize_t ipa3_read_stats(struct file *file, char __user *ubuf,
@@ -1142,8 +1226,6 @@ static ssize_t ipa3_read_ntn(struct file *file, char __user *ubuf,
 	if (!ipa3_get_ntn_stats(&stats)) {
 		nbytes = scnprintf(dbg_buff, IPA_MAX_MSG_LEN,
 			"TX num_pkts_processed=%u\n"
-			"TX tail_ptr_val=%u\n"
-			"TX num_db_fired=%u\n"
 			"TX ringFull=%u\n"
 			"TX ringEmpty=%u\n"
 			"TX ringUsageHigh=%u\n"
@@ -1155,27 +1237,25 @@ static ssize_t ipa3_read_ntn(struct file *file, char __user *ubuf,
 			"TX bamFifoUsageLow=%u\n"
 			"TX bamUtilCount=%u\n"
 			"TX num_db=%u\n"
-			"TX num_qmb_int_handled=%u\n",
+			"TX num_qmb_int_handled=%u\n"
+			"TX ipa_pipe_number=%u\n",
 			TX_STATS(num_pkts_processed),
-			TX_STATS(tail_ptr_val),
-			TX_STATS(num_db_fired),
-			TX_STATS(tx_comp_ring_stats.ringFull),
-			TX_STATS(tx_comp_ring_stats.ringEmpty),
-			TX_STATS(tx_comp_ring_stats.ringUsageHigh),
-			TX_STATS(tx_comp_ring_stats.ringUsageLow),
-			TX_STATS(tx_comp_ring_stats.RingUtilCount),
-			TX_STATS(bam_stats.bamFifoFull),
-			TX_STATS(bam_stats.bamFifoEmpty),
-			TX_STATS(bam_stats.bamFifoUsageHigh),
-			TX_STATS(bam_stats.bamFifoUsageLow),
-			TX_STATS(bam_stats.bamUtilCount),
+			TX_STATS(ring_stats.ringFull),
+			TX_STATS(ring_stats.ringEmpty),
+			TX_STATS(ring_stats.ringUsageHigh),
+			TX_STATS(ring_stats.ringUsageLow),
+			TX_STATS(ring_stats.RingUtilCount),
+			TX_STATS(gsi_stats.bamFifoFull),
+			TX_STATS(gsi_stats.bamFifoEmpty),
+			TX_STATS(gsi_stats.bamFifoUsageHigh),
+			TX_STATS(gsi_stats.bamFifoUsageLow),
+			TX_STATS(gsi_stats.bamUtilCount),
 			TX_STATS(num_db),
-			TX_STATS(num_qmb_int_handled));
+			TX_STATS(num_qmb_int_handled),
+			TX_STATS(ipa_pipe_number));
 		cnt += nbytes;
 		nbytes = scnprintf(dbg_buff + cnt, IPA_MAX_MSG_LEN - cnt,
-			"RX max_outstanding_pkts=%u\n"
 			"RX num_pkts_processed=%u\n"
-			"RX rx_ring_rp_value=%u\n"
 			"RX ringFull=%u\n"
 			"RX ringEmpty=%u\n"
 			"RX ringUsageHigh=%u\n"
@@ -1186,21 +1266,23 @@ static ssize_t ipa3_read_ntn(struct file *file, char __user *ubuf,
 			"RX bamFifoUsageHigh=%u\n"
 			"RX bamFifoUsageLow=%u\n"
 			"RX bamUtilCount=%u\n"
-			"RX num_db=%u\n",
-			RX_STATS(max_outstanding_pkts),
+			"RX num_db=%u\n"
+			"RX num_qmb_int_handled=%u\n"
+			"RX ipa_pipe_number=%u\n",
 			RX_STATS(num_pkts_processed),
-			RX_STATS(rx_ring_rp_value),
-			RX_STATS(rx_ind_ring_stats.ringFull),
-			RX_STATS(rx_ind_ring_stats.ringEmpty),
-			RX_STATS(rx_ind_ring_stats.ringUsageHigh),
-			RX_STATS(rx_ind_ring_stats.ringUsageLow),
-			RX_STATS(rx_ind_ring_stats.RingUtilCount),
-			RX_STATS(bam_stats.bamFifoFull),
-			RX_STATS(bam_stats.bamFifoEmpty),
-			RX_STATS(bam_stats.bamFifoUsageHigh),
-			RX_STATS(bam_stats.bamFifoUsageLow),
-			RX_STATS(bam_stats.bamUtilCount),
-			RX_STATS(num_db));
+			RX_STATS(ring_stats.ringFull),
+			RX_STATS(ring_stats.ringEmpty),
+			RX_STATS(ring_stats.ringUsageHigh),
+			RX_STATS(ring_stats.ringUsageLow),
+			RX_STATS(ring_stats.RingUtilCount),
+			RX_STATS(gsi_stats.bamFifoFull),
+			RX_STATS(gsi_stats.bamFifoEmpty),
+			RX_STATS(gsi_stats.bamFifoUsageHigh),
+			RX_STATS(gsi_stats.bamFifoUsageLow),
+			RX_STATS(gsi_stats.bamUtilCount),
+			RX_STATS(num_db),
+			RX_STATS(num_qmb_int_handled),
+			RX_STATS(ipa_pipe_number));
 		cnt += nbytes;
 	} else {
 		nbytes = scnprintf(dbg_buff, IPA_MAX_MSG_LEN,
@@ -1413,7 +1495,11 @@ static ssize_t ipa3_read_nat4(struct file *file,
 	pr_err("Table Size:%d\n",
 				ipa3_ctx->nat_mem.size_base_tables);
 
-	pr_err("Expansion Table Size:%d\n",
+	if (!ipa3_ctx->nat_mem.size_expansion_tables)
+		pr_err("Expansion Table Size:%d\n",
+				ipa3_ctx->nat_mem.size_expansion_tables);
+	else
+		pr_err("Expansion Table Size:%d\n",
 				ipa3_ctx->nat_mem.size_expansion_tables-1);
 
 	if (!ipa3_ctx->nat_mem.is_sys_mem)
@@ -1428,6 +1514,8 @@ static ssize_t ipa3_read_nat4(struct file *file,
 
 			pr_err("\nBase Table:\n");
 		} else {
+			if (!ipa3_ctx->nat_mem.size_expansion_tables)
+				continue;
 			tbl_size = ipa3_ctx->nat_mem.size_expansion_tables-1;
 			base_tbl =
 			 (u32 *)ipa3_ctx->nat_mem.ipv4_expansion_rules_addr;
@@ -1527,6 +1615,8 @@ static ssize_t ipa3_read_nat4(struct file *file,
 
 			pr_err("\nIndex Table:\n");
 		} else {
+			if (!ipa3_ctx->nat_mem.size_expansion_tables)
+				continue;
 			tbl_size = ipa3_ctx->nat_mem.size_expansion_tables-1;
 			indx_tbl =
 			 (u32 *)ipa3_ctx->nat_mem.index_table_expansion_addr;
@@ -1706,7 +1796,7 @@ static ssize_t ipa3_enable_ipc_low(struct file *file,
 					"ipa_low", 0);
 		}
 			if (ipa_ipc_low_buff == NULL)
-				IPAERR("failed to get logbuf_low\n");
+				IPADBG("failed to get logbuf_low\n");
 		ipa3_ctx->logbuf_low = ipa_ipc_low_buff;
 	} else {
 		ipa3_ctx->logbuf_low = NULL;

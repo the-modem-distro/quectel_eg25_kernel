@@ -173,7 +173,8 @@ struct qusb_phy {
 
 static void qusb_phy_update_tcsr_level_shifter(struct qusb_phy *qphy, u32 val)
 {
-	int scm_ret, resp_ret;
+	int scm_ret, resp_ret = 0;
+	int dummy = 0;
 
 	dev_dbg(qphy->phy.dev, "%s(): update tcsr lvl shift value:%d\n",
 				__func__, val);
@@ -181,8 +182,22 @@ static void qusb_phy_update_tcsr_level_shifter(struct qusb_phy *qphy, u32 val)
 		writel_relaxed(val, qphy->tcsr_phy_lvl_shift_keeper);
 
 	else if (qphy->scm_lvl_shifter_update) {
-		scm_ret = scm_call(SCM_SVC_BOOT, QUSB2PHY_LVL_SHIFTER_CMD_ID,
-			&val, sizeof(val), &resp_ret, sizeof(resp_ret));
+		if (!is_scm_armv8()) {
+			scm_ret = scm_call(SCM_SVC_BOOT,
+					QUSB2PHY_LVL_SHIFTER_CMD_ID, &val,
+					sizeof(val), &resp_ret,
+					sizeof(resp_ret));
+		} else {
+			struct scm_desc desc = {0};
+
+			desc.arginfo = SCM_ARGS(2);
+			desc.args[0] = val;
+			desc.args[1] = dummy;
+
+			scm_ret = scm_call2(SCM_SIP_FNID(SCM_SVC_BOOT,
+					QUSB2PHY_LVL_SHIFTER_CMD_ID),
+					&desc);
+		}
 		dev_dbg(qphy->phy.dev, "%s(): scm_ret:%d resp_ret:%d\n",
 				__func__, scm_ret, resp_ret);
 	}
@@ -1007,13 +1022,15 @@ static int qusb_phy_set_suspend(struct usb_phy *phy, int suspend)
 			writel_relaxed(intr_mask,
 				qphy->base + QUSB2PHY_PORT_INTR_CTRL);
 
-			/* enable phy auto-resume */
-			writel_relaxed(0x0C,
+			if (linestate & (LINESTATE_DP | LINESTATE_DM)) {
+				/* enable phy auto-resume */
+				writel_relaxed(0x0C,
 					qphy->base + QUSB2PHY_PORT_TEST_CTRL);
-			/* flush the previous write before next write */
-			wmb();
-			writel_relaxed(0x04,
-				qphy->base + QUSB2PHY_PORT_TEST_CTRL);
+				/* flush the previous write before next write */
+				wmb();
+				writel_relaxed(0x04,
+					qphy->base + QUSB2PHY_PORT_TEST_CTRL);
+			}
 
 
 			dev_dbg(phy->dev, "%s: intr_mask = %x\n",

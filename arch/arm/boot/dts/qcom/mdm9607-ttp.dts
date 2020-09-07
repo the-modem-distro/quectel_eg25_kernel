@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,11 +15,15 @@
 
 #include "mdm9607-mtp.dtsi"
 / {
-	model = "Qualcomm Technologies, Inc. MDM 9206 TTP";
+	model = "Qualcomm Technologies, Inc. MDM 9607 TTP";
 	compatible = "qcom,mdm9607-ttp", "qcom,mdm9607", "qcom,ttp";
 	qcom,board-id = <0x1E 0>;
 };
 
 &hsic_host {
 	status = "ok";
+};
+
+&emac_lan_vreg{
+	regulator-always-on;
 };

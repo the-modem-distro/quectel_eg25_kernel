@@ -199,6 +199,10 @@ static int snd_usb_copy_string_desc(struct mixer_build *state,
 				    int index, char *buf, int maxlen)
 {
 	int len = usb_string(state->chip->dev, index, buf, maxlen - 1);
+
+	if (len < 0)
+		return 0;
+
 	buf[len] = 0;
 	return len;
 }
@@ -879,6 +883,14 @@ static void volume_control_quirks(struct usb_mixer_elem_info *cval,
 		}
 		break;
 
+	case USB_ID(0x0d8c, 0x0103):
+		if (!strcmp(kctl->id.name, "PCM Playback Volume")) {
+			usb_audio_info(chip,
+				 "set volume quirk for CM102-A+/102S+\n");
+			cval->min = -256;
+		}
+		break;
+
 	case USB_ID(0x0471, 0x0101):
 	case USB_ID(0x0471, 0x0104):
 	case USB_ID(0x0471, 0x0105):
@@ -926,6 +938,17 @@ static void volume_control_quirks(struct usb_mixer_elem_info *cval,
 			cval->res = 384;
 		}
 		break;
+
+	case USB_ID(0x1130, 0x1620): /* Logitech Speakers S150 */
+	/* This audio device has 2 channels and it explicitly requires the
+	 * host to send SET_CUR command on the volume control of both the
+	 * channels. 7936 = 0x1F00 is the default value.
+	 */
+		if (cval->channels == 2)
+			snd_usb_mixer_set_ctl_value(cval, UAC_SET_CUR,
+						(cval->control << 8) | 2, 7936);
+		break;
+
 	}
 }
 
@@ -1336,6 +1359,8 @@ static void build_feature_ctl(struct mixer_build *state, void *raw_desc,
 		}
 	}
 
+	snd_usb_mixer_fu_apply_quirk(state->mixer, cval, unitid, kctl);
+
 	range = (cval->max - cval->min) / cval->res;
 	/*
 	 * Are there devices with volume range more than 255? I use a bit more
@@ -1374,6 +1399,12 @@ static int parse_audio_feature_unit(struct mixer_build *state, int unitid,
 	__u8 *bmaControls;
 
 	if (state->mixer->protocol == UAC_VERSION_1) {
+		if (hdr->bLength < 7) {
+			usb_audio_err(state->chip,
+				      "unit %u: invalid UAC_FEATURE_UNIT descriptor\n",
+				      unitid);
+			return -EINVAL;
+		}
 		csize = hdr->bControlSize;
 		if (!csize) {
 			usb_audio_dbg(state->chip,
@@ -1391,6 +1422,12 @@ static int parse_audio_feature_unit(struct mixer_build *state, int unitid,
 		}
 	} else {
 		struct uac2_feature_unit_descriptor *ftr = _ftr;
+		if (hdr->bLength < 6) {
+			usb_audio_err(state->chip,
+				      "unit %u: invalid UAC_FEATURE_UNIT descriptor\n",
+				      unitid);
+			return -EINVAL;
+		}
 		csize = 4;
 		channels = (hdr->bLength - 6) / 4 - 1;
 		bmaControls = ftr->bmaControls;
@@ -1774,7 +1811,7 @@ static int build_audio_procunit(struct mixer_build *state, int unitid,
 				char *name)
 {
 	struct uac_processing_unit_descriptor *desc = raw_desc;
-	int num_ins = desc->bNrInPins;
+	int num_ins;
 	struct usb_mixer_elem_info *cval;
 	struct snd_kcontrol *kctl;
 	int i, err, nameid, type, len;
@@ -1789,7 +1826,13 @@ static int build_audio_procunit(struct mixer_build *state, int unitid,
 		0, NULL, default_value_info
 	};
 
-	if (desc->bLength < 13 || desc->bLength < 13 + num_ins ||
+	if (desc->bLength < 13) {
+		usb_audio_err(state->chip, "invalid %s descriptor (id %d)\n", name, unitid);
+		return -EINVAL;
+	}
+
+	num_ins = desc->bNrInPins;
+	if (desc->bLength < 13 + num_ins ||
 	    desc->bLength < num_ins + uac_processing_unit_bControlSize(desc, state->mixer->protocol)) {
 		usb_audio_err(state->chip, "invalid %s descriptor (id %d)\n", name, unitid);
 		return -EINVAL;
@@ -2007,7 +2050,8 @@ static int parse_audio_selector_unit(struct mixer_build *state, int unitid,
 	const struct usbmix_name_map *map;
 	char **namelist;
 
-	if (!desc->bNrInPins || desc->bLength < 5 + desc->bNrInPins) {
+	if (desc->bLength < 5 || !desc->bNrInPins ||
+	    desc->bLength < 5 + desc->bNrInPins) {
 		usb_audio_err(state->chip,
 			"invalid SELECTOR UNIT descriptor %d\n", unitid);
 		return -EINVAL;
@@ -2078,19 +2122,25 @@ static int parse_audio_selector_unit(struct mixer_build *state, int unitid,
 	kctl->private_value = (unsigned long)namelist;
 	kctl->private_free = usb_mixer_selector_elem_free;
 
-	nameid = uac_selector_unit_iSelector(desc);
+	/* check the static mapping table at first */
 	len = check_mapped_name(map, kctl->id.name, sizeof(kctl->id.name));
-	if (len)
-		;
-	else if (nameid)
-		snd_usb_copy_string_desc(state, nameid, kctl->id.name,
-					 sizeof(kctl->id.name));
-	else {
-		len = get_term_name(state, &state->oterm,
+	if (!len) {
+		/* no mapping ? */
+		/* if iSelector is given, use it */
+		nameid = uac_selector_unit_iSelector(desc);
+		if (nameid)
+			len = snd_usb_copy_string_desc(state, nameid,
+						       kctl->id.name,
+						       sizeof(kctl->id.name));
+		/* ... or pick up the terminal name at next */
+		if (!len)
+			len = get_term_name(state, &state->oterm,
 				    kctl->id.name, sizeof(kctl->id.name), 0);
+		/* ... or use the fixed string "USB" as the last resort */
 		if (!len)
 			strlcpy(kctl->id.name, "USB", sizeof(kctl->id.name));
 
+		/* and add the proper suffix */
 		if (desc->bDescriptorSubtype == UAC2_CLOCK_SELECTOR)
 			append_ctl_name(kctl, " Clock Source");
 		else if ((state->oterm.type & 0xff00) == 0x0100)
@@ -2158,6 +2208,9 @@ static int parse_audio_unit(struct mixer_build *state, int unitid)
 
 static void snd_usb_mixer_free(struct usb_mixer_interface *mixer)
 {
+	/* kill pending URBs */
+	snd_usb_mixer_disconnect(&mixer->list);
+
 	kfree(mixer->id_elems);
 	if (mixer->urb) {
 		kfree(mixer->urb->transfer_buffer);
@@ -2494,8 +2547,13 @@ void snd_usb_mixer_disconnect(struct list_head *p)
 	struct usb_mixer_interface *mixer;
 
 	mixer = list_entry(p, struct usb_mixer_interface, list);
-	usb_kill_urb(mixer->urb);
-	usb_kill_urb(mixer->rc_urb);
+	if (mixer->disconnected)
+		return;
+	if (mixer->urb)
+		usb_kill_urb(mixer->urb);
+	if (mixer->rc_urb)
+		usb_kill_urb(mixer->rc_urb);
+	mixer->disconnected = true;
 }
 
 #ifdef CONFIG_PM

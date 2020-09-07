@@ -98,7 +98,8 @@ static int submit_lookup_objects(struct msm_gem_submit *submit,
 			pagefault_disable();
 		}
 
-		if (submit_bo.flags & ~MSM_SUBMIT_BO_FLAGS) {
+		if ((submit_bo.flags & ~MSM_SUBMIT_BO_FLAGS) ||
+			!(submit_bo.flags & MSM_SUBMIT_BO_FLAGS)) {
 			DRM_ERROR("invalid flags: %x\n", submit_bo.flags);
 			ret = -EINVAL;
 			goto out_unlock;
@@ -385,7 +386,8 @@ int msm_ioctl_gem_submit(struct drm_device *dev, void *data,
 		void __user *userptr =
 			to_user_ptr(args->cmds + (i * sizeof(submit_cmd)));
 		struct msm_gem_object *msm_obj;
-		uint32_t iova;
+		uint64_t iova;
+		size_t size;
 
 		ret = copy_from_user(&submit_cmd, userptr, sizeof(submit_cmd));
 		if (ret) {
@@ -417,12 +419,12 @@ int msm_ioctl_gem_submit(struct drm_device *dev, void *data,
 			goto out;
 		}
 
-		if ((submit_cmd.size + submit_cmd.submit_offset) >
-				msm_obj->base.size) {
-			DRM_ERROR(
-			"invalid cmdstream size:%u, offset:%u, base_size:%zu\n",
-				submit_cmd.size, submit_cmd.submit_offset,
-				msm_obj->base.size);
+		size = submit_cmd.size + submit_cmd.submit_offset;
+
+		if (!submit_cmd.size || (size < submit_cmd.size) ||
+			(size > msm_obj->base.size)) {
+			DRM_ERROR("invalid cmdstream offset/size: %u/%u\n",
+				submit_cmd.submit_offset, submit_cmd.size);
 			ret = -EINVAL;
 			goto out;
 		}

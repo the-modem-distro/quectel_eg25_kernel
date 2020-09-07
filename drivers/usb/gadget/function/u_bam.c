@@ -34,29 +34,6 @@
 #define BAM_N_PORTS	 2
 #define BAM2BAM_N_PORTS	 4
 
-#define QUECTEL_POWER_DOWN
-
-#define QUECTEL_MULTI_IP_PACKAGES
-
-#ifdef QUECTEL_MULTI_IP_PACKAGES
-
-#define QUEC_NET_MSG_SPEC               (0x80)
-
-#define QUEC_NET_MSG_ID_IP_DATA         (0x00)
-
-struct quec_net_package_header {
-        unsigned char msg_spec;
-        unsigned char msg_id;
-        unsigned short payload_len;
-        unsigned char reserve[16];
-} __packed;
-
-unsigned int multi_package_max_len = 1520;
-unsigned int wait_for_package_timeout = 50; //us
-unsigned int package_max_count_in_queue = 5;
-unsigned int multi_package_enabled = 0;
-#endif
-
 static struct workqueue_struct *gbam_wq;
 static int n_bam_ports;
 static int n_bam2bam_ports;
@@ -162,9 +139,6 @@ struct bam_ch_info {
 	struct work_struct	write_tobam_w;
 	struct work_struct	write_tohost_w;
 
-#ifdef QUECTEL_MULTI_IP_PACKAGES
-	struct delayed_work 	write_tohost_delay_work;
-#endif
 	struct usb_request	*rx_req;
 	struct usb_request	*tx_req;
 	bool			tx_req_dequeued;
@@ -238,10 +212,6 @@ static void gbam_start_endless_rx(struct gbam_port *port);
 static void gbam_start_endless_tx(struct gbam_port *port);
 static void gbam_notify(void *p, int event, unsigned long data);
 static void gbam_data_write_tobam(struct work_struct *w);
-
-#ifdef QUECTEL_POWER_DOWN
-int quec_system_power_downed(void);
-#endif
 
 /*---------------misc functions---------------- */
 static void gbam_free_requests(struct usb_ep *ep, struct list_head *head)
@@ -423,105 +393,6 @@ static void gbam_ipa_sys2bam_notify_cb(void *priv, enum ipa_dp_evt_type event,
 /*--------------------------------------------- */
 
 /*------------data_path----------------------------*/
-
-#ifdef QUECTEL_MULTI_IP_PACKAGES
-
-static void gbam_write_data_tohost(struct gbam_port *port);
-
-struct sk_buff* quec_get_multi_skb(struct sk_buff_head *list, int max_len)
-{
-	struct sk_buff* skb;
-	struct sk_buff* skb_tmp;
-	struct quec_net_package_header net_package = {0};
-
-	net_package.msg_spec = QUEC_NET_MSG_SPEC;
-	net_package.msg_id = QUEC_NET_MSG_ID_IP_DATA;
-
-	skb_tmp = __skb_dequeue(list);
-	
-	if (skb_tmp == NULL)
-		return NULL;
-	
-	if (max_len < (skb_tmp->len + sizeof (struct quec_net_package_header)))
-	{
-		max_len = (skb_tmp->len + sizeof (struct quec_net_package_header));
-	}
-
-	skb = alloc_skb(max_len, GFP_ATOMIC);
-
-	if (skb == NULL)
-	{
-		printk("quec_get_multi_skb--------alloc skb failed------\n");
-		return skb_tmp;
-	}
-
-	while (1)
-	{
-		net_package.payload_len = htons(skb_tmp->len);
-		memcpy(skb_put(skb, sizeof(net_package)), &net_package, sizeof(net_package));
-		memcpy(skb_put(skb, skb_tmp->len), skb_tmp->data, skb_tmp->len);
-
-		dev_kfree_skb_any(skb_tmp);
-
-		skb_tmp = skb_peek(list);
-
-		if ((skb_tmp == NULL)
-			|| (skb_tailroom(skb) < (skb_tmp->len + sizeof (struct quec_net_package_header))))
-		{
-			return skb;
-		}
-		skb_tmp = __skb_dequeue(list);
-	}
-
-	return skb;
-}
-
-
-static atomic_t write_data_to_host_delayed = ATOMIC_INIT(0);
-
-static void start_write_to_host_delay_work(struct delayed_work* delay_work)
-{
-	if (atomic_read(&write_data_to_host_delayed) == 0)
-	{
-		atomic_set(&write_data_to_host_delayed, 1);		
-		queue_delayed_work(gbam_wq, delay_work, usecs_to_jiffies(wait_for_package_timeout));
-	}
-}
-
-static void queue_data_len(struct sk_buff_head* queue, int* data_len, int* skb_count)
-{
-	struct sk_buff *skb;
-	*data_len = 0;
-	*skb_count = 0;
-
-	skb_queue_walk(queue, skb) {
-		*data_len += skb->len;
-		*skb_count = (*skb_count) + 1;
-    }
-}
-
-static int enough_data_to_send(struct sk_buff_head* queue, int multi_package_len, int package_count)
-{
-	int data_len,  skb_count;
-	queue_data_len(queue, &data_len, &skb_count);
-	return ((data_len >= multi_package_len) || (skb_count >= package_count));
-}
-
-static void gbam_write_data_tohost_delay_w(struct work_struct *w)
-{
-	struct bam_ch_info	*d;
-	struct gbam_port	*port;
-
-	d = container_of(w, struct bam_ch_info, write_tohost_delay_work.work);
-	port = d->port;
-	
-	atomic_set(&write_data_to_host_delayed, 0);
-	
-	gbam_write_data_tohost(port);
-}
-
-#endif
-
 static void gbam_write_data_tohost(struct gbam_port *port)
 {
 	unsigned long			flags;
@@ -543,15 +414,7 @@ static void gbam_write_data_tohost(struct gbam_port *port)
 	ep = port->port_usb->in;
 
 	while (!list_empty(&d->tx_idle)) {
-#ifndef QUECTEL_MULTI_IP_PACKAGES
 		skb = __skb_dequeue(&d->tx_skb_q);
-#else
-		if (multi_package_enabled) {
-			skb = quec_get_multi_skb(&d->tx_skb_q, multi_package_max_len);
-		} else {
-			skb = __skb_dequeue(&d->tx_skb_q);
-		}
-#endif
 		if (!skb)
 			break;
 
@@ -608,13 +471,6 @@ static void gbam_write_data_tohost(struct gbam_port *port)
 			break;
 		}
 		d->to_host++;
-
-#ifdef QUECTEL_MULTI_IP_PACKAGES
-		if (multi_package_enabled && (!enough_data_to_send(&d->tx_skb_q, multi_package_max_len, package_max_count_in_queue))) {
-			start_write_to_host_delay_work(&d->write_tohost_delay_work);
-			break;
-		}
-#endif
 	}
 	spin_unlock_irqrestore(&port->port_lock_dl, flags);
 }
@@ -662,26 +518,7 @@ void gbam_data_recv_cb(void *p, struct sk_buff *skb)
 	__skb_queue_tail(&d->tx_skb_q, skb);
 	spin_unlock_irqrestore(&port->port_lock_dl, flags);
 
-#ifndef QUECTEL_MULTI_IP_PACKAGES
 	gbam_write_data_tohost(port);
-#else
-	if (!multi_package_enabled) {
-		gbam_write_data_tohost(port);
-		return;
-	}
-
-	spin_lock_irqsave(&port->port_lock_dl, flags);
-	if (!enough_data_to_send(&d->tx_skb_q, multi_package_max_len, package_max_count_in_queue)) {
-		spin_unlock_irqrestore(&port->port_lock_dl, flags);
-		start_write_to_host_delay_work(&d->write_tohost_delay_work);
-		return;
-	} else {
-		spin_unlock_irqrestore(&port->port_lock_dl, flags);
-		gbam_write_data_tohost(port);
-	}
-
-#endif
-
 }
 
 void gbam_data_write_done(void *p, struct sk_buff *skb)
@@ -864,24 +701,7 @@ static void gbam_epin_complete(struct usb_ep *ep, struct usb_request *req)
 	list_add_tail(&req->list, &d->tx_idle);
 	spin_unlock(&port->port_lock_dl);
 
-#ifdef QUECTEL_MULTI_IP_PACKAGES
-	if (!multi_package_enabled) {
-		queue_work(gbam_wq, &d->write_tohost_w);
-	}
-
-	spin_lock(&port->port_lock_dl);
-	if (!enough_data_to_send(&d->tx_skb_q, multi_package_max_len, package_max_count_in_queue)) {
-		spin_unlock(&port->port_lock_dl);
-		start_write_to_host_delay_work(&d->write_tohost_delay_work);
-		return;
-	} else {
-		spin_unlock(&port->port_lock_dl);
-		queue_work(gbam_wq, &d->write_tohost_w);
-	}
-#else
 	queue_work(gbam_wq, &d->write_tohost_w);
-#endif
-
 }
 
 static void
@@ -1390,12 +1210,6 @@ static void gbam_disconnect_work(struct work_struct *w)
 	struct gbam_port *port =
 			container_of(w, struct gbam_port, disconnect_w);
 	struct bam_ch_info *d = &port->data_ch;
-
-#ifdef QUECTEL_POWER_DOWN
-	if (quec_system_power_downed())	{
-		goto exit;
-	}
-#endif
 
 	if (!test_bit(BAM_CH_OPENED, &d->flags)) {
 		pr_err("%s: Bam channel is not opened\n", __func__);
@@ -2038,10 +1852,6 @@ static int gbam_port_alloc(int portno)
 	INIT_LIST_HEAD(&d->rx_idle);
 	INIT_WORK(&d->write_tobam_w, gbam_data_write_tobam);
 	INIT_WORK(&d->write_tohost_w, gbam_write_data_tohost_w);
-
-#ifdef QUECTEL_MULTI_IP_PACKAGES 
-	INIT_DELAYED_WORK(&d->write_tohost_delay_work, gbam_write_data_tohost_delay_w);
-#endif
 	skb_queue_head_init(&d->tx_skb_q);
 	skb_queue_head_init(&d->rx_skb_q);
 	skb_queue_head_init(&d->rx_skb_idle);

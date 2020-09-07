@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -46,7 +46,7 @@
 #define ISPIF_INTF_CMD_DISABLE_IMMEDIATELY    0x02
 
 #define ISPIF_TIMEOUT_SLEEP_US                1000
-#define ISPIF_TIMEOUT_ALL_US               1000000
+#define ISPIF_TIMEOUT_ALL_US                200000
 #define ISPIF_SOF_DEBUG_COUNT                    0
 
 #undef CDBG
@@ -69,6 +69,11 @@ static void msm_ispif_io_dump_reg(struct ispif_device *ispif)
 {
 	if (!ispif->enb_dump_reg)
 		return;
+	if (!ispif->base) {
+		pr_err("%s: null pointer for the ispif base\n", __func__);
+		return;
+	}
+
 	msm_camera_io_dump(ispif->base, 0x250, 0);
 }
 
@@ -209,32 +214,34 @@ static long msm_ispif_cmd_ext(struct v4l2_subdev *sd,
 	long rc = 0;
 	struct ispif_device *ispif =
 		(struct ispif_device *)v4l2_get_subdevdata(sd);
-	struct ispif_cfg_data_ext pcdata;
+	struct ispif_cfg_data_ext pcdata = {0};
 	struct msm_ispif_param_data_ext *params = NULL;
+
+	 if (is_compat_task()) {
 #ifdef CONFIG_COMPAT
-	struct ispif_cfg_data_ext_32 *pcdata32 =
-		(struct ispif_cfg_data_ext_32 *)arg;
+		struct ispif_cfg_data_ext_32 *pcdata32 =
+			(struct ispif_cfg_data_ext_32 *)arg;
 
-	if (pcdata32 == NULL) {
-		pr_err("Invalid params passed from user\n");
-		return -EINVAL;
-	}
-	pcdata.cfg_type  = pcdata32->cfg_type;
-	pcdata.size = pcdata32->size;
-	pcdata.data = compat_ptr(pcdata32->data);
-
-#else
-	struct ispif_cfg_data_ext *pcdata64 =
-		(struct ispif_cfg_data_ext *)arg;
-
-	if (pcdata64 == NULL) {
-		pr_err("Invalid params passed from user\n");
-		return -EINVAL;
-	}
-	pcdata.cfg_type  = pcdata64->cfg_type;
-	pcdata.size = pcdata64->size;
-	pcdata.data = pcdata64->data;
+		if (pcdata32 == NULL) {
+			pr_err("Invalid params passed from user\n");
+			return -EINVAL;
+		}
+		pcdata.cfg_type  = pcdata32->cfg_type;
+		pcdata.size = pcdata32->size;
+		pcdata.data = compat_ptr(pcdata32->data);
 #endif
+	} else {
+		struct ispif_cfg_data_ext *pcdata64 =
+			(struct ispif_cfg_data_ext *)arg;
+
+		if (pcdata64 == NULL) {
+			pr_err("Invalid params passed from user\n");
+			return -EINVAL;
+		}
+		pcdata.cfg_type  = pcdata64->cfg_type;
+		pcdata.size = pcdata64->size;
+		pcdata.data = pcdata64->data;
+	}
 	if (pcdata.size != sizeof(struct msm_ispif_param_data_ext)) {
 		pr_err("%s: payload size mismatch\n", __func__);
 		return -EINVAL;

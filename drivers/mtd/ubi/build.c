@@ -442,7 +442,7 @@ static ssize_t dev_attribute_store(struct device *dev,
 			   struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
-	int ret;
+	int ret = count;
 	struct ubi_device *ubi;
 	unsigned long long scrub_sqnum;
 
@@ -947,6 +947,17 @@ int ubi_attach_mtd_dev(struct mtd_info *mtd, int ubi_num,
 	 */
 	if (mtd->type == MTD_UBIVOLUME) {
 		ubi_err(ubi, "refuse attaching mtd%d - it is already emulated on top of UBI",
+			mtd->index);
+		return -EINVAL;
+	}
+
+	/*
+	 * Both UBI and UBIFS have been designed for SLC NAND and NOR flashes.
+	 * MLC NAND is different and needs special care, otherwise UBI or UBIFS
+	 * will die soon and you will lose all your data.
+	 */
+	if (mtd->type == MTD_MLCNANDFLASH) {
+		pr_err("ubi: refuse attaching mtd%d - MLC NAND is not supported\n",
 			mtd->index);
 		return -EINVAL;
 	}

@@ -228,7 +228,8 @@ static void sdio_enable_vendor_specific_settings(struct mmc_card *card)
 	u8 settings;
 
 	if (mmc_enable_qca6574_settings(card) ||
-		mmc_enable_qca9377_settings(card)) {
+		mmc_enable_qca9377_settings(card) ||
+		mmc_enable_qca9379_settings(card)) {
 		ret = mmc_io_rw_direct(card, 1, 0, 0xF2, 0x0F, NULL);
 		if (ret) {
 			pr_crit("%s: failed to write to fn 0xf2 %d\n",
@@ -643,17 +644,11 @@ static int mmc_sdio_init_uhs_card(struct mmc_card *card)
 	 * SPI mode doesn't define CMD19 and tuning is only valid for SDR50 and
 	 * SDR104 mode SD-cards. Note that tuning is mandatory for SDR104.
 	 */
-	if (!mmc_host_is_spi(card->host) && card->host->ops->execute_tuning &&
-			((card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR50) ||
-			 (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR104))) {
-		mmc_host_clk_hold(card->host);
-		err = card->host->ops->execute_tuning(card->host,
-						      MMC_SEND_TUNING_BLOCK);
-		mmc_host_clk_release(card->host);
-	}
-
+	if (!mmc_host_is_spi(card->host) &&
+	    ((card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR50) ||
+	     (card->sw_caps.sd3_bus_mode & SD_MODE_UHS_SDR104)))
+		err = mmc_execute_tuning(card);
 out:
-
 	return err;
 }
 
@@ -748,7 +743,7 @@ try_again:
 	 */
 	if (!powered_resume && (rocr & ocr & R4_18V_PRESENT)) {
 		err = mmc_set_signal_voltage(host, MMC_SIGNAL_VOLTAGE_180,
-					ocr);
+					ocr_card);
 		if (err == -EAGAIN) {
 			sdio_reset(host);
 			mmc_go_idle(host);
@@ -1080,11 +1075,7 @@ static int mmc_sdio_resume(struct mmc_host *host)
 	}
 
 	/* No need to reinitialize powered-resumed nonremovable cards */
-#if 1 //add by carl, mmc0 connect FC20, we remove "qcom,nonremovable" in mdm9607-mtp.dtsi because we need polling to detect wifi chip
-	if ((mmc_card_is_removable(host) && host->index != 0) || !mmc_card_keep_power(host)) {
-#else
 	if (mmc_card_is_removable(host) || !mmc_card_keep_power(host)) {
-#endif
 		sdio_reset(host);
 		mmc_go_idle(host);
 		err = mmc_sdio_init_card(host, host->card->ocr, host->card,

@@ -44,14 +44,16 @@ obj-$(CONFIG_MSM_GLINK) += glink.o glink_debugfs.o glink_ssr.o
 obj-$(CONFIG_MSM_GLINK_LOOPBACK_SERVER) += glink_loopback_server.o
 obj-$(CONFIG_MSM_GLINK_SMD_XPRT) += glink_smd_xprt.o
 obj-$(CONFIG_MSM_GLINK_SMEM_NATIVE_XPRT) += glink_smem_native_xprt.o
+obj-$(CONFIG_MSM_GLINK_BGCOM_XPRT) += glink_bgcom_xprt.o
 obj-$(CONFIG_MSM_SPCOM) += spcom.o
 obj-$(CONFIG_MSM_SMEM_LOGGING) += smem_log.o
-obj-$(CONFIG_MSM_SMP2P) += smp2p.o smp2p_debug.o smp2p_sleepstate.o
-obj-$(CONFIG_MSM_SMP2P_TEST) += smp2p_loopback.o smp2p_test.o smp2p_spinlock_test.o
+obj-$(CONFIG_MSM_BG_GLINK) += bg_glink.o
+obj-$(CONFIG_MSM_SMP2P) += smp2p.o smp2p_loopback.o smp2p_debug.o smp2p_sleepstate.o
 obj-$(CONFIG_MSM_QMI_INTERFACE) += qmi_interface.o
 obj-$(CONFIG_MSM_IPC_ROUTER_SMD_XPRT) += ipc_router_smd_xprt.o
 obj-$(CONFIG_MSM_IPC_ROUTER_HSIC_XPRT) += ipc_router_hsic_xprt.o
 obj-$(CONFIG_MSM_IPC_ROUTER_MHI_XPRT) += ipc_router_mhi_xprt.o
+obj-$(CONFIG_MSM_IPC_ROUTER_MHI_DEV_XPRT) += ipc_router_mhi_dev_xprt.o
 obj-$(CONFIG_MSM_IPC_ROUTER_GLINK_XPRT) += ipc_router_glink_xprt.o
 obj-$(CONFIG_MSM_SYSMON_GLINK_COMM) += sysmon-glink.o sysmon-qmi.o
 obj-$(CONFIG_MSM_SHARED_HEAP_ACCESS) += shared_memory.o
@@ -75,12 +77,15 @@ obj-$(CONFIG_MSM_GLINK_PKT) += msm_glink_pkt.o
 obj-$(CONFIG_MSM_TZ_SMMU) += msm_tz_smmu.o
 obj-$(CONFIG_MSM_PIL)   +=      peripheral-loader.o
 obj-$(CONFIG_MSM_PIL_SSR_GENERIC) += subsys-pil-tz.o
+obj-$(CONFIG_MSM_PIL_SSR_BG) += subsys-pil-bg.o
 obj-$(CONFIG_MSM_PIL_MSS_QDSP6V5) += pil-q6v5.o pil-msa.o pil-q6v5-mss.o
 obj-$(CONFIG_MSM_SCM_ERRATA) += scm-errata.o
 obj-$(CONFIG_MSM_PFE_WA) += pfe-wa.o
 obj-$(CONFIG_MSM_PERFORMANCE) += msm_performance.o
 obj-$(CONFIG_ARCH_MSM8996) += msm_cpu_voltage.o
 obj-$(CONFIG_MSM_POWER) += msm_power.o
+obj-$(CONFIG_MSM_BGCOM) += bgcom_spi.o
+obj-$(CONFIG_WCD_DSP_GLINK) += wcd-dsp-glink.o
 
 ifdef CONFIG_MSM_SUBSYSTEM_RESTART
 	obj-y += subsystem_notif.o
@@ -88,6 +93,8 @@ ifdef CONFIG_MSM_SUBSYSTEM_RESTART
 	obj-y += ramdump.o
 endif
 
+obj-$(CONFIG_MSM_BGRSB) += bg_rsb.o
+obj-$(CONFIG_MSM_BGCOM_INTERFACE) += bgcom_interface.o
 obj-$(CONFIG_MSM_SERVICE_NOTIFIER) += service-notifier.o
 obj-$(CONFIG_MSM_SYSMON_COMM) += sysmon.o sysmon-qmi.o
 obj-$(CONFIG_MSM_SECURE_BUFFER) += secure_buffer.o
@@ -102,3 +109,5 @@ obj-$(CONFIG_MSM_RTB) += msm_rtb-hotplug.o
 obj-$(CONFIG_MSM_REMOTEQDSS) += remoteqdss.o
 obj-$(CONFIG_QCOM_SMCINVOKE) += smcinvoke.o
 obj-$(CONFIG_QCOM_EARLY_RANDOM)	+= early_random.o
+obj-$(CONFIG_MSM_HAB) += hab/
+obj-$(CONFIG_QCOM_QDSS_BRIDGE) += qdss_bridge.o

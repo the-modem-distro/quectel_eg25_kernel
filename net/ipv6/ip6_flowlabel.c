@@ -94,16 +94,21 @@ static struct ip6_flowlabel *fl_lookup(struct net *net, __be32 label)
 	return fl;
 }
 
+static void fl_free_rcu(struct rcu_head *head)
+{
+	struct ip6_flowlabel *fl = container_of(head, struct ip6_flowlabel, rcu);
+
+	if (fl->share == IPV6_FL_S_PROCESS)
+		put_pid(fl->owner.pid);
+	release_net(fl->fl_net);
+	kfree(fl->opt);
+	kfree(fl);
+}
 
 static void fl_free(struct ip6_flowlabel *fl)
 {
-	if (fl) {
-		if (fl->share == IPV6_FL_S_PROCESS)
-			put_pid(fl->owner.pid);
-		release_net(fl->fl_net);
-		kfree(fl->opt);
-		kfree_rcu(fl, rcu);
-	}
+	if (fl)
+		call_rcu(&fl->rcu, fl_free_rcu);
 }
 
 static void fl_release(struct ip6_flowlabel *fl)
@@ -172,7 +177,7 @@ static void __net_exit ip6_fl_purge(struct net *net)
 {
 	int i;
 
-	spin_lock(&ip6_fl_lock);
+	spin_lock_bh(&ip6_fl_lock);
 	for (i = 0; i <= FL_HASH_MASK; i++) {
 		struct ip6_flowlabel *fl;
 		struct ip6_flowlabel __rcu **flp;
@@ -190,7 +195,7 @@ static void __net_exit ip6_fl_purge(struct net *net)
 			flp = &fl->next;
 		}
 	}
-	spin_unlock(&ip6_fl_lock);
+	spin_unlock_bh(&ip6_fl_lock);
 }
 
 static struct ip6_flowlabel *fl_intern(struct net *net,
@@ -316,6 +321,7 @@ struct ipv6_txoptions *fl6_merge_options(struct ipv6_txoptions *opt_space,
 	}
 	opt_space->dst1opt = fopt->dst1opt;
 	opt_space->opt_flen = fopt->opt_flen;
+	opt_space->tot_len = fopt->tot_len;
 	return opt_space;
 }
 EXPORT_SYMBOL_GPL(fl6_merge_options);
@@ -628,9 +634,9 @@ recheck:
 				if (fl1->share == IPV6_FL_S_EXCL ||
 				    fl1->share != fl->share ||
 				    ((fl1->share == IPV6_FL_S_PROCESS) &&
-				     (fl1->owner.pid == fl->owner.pid)) ||
+				     (fl1->owner.pid != fl->owner.pid)) ||
 				    ((fl1->share == IPV6_FL_S_USER) &&
-				     uid_eq(fl1->owner.uid, fl->owner.uid)))
+				     !uid_eq(fl1->owner.uid, fl->owner.uid)))
 					goto release;
 
 				err = -ENOMEM;

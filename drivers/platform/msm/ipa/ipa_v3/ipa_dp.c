@@ -400,7 +400,6 @@ int ipa3_send(struct ipa3_sys_context *sys,
 	int i = 0;
 	int j;
 	int result;
-	int fail_dma_wrap = 0;
 	u32 mem_flag = GFP_ATOMIC;
 	const struct ipa_gsi_ep_config *gsi_ep_cfg;
 
@@ -431,7 +430,6 @@ int ipa3_send(struct ipa3_sys_context *sys,
 	spin_lock_bh(&sys->spinlock);
 
 	for (i = 0; i < num_desc; i++) {
-		fail_dma_wrap = 0;
 		tx_pkt = kmem_cache_zalloc(ipa3_ctx->tx_pkt_wrapper_cache,
 					   mem_flag);
 		if (!tx_pkt) {
@@ -454,7 +452,7 @@ int ipa3_send(struct ipa3_sys_context *sys,
 			if (ipa_populate_tag_field(&desc[i], tx_pkt,
 				&tag_pyld_ret)) {
 				IPAERR("Failed to populate tag field\n");
-				goto failure;
+				goto failure_dma_map;
 			}
 		}
 
@@ -470,11 +468,6 @@ int ipa3_send(struct ipa3_sys_context *sys,
 					tx_pkt->mem.base,
 					tx_pkt->mem.size,
 					DMA_TO_DEVICE);
-				if (!tx_pkt->mem.phys_base) {
-					IPAERR("failed to do dma map.\n");
-					fail_dma_wrap = 1;
-					goto failure;
-				}
 			} else {
 					tx_pkt->mem.phys_base =
 						desc[i].dma_address;
@@ -490,17 +483,17 @@ int ipa3_send(struct ipa3_sys_context *sys,
 					desc[i].frag,
 					0, tx_pkt->mem.size,
 					DMA_TO_DEVICE);
-				if (!tx_pkt->mem.phys_base) {
-					IPAERR("dma map failed\n");
-					fail_dma_wrap = 1;
-					goto failure;
-				}
 			} else {
 				tx_pkt->mem.phys_base =
 					desc[i].dma_address;
 				tx_pkt->no_unmap_dma = true;
 			}
 		}
+		if (dma_mapping_error(ipa3_ctx->pdev, tx_pkt->mem.phys_base)) {
+			IPAERR("failed to do dma map.\n");
+			goto failure_dma_map;
+		}
+
 		tx_pkt->sys = sys;
 		tx_pkt->callback = desc[i].callback;
 		tx_pkt->user1 = desc[i].user1;
@@ -561,28 +554,31 @@ int ipa3_send(struct ipa3_sys_context *sys,
 
 	return 0;
 
+failure_dma_map:
+		kmem_cache_free(ipa3_ctx->tx_pkt_wrapper_cache, tx_pkt);
+
 failure:
 	ipahal_destroy_imm_cmd(tag_pyld_ret);
 	tx_pkt = tx_pkt_first;
 	for (j = 0; j < i; j++) {
 		next_pkt = list_next_entry(tx_pkt, link);
 		list_del(&tx_pkt->link);
-		if (desc[j].type != IPA_DATA_DESC_SKB_PAGED) {
-			dma_unmap_single(ipa3_ctx->pdev, tx_pkt->mem.phys_base,
-				tx_pkt->mem.size,
-				DMA_TO_DEVICE);
-		} else {
-			dma_unmap_page(ipa3_ctx->pdev, tx_pkt->mem.phys_base,
-				tx_pkt->mem.size,
-				DMA_TO_DEVICE);
+
+		if (!tx_pkt->no_unmap_dma) {
+			if (desc[j].type != IPA_DATA_DESC_SKB_PAGED) {
+				dma_unmap_single(ipa3_ctx->pdev,
+					tx_pkt->mem.phys_base,
+					tx_pkt->mem.size, DMA_TO_DEVICE);
+		    } else {
+				dma_unmap_page(ipa3_ctx->pdev,
+					tx_pkt->mem.phys_base,
+					tx_pkt->mem.size,
+					DMA_TO_DEVICE);
+			}
 		}
 		kmem_cache_free(ipa3_ctx->tx_pkt_wrapper_cache, tx_pkt);
 		tx_pkt = next_pkt;
 	}
-	if (j < num_desc)
-		/* last desc failed */
-		if (fail_dma_wrap)
-			kmem_cache_free(ipa3_ctx->tx_pkt_wrapper_cache, tx_pkt);
 
 	kfree(gsi_xfer_elem_array);
 	spin_unlock_bh(&sys->spinlock);
@@ -1051,6 +1047,15 @@ static void ipa3_handle_rx(struct ipa3_sys_context *sys)
 		trace_idle_sleep_enter3(sys->ep->client);
 		usleep_range(POLLING_MIN_SLEEP_RX, POLLING_MAX_SLEEP_RX);
 		trace_idle_sleep_exit3(sys->ep->client);
+
+		/*
+		 * if pipe is out of buffers there is no point polling for
+		 * completed descs; release the worker so delayed work can
+		 * run in a timely manner
+		 */
+		if (sys->len - sys->len_pending_xfer == 0)
+			break;
+
 	} while (inactive_cycles <= POLLING_INACTIVITY_RX);
 
 	trace_poll_to_intr3(sys->ep->client);
@@ -1825,8 +1830,7 @@ begin:
 		rx_pkt->data.dma_addr = dma_map_single(ipa3_ctx->pdev, ptr,
 						     sys->rx_buff_sz,
 						     DMA_FROM_DEVICE);
-		if (rx_pkt->data.dma_addr == 0 ||
-				rx_pkt->data.dma_addr == ~0) {
+		if (dma_mapping_error(ipa3_ctx->pdev, rx_pkt->data.dma_addr)) {
 			pr_err_ratelimited("%s dma map fail %p for %p sys=%p\n",
 			       __func__, (void *)rx_pkt->data.dma_addr,
 			       ptr, sys);
@@ -1942,6 +1946,8 @@ static void ipa3_cleanup_wlan_rx_common_cache(void)
 	struct ipa3_rx_pkt_wrapper *rx_pkt;
 	struct ipa3_rx_pkt_wrapper *tmp;
 
+	spin_lock_bh(&ipa3_ctx->wc_memb.wlan_spinlock);
+
 	list_for_each_entry_safe(rx_pkt, tmp,
 		&ipa3_ctx->wc_memb.wlan_comm_desc_list, link) {
 		list_del(&rx_pkt->link);
@@ -1961,6 +1967,8 @@ static void ipa3_cleanup_wlan_rx_common_cache(void)
 	if (ipa3_ctx->wc_memb.wlan_comm_total_cnt != 0)
 		IPAERR("wlan comm buff total cnt: %d\n",
 			ipa3_ctx->wc_memb.wlan_comm_total_cnt);
+
+	spin_unlock_bh(&ipa3_ctx->wc_memb.wlan_spinlock);
 
 }
 
@@ -1993,18 +2001,19 @@ static void ipa3_alloc_wlan_rx_common_cache(u32 size)
 		ptr = skb_put(rx_pkt->data.skb, IPA_WLAN_RX_BUFF_SZ);
 		rx_pkt->data.dma_addr = dma_map_single(ipa3_ctx->pdev, ptr,
 				IPA_WLAN_RX_BUFF_SZ, DMA_FROM_DEVICE);
-		if (rx_pkt->data.dma_addr == 0 ||
-				rx_pkt->data.dma_addr == ~0) {
+		if (dma_mapping_error(ipa3_ctx->pdev, rx_pkt->data.dma_addr)) {
 			IPAERR("dma_map_single failure %p for %p\n",
 			       (void *)rx_pkt->data.dma_addr, ptr);
 			goto fail_dma_mapping;
 		}
 
+		spin_lock_bh(&ipa3_ctx->wc_memb.wlan_spinlock);
 		list_add_tail(&rx_pkt->link,
 			&ipa3_ctx->wc_memb.wlan_comm_desc_list);
 		rx_len_cached = ++ipa3_ctx->wc_memb.wlan_comm_total_cnt;
 
 		ipa3_ctx->wc_memb.wlan_comm_free_cnt++;
+		spin_unlock_bh(&ipa3_ctx->wc_memb.wlan_spinlock);
 
 	}
 
@@ -2065,8 +2074,7 @@ static void ipa3_replenish_rx_cache(struct ipa3_sys_context *sys)
 		rx_pkt->data.dma_addr = dma_map_single(ipa3_ctx->pdev, ptr,
 						     sys->rx_buff_sz,
 						     DMA_FROM_DEVICE);
-		if (rx_pkt->data.dma_addr == 0 ||
-				rx_pkt->data.dma_addr == ~0) {
+		if (dma_mapping_error(ipa3_ctx->pdev, rx_pkt->data.dma_addr)) {
 			IPAERR("dma_map_single failure %p for %p\n",
 			       (void *)rx_pkt->data.dma_addr, ptr);
 			goto fail_dma_mapping;
@@ -2165,8 +2173,8 @@ static void ipa3_replenish_rx_cache_recycle(struct ipa3_sys_context *sys)
 			ptr = skb_put(rx_pkt->data.skb, sys->rx_buff_sz);
 			rx_pkt->data.dma_addr = dma_map_single(ipa3_ctx->pdev,
 				ptr, sys->rx_buff_sz, DMA_FROM_DEVICE);
-			if (rx_pkt->data.dma_addr == 0 ||
-				rx_pkt->data.dma_addr == ~0) {
+			if (dma_mapping_error(ipa3_ctx->pdev,
+				rx_pkt->data.dma_addr)) {
 				IPAERR("dma_map_single failure %p for %p\n",
 					(void *)rx_pkt->data.dma_addr, ptr);
 				goto fail_dma_mapping;
@@ -2181,8 +2189,8 @@ static void ipa3_replenish_rx_cache_recycle(struct ipa3_sys_context *sys)
 			ptr = skb_put(rx_pkt->data.skb, sys->rx_buff_sz);
 			rx_pkt->data.dma_addr = dma_map_single(ipa3_ctx->pdev,
 				ptr, sys->rx_buff_sz, DMA_FROM_DEVICE);
-			if (rx_pkt->data.dma_addr == 0 ||
-				rx_pkt->data.dma_addr == ~0) {
+			if (dma_mapping_error(ipa3_ctx->pdev,
+				rx_pkt->data.dma_addr)) {
 				IPAERR("dma_map_single failure %p for %p\n",
 					(void *)rx_pkt->data.dma_addr, ptr);
 				goto fail_dma_mapping;
@@ -2907,10 +2915,12 @@ void ipa3_lan_rx_cb(void *priv, enum ipa_dp_evt_type evt, unsigned long data)
 	struct ipa3_ep_context *ep;
 	unsigned int src_pipe;
 	u32 metadata;
+	u8 ucp;
 
 	ipahal_pkt_status_parse(rx_skb->data, &status);
 	src_pipe = status.endp_src_idx;
 	metadata = status.metadata;
+	ucp = status.ucp;
 	ep = &ipa3_ctx->ep[src_pipe];
 	if (unlikely(src_pipe >= ipa3_ctx->ipa_num_pipes ||
 		!ep->valid ||
@@ -2933,8 +2943,10 @@ void ipa3_lan_rx_cb(void *priv, enum ipa_dp_evt_type evt, unsigned long data)
 	   ------------------------------------------
 	 */
 	*(u16 *)rx_skb->cb = ((metadata >> 16) & 0xFFFF);
+	*(u8 *)(rx_skb->cb + 4) = ucp;
 	IPADBG_LOW("meta_data: 0x%x cb: 0x%x\n",
 			metadata, *(u32 *)rx_skb->cb);
+	IPADBG_LOW("ucp: %d\n", *(u8 *)(rx_skb->cb + 4));
 
 	ep->client_notify(ep->priv, IPA_RECEIVE, (unsigned long)(rx_skb));
 }
@@ -2958,6 +2970,7 @@ static void ipa3_wq_rx_common(struct ipa3_sys_context *sys, u32 size)
 		WARN_ON(1);
 		return;
 	}
+	spin_lock_bh(&sys->spinlock);
 	rx_pkt_expected = list_first_entry(&sys->head_desc_list,
 					   struct ipa3_rx_pkt_wrapper,
 					   link);
@@ -2965,6 +2978,7 @@ static void ipa3_wq_rx_common(struct ipa3_sys_context *sys, u32 size)
 	sys->len--;
 	if (size)
 		rx_pkt_expected->len = size;
+	spin_unlock_bh(&sys->spinlock);
 	rx_skb = rx_pkt_expected->data.skb;
 	dma_unmap_single(ipa3_ctx->pdev, rx_pkt_expected->data.dma_addr,
 			sys->rx_buff_sz, DMA_FROM_DEVICE);

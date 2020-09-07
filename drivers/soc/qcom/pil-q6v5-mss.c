@@ -37,153 +37,12 @@
 #include "pil-q6v5.h"
 #include "pil-msa.h"
 
-//quectel add 20180622
-#include "linux/fs.h"  
-#include "linux/string.h" 
-#include "linux/timer.h"
-
 #define MAX_VDD_MSS_UV		1150000
 #define PROXY_TIMEOUT_MS	10000
 #define MAX_SSR_REASON_LEN	130U
 #define STOP_ACK_TIMEOUT_MS	1000
 
 #define subsys_to_drv(d) container_of(d, struct modem_data, subsys_desc)
-
-
-#define QUECTEL_EFS_ERROR_BACKUP//quectel add
-#ifdef QUECTEL_EFS_ERROR_BACKUP
-
-#define MODEM_NORMAL_TIMEOUT_S 60000  //  if modem load and runnig this times not restart,  wo think modem runnig ok, then clear the modemFatalErrorRecord cnt.
-#define  MODEM_FATALERROR_RECORD_CNT_PATH    "/data/modemFatalErrorRecord" // modem fatal error  count record path 
-#define  MODEM_FATALERROR_ALLOW_TIMES  3  // modem fatal error this times,  set efs  restore flag,   must < 10
-
-struct timer_list  ModemOntimer;
-struct work_struct MomdemOn_timer_work;
-struct work_struct ModemFatalError_handler_work;
-
-
-extern unsigned int Quectel_Set_Partition_RestoreFlag(const char* partition_name, int where);
-
-/******************************************************************************************
-who-2018/06/25:Description....
-Refer to [Issue-Depot].[IS0000197][Submitter:ramos.zhang,Date:2018-06-25]
-<模块现场efs损坏无法还原modem不停重启或者cfun=7无法上网>
-******************************************************************************************/
-void Quectel_clean_modemFatalTimes(void)
-{
-
-	struct file *file = NULL;
-    
-	file = filp_open(MODEM_FATALERROR_RECORD_CNT_PATH, O_RDONLY | O_TRUNC ,0); // O_TRUNC  open file and delete old data 
-	if (IS_ERR(file))
-	{
-        pr_err("%s, clean modemFatalError cnt  filp_open fail !\n",__func__);
-		return;
-	}
-
-	if(NULL != file)
-		filp_close(file, NULL);
-	
-	pr_err("%s,line:%d  success !\n",__func__,__LINE__);
-	return;
-}
-
-void Quectel_modemOnLine_timer_handler(unsigned long data) 
-{
-	schedule_work(&MomdemOn_timer_work);	
-}
-
-void Quectel_modemOnLine_timer_start(void)
-{
-	ModemOntimer.function = (void *)Quectel_modemOnLine_timer_handler; 
-	ModemOntimer.expires = jiffies + msecs_to_jiffies(MODEM_NORMAL_TIMEOUT_S);
-	add_timer(&ModemOntimer);
-}
-
-void Quectel_modemOnLine_timer_stop(void)
-{
-	if(timer_pending(&ModemOntimer))
-	{
-		pr_err("%s, ModemOntimer stop delete now!!!!\n", __func__);
-		del_timer(&ModemOntimer);
-	}
-}
-
-void  Quectel_modemOnLine_timer_init(void)
-{
-	init_timer(&ModemOntimer);
-    //pr_err("%s, timer pending:%d \n",__func__, timer_pending(&ModemOntimer));	
-}
-
-static  int Quectel_ModemFatalErrProcess( void )
-{
-	char tmpbuf[5]={0};
-	int wr=0,rc=0,cnt=0,i=0;
-	struct file *file=NULL;
-
-	Quectel_modemOnLine_timer_stop();//
-
-	file = filp_open(MODEM_FATALERROR_RECORD_CNT_PATH, O_RDWR| O_DSYNC | O_CREAT,0600); 
-	if (IS_ERR(file))
-	{
-		pr_err("%s, filp_open fail\n",__func__);
-		goto fail;
-	}
-
-	rc = kernel_read(file, 0, tmpbuf, 3);
-	if (rc < 0 ) 
-	{
-		pr_err("%s, kernel read fail rc=%d\n",__func__,rc);
-		goto fail;
-	}
-	while(tmpbuf[i])
-	{
-		if (tmpbuf[i] == '\r' || tmpbuf[i] == '\t' || tmpbuf[i] == '\n' )
-		{
-			tmpbuf[i] = 0;
-		}
-		i++;
-	}
-	sscanf(tmpbuf, "%d", &cnt);
-	pr_err("%s,modem Fatal times=%d.\n",__func__, cnt);
-	if( cnt  < MODEM_FATALERROR_ALLOW_TIMES)
-	{
-		cnt++;
-		memset(tmpbuf,0x00,sizeof(tmpbuf));
-		sprintf(tmpbuf, "%d", cnt); 
-		//pr_err("%s, tmpbuf=[%s] tmpbuf_len=%d\n",__func__,tmpbuf,strlen(tmpbuf));
-		wr = kernel_write(file, tmpbuf, 1, 0);
-		if(NULL != file)
-			filp_close(file, NULL);
-		pr_err("%s,tmpbuf=[%s],write sucess !!!\n",__func__,tmpbuf);
-		return 1;
-	}
-    else
-    {
-		pr_err("%s, fatal error 3 times, set efs restore flag\n",__func__);
-		wr = kernel_write(file, "0", 1, 0);
-		if(wr != 1)
-		{
-			wr = kernel_write(file, "0", 1, 0);
-		}
-		if(NULL != file)
-			filp_close(file, NULL);
-		// set  efs restore flag
-		Quectel_Set_Partition_RestoreFlag("efs2",9);
-		return 0;
-    }
-
-fail:
-	pr_err("%s, goto fail\n",__func__);
-	if(NULL != file)
-	filp_close(file, NULL);        
-	return 0;
-}
-#else
-
-ERROR: Please make sure QUECTEL_EFS_ERROR_BACKUP is defined !!!, Is it not need on your project
-#endif
-
 
 static void log_modem_sfr(void)
 {
@@ -212,11 +71,6 @@ static void restart_modem(struct modem_data *drv)
 {
 	log_modem_sfr();
 	drv->ignore_errors = true;
-#ifdef QUECTEL_EFS_ERROR_BACKUP
-	schedule_work(&ModemFatalError_handler_work);	
-#else
-	ERROR: make sure QUECTEL_EFS_ERROR_BACKUP is not need on your project
-#endif
 	subsystem_restart_dev(drv->subsys);
 }
 
@@ -287,11 +141,6 @@ static int modem_powerup(const struct subsys_desc *subsys)
 	drv->subsys_desc.ramdump_disable = 0;
 	drv->ignore_errors = false;
 	drv->q6->desc.fw_name = subsys->fw_name;
-#ifdef QUECTEL_EFS_ERROR_BACKUP
-	Quectel_modemOnLine_timer_start();
-#else
-	ERROR: Please moke sure QUECTEL_EFS_ERROR_BACKUP  is not need on you project 
-#endif
 	return pil_boot(&drv->q6->desc);
 }
 
@@ -381,13 +230,6 @@ static int pil_subsys_init(struct modem_data *drv,
 		ret = -ENOMEM;
 		goto err_ramdump;
 	}
-#ifdef QUECTEL_EFS_ERROR_BACKUP
-    Quectel_modemOnLine_timer_init();
-    INIT_WORK(&MomdemOn_timer_work,Quectel_clean_modemFatalTimes);
-    INIT_WORK(&ModemFatalError_handler_work,  Quectel_ModemFatalErrProcess);		
-#else
-	ERROR:  Please make sure QUECTEL_EFS_ERROR_BACKUP is defined,is it not need on your project !!
-#endif
 
 	return 0;
 

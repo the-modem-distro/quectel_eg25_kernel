@@ -183,91 +183,65 @@ int dwc3_gadget_set_link_state(struct dwc3 *dwc, enum dwc3_link_state state)
  *
  * Unfortunately, due to many variables that's not always the case.
  */
-int dwc3_gadget_resize_tx_fifos(struct dwc3 *dwc)
+int dwc3_gadget_resize_tx_fifos(struct dwc3 *dwc, struct dwc3_ep *dep)
 {
-	int		last_fifo_depth = 0;
-	int		ram1_depth;
-	int		fifo_size;
-	int		mdwidth;
-	int		num;
-	int		num_eps;
-	int		max_packet = 1024;
-	struct usb_composite_dev *cdev = get_gadget_data(&dwc->gadget);
+	int		fifo_size, mdwidth, max_packet = 1024;
+	int		tmp, mult = 1;
 
-	if (!(cdev && cdev->config) || !dwc->needs_fifo_resize)
+	if (!dwc->needs_fifo_resize)
 		return 0;
 
-	num_eps = dwc->num_in_eps;
-	ram1_depth = DWC3_RAM1_DEPTH(dwc->hwparams.hwparams7);
-	mdwidth = DWC3_MDWIDTH(dwc->hwparams.hwparams0);
+	/* resize IN endpoints excepts ep0 */
+	if (!usb_endpoint_dir_in(dep->endpoint.desc) ||
+			dep->endpoint.ep_num == 0)
+		return 0;
 
-	/* MDWIDTH is represented in bits, we need it in bytes */
-	mdwidth >>= 3;
-	last_fifo_depth = (dwc3_readl(dwc->regs, DWC3_GTXFIFOSIZ(0)) & 0xFFFF);
-	dev_dbg(dwc->dev, "%s: num eps:%d max_packet:%d last_fifo_depth:%04x\n",
-				__func__, num_eps, max_packet, last_fifo_depth);
-
-	/* Don't resize ep0IN TxFIFO, start with ep1IN only. */
-	for (num = 1; num < num_eps; num++) {
-		/* bit0 indicates direction; 1 means IN ep */
-		struct dwc3_ep	*dep = dwc->eps[(num << 1) | 1];
-		int		mult = 1;
-		int		tmp;
-
-		tmp = max_packet + mdwidth;
-		/*
-		 * Interfaces like MBIM or ECM is having multiple data
-		 * interfaces. SET_CONFIG() happens before set_alt with
-		 * data interface 1 which results into calling this API
-		 * before GSI endpoint enabled. This results no txfifo
-		 * resize with GSI endpoint causing low throughput. Hence
-		 * use mult as 3 for GSI IN endpoint always irrespective
-		 * USB speed.
-		 */
-		if (dep->endpoint.ep_type == EP_TYPE_GSI ||
-				dep->endpoint.endless)
-			mult = 3;
-
-		if (num == high_bw_ep_in_num)
-			mult = 3;
-
-		if (!(dep->flags & DWC3_EP_ENABLED)) {
-			dev_dbg(dwc->dev, "ep%dIn not enabled", num);
-			goto resize_fifo;
-		}
-
-		if (((dep->endpoint.maxburst > 1) &&
-				usb_endpoint_xfer_bulk(dep->endpoint.desc))
-				|| usb_endpoint_xfer_isoc(dep->endpoint.desc))
-			mult = 3;
-
-resize_fifo:
-		tmp *= mult;
-		tmp += mdwidth;
-
-		fifo_size = DIV_ROUND_UP(tmp, mdwidth);
-
-		fifo_size |= (last_fifo_depth << 16);
-
-		dev_dbg(dwc->dev, "%s: Fifo Addr %04x Size %d\n",
-				dep->name, last_fifo_depth, fifo_size & 0xffff);
-
-		last_fifo_depth += (fifo_size & 0xffff);
-		if (dwc->tx_fifo_size &&
-				(last_fifo_depth >= dwc->tx_fifo_size)) {
-			/*
-			 * Fifo size allocated exceeded available RAM size.
-			 * Hence return error.
-			 */
-			dev_err(dwc->dev, "Fifosize(%d) > available RAM(%d)\n",
-					last_fifo_depth, dwc->tx_fifo_size);
-			return -ENOMEM;
-		}
-
-		dwc3_writel(dwc->regs, DWC3_GTXFIFOSIZ(num), fifo_size);
-
+	/* Don't resize already resized IN endpoint */
+	if (dep->fifo_depth) {
+		dev_dbg(dwc->dev, "%s fifo_depth:%d is already set\n",
+				dep->endpoint.name, dep->fifo_depth);
+		return 0;
 	}
 
+	mdwidth = DWC3_MDWIDTH(dwc->hwparams.hwparams0);
+	/* MDWIDTH is represented in bits, we need it in bytes */
+	mdwidth >>= 3;
+
+	if (dep->endpoint.ep_type == EP_TYPE_GSI || dep->endpoint.endless)
+		mult = 3;
+
+	if (((dep->endpoint.maxburst > 1) &&
+			usb_endpoint_xfer_bulk(dep->endpoint.desc))
+			|| usb_endpoint_xfer_isoc(dep->endpoint.desc))
+		mult = 3;
+
+	tmp = ((max_packet + mdwidth) * mult) + mdwidth;
+	fifo_size = DIV_ROUND_UP(tmp, mdwidth);
+	dep->fifo_depth = fifo_size;
+	fifo_size |= (dwc3_readl(dwc->regs, DWC3_GTXFIFOSIZ(0)) & 0xffff0000)
+						+ (dwc->last_fifo_depth << 16);
+	dwc->last_fifo_depth += (fifo_size & 0xffff);
+
+	dev_dbg(dwc->dev, "%s ep_num:%d last_fifo_depth:%04x fifo_depth:%d\n",
+		dep->endpoint.name, dep->endpoint.ep_num, dwc->last_fifo_depth,
+		dep->fifo_depth);
+
+	dbg_event(0xFF, "resize_fifo", dep->number);
+	dbg_event(0xFF, "fifo_depth", dep->fifo_depth);
+	/* Check fifo size allocation doesn't exceed available RAM size. */
+	if (dwc->tx_fifo_size &&
+		((dwc->last_fifo_depth * mdwidth) >= dwc->tx_fifo_size)) {
+		dev_err(dwc->dev, "Fifosize(%d) > RAM size(%d) %s depth:%d\n",
+			(dwc->last_fifo_depth * mdwidth), dwc->tx_fifo_size,
+			dep->endpoint.name, fifo_size);
+		dwc->last_fifo_depth -= (fifo_size & 0xffff);
+		dep->fifo_depth = 0;
+		WARN_ON(1);
+		return -ENOMEM;
+	}
+
+	dwc3_writel(dwc->regs, DWC3_GTXFIFOSIZ(dep->endpoint.ep_num),
+							fifo_size);
 	return 0;
 }
 
@@ -460,24 +434,66 @@ static void dwc3_free_trb_pool(struct dwc3_ep *dep)
 	}
 }
 
+static int dwc3_gadget_set_xfer_resource(struct dwc3 *dwc, struct dwc3_ep *dep);
+
+/**
+ * dwc3_gadget_start_config - Configure EP resources
+ * @dwc: pointer to our controller context structure
+ * @dep: endpoint that is being enabled
+ *
+ * The assignment of transfer resources cannot perfectly follow the
+ * data book due to the fact that the controller driver does not have
+ * all knowledge of the configuration in advance. It is given this
+ * information piecemeal by the composite gadget framework after every
+ * SET_CONFIGURATION and SET_INTERFACE. Trying to follow the databook
+ * programming model in this scenario can cause errors. For two
+ * reasons:
+ *
+ * 1) The databook says to do DEPSTARTCFG for every SET_CONFIGURATION
+ * and SET_INTERFACE (8.1.5). This is incorrect in the scenario of
+ * multiple interfaces.
+ *
+ * 2) The databook does not mention doing more DEPXFERCFG for new
+ * endpoint on alt setting (8.1.6).
+ *
+ * The following simplified method is used instead:
+ *
+ * All hardware endpoints can be assigned a transfer resource and this
+ * setting will stay persistent until either a core reset or
+ * hibernation. So whenever we do a DEPSTARTCFG(0) we can go ahead and
+ * do DEPXFERCFG for every hardware endpoint as well. We are
+ * guaranteed that there are as many transfer resources as endpoints.
+ *
+ * This function is called for each endpoint when it is being enabled
+ * but is triggered only when called for EP0-out, which always happens
+ * first, and which should only happen in one of the above conditions.
+ */
 static int dwc3_gadget_start_config(struct dwc3 *dwc, struct dwc3_ep *dep)
 {
 	struct dwc3_gadget_ep_cmd_params params;
 	u32			cmd;
+	int			i;
+	int			ret;
+
+	if (dep->number)
+		return 0;
 
 	memset(&params, 0x00, sizeof(params));
+	cmd = DWC3_DEPCMD_DEPSTARTCFG;
 
-	if (dep->number != 1) {
-		cmd = DWC3_DEPCMD_DEPSTARTCFG;
-		/* XferRscIdx == 0 for ep0 and 2 for the remaining */
-		if (dep->number > 1) {
-			if (dwc->start_config_issued)
-				return 0;
-			dwc->start_config_issued = true;
-			cmd |= DWC3_DEPCMD_PARAM(2);
-		}
+	ret = dwc3_send_gadget_ep_cmd(dwc, 0, cmd, &params);
+	if (ret)
+		return ret;
 
-		return dwc3_send_gadget_ep_cmd(dwc, 0, cmd, &params);
+	for (i = 0; i < DWC3_ENDPOINTS_NUM; i++) {
+		struct dwc3_ep *dep = dwc->eps[i];
+
+		if (!dep)
+			continue;
+
+		ret = dwc3_gadget_set_xfer_resource(dwc, dep);
+		if (ret)
+			return ret;
 	}
 
 	return 0;
@@ -584,6 +600,17 @@ static int __dwc3_gadget_ep_enable(struct dwc3_ep *dep,
 	dev_vdbg(dwc->dev, "Enabling %s\n", dep->name);
 
 	if (!(dep->flags & DWC3_EP_ENABLED)) {
+		dep->endpoint.desc = desc;
+		dep->comp_desc = comp_desc;
+		dep->type = usb_endpoint_type(desc);
+		ret = dwc3_gadget_resize_tx_fifos(dwc, dep);
+		if (ret) {
+			dep->endpoint.desc = NULL;
+			dep->comp_desc = NULL;
+			dep->type = 0;
+			return ret;
+		}
+
 		ret = dwc3_gadget_start_config(dwc, dep);
 		if (ret) {
 			dev_err(dwc->dev, "start_config() failed for %s\n",
@@ -603,16 +630,6 @@ static int __dwc3_gadget_ep_enable(struct dwc3_ep *dep,
 		struct dwc3_trb	*trb_st_hw;
 		struct dwc3_trb	*trb_link;
 
-		ret = dwc3_gadget_set_xfer_resource(dwc, dep);
-		if (ret) {
-			dev_err(dwc->dev, "set_xfer_resource() failed for %s\n",
-								dep->name);
-			return ret;
-		}
-
-		dep->endpoint.desc = desc;
-		dep->comp_desc = comp_desc;
-		dep->type = usb_endpoint_type(desc);
 		dep->flags |= DWC3_EP_ENABLED;
 
 		reg = dwc3_readl(dwc->regs, DWC3_DALEPENA);
@@ -650,6 +667,10 @@ static void dwc3_remove_requests(struct dwc3 *dwc, struct dwc3_ep *dep)
 
 			dwc3_gadget_giveback(dep, req, -ESHUTDOWN);
 		}
+	/* For isoc endpoints explicitly stop active transfers */
+	} else if (dep->endpoint.desc &&
+		usb_endpoint_xfer_isoc(dep->endpoint.desc)) {
+		dwc3_stop_active_transfer(dwc, dep->number, true);
 	}
 
 	while (!list_empty(&dep->request_list)) {
@@ -846,7 +867,7 @@ static void dwc3_prepare_one_trb(struct dwc3_ep *dep,
 	struct dwc3_trb		*trb;
 	bool			zlp_appended = false;
 	unsigned		rlen;
-	int			isoc_maxp;
+	int			isoc_maxp, max_payload, mult;
 
 	dev_vdbg(dwc->dev, "%s: req %pK dma %08llx length %d%s%s\n",
 			dep->name, req, (unsigned long long) dma,
@@ -881,7 +902,10 @@ update_trb:
 
 	case USB_ENDPOINT_XFER_ISOC:
 		isoc_maxp = usb_endpoint_maxp(dep->endpoint.desc);
-		trb->size |= DWC3_TRB_SIZE_PCM1(isoc_maxp >> 11);
+		max_payload = isoc_maxp & 0x7FF;
+		mult = (req->request.length/max_payload) & 0x3;
+		trb->size |= DWC3_TRB_SIZE_PCM1(
+			(req->request.length%max_payload) ? mult : mult-1);
 		if (!node)
 			trb->ctrl = DWC3_TRBCTL_ISOCHRONOUS_FIRST;
 		else
@@ -1859,7 +1883,7 @@ static int dwc_gadget_func_wakeup(struct usb_gadget *g, int interface_id)
 	if (dwc3_gadget_is_suspended(dwc)) {
 		pr_debug("USB bus is suspended. Scheduling wakeup and returning -EAGAIN.\n");
 		dwc3_gadget_wakeup(&dwc->gadget);
-		return -EAGAIN;
+		return -EACCES;
 	}
 
 	/*
@@ -2172,8 +2196,6 @@ static int __dwc3_gadget_start(struct dwc3 *dwc)
 		dwc3_writel(dwc->regs, DWC3_GSBUSCFG1, reg);
 	}
 
-	dwc->start_config_issued = false;
-
 	/* Start with SuperSpeed Default */
 	dwc3_gadget_ep0_desc.wMaxPacketSize = cpu_to_le16(512);
 
@@ -2202,6 +2224,7 @@ static int __dwc3_gadget_start(struct dwc3 *dwc)
 
 	/* begin to receive SETUP packets */
 	dwc->ep0state = EP0_SETUP_PHASE;
+	dwc->link_state = DWC3_LINK_STATE_SS_DIS;
 	dwc3_ep0_out_start(dwc);
 
 	dwc3_gadget_enable_irq(dwc);
@@ -2903,7 +2926,6 @@ static void dwc3_gadget_disconnect_interrupt(struct dwc3 *dwc)
 
 	dbg_event(0xFF, "DISCONNECT", 0);
 	dwc3_disconnect_gadget(dwc);
-	dwc->start_config_issued = false;
 
 	dwc->gadget.speed = USB_SPEED_UNKNOWN;
 	dwc->setup_packet_pending = false;
@@ -2980,12 +3002,17 @@ static void dwc3_gadget_reset_interrupt(struct dwc3 *dwc)
 	dwc3_writel(dwc->regs, DWC3_DCTL, reg);
 	dwc->test_mode = false;
 
+	/*
+	 * From SNPS databook section 8.1.2
+	 * the EP0 should be in setup phase. So ensure
+	 * that EP0 is in setup phase by issuing a stall
+	 * and restart if EP0 is not in setup phase.
+	 */
+	if (dwc->ep0state != EP0_SETUP_PHASE)
+		dwc3_ep0_stall_and_restart(dwc);
+
 	dwc3_stop_active_transfers(dwc);
 	dwc3_clear_stall_all_ep(dwc);
-	dwc->start_config_issued = false;
-
-	/* bus reset issued due to missing status stage of a control transfer */
-	dwc->resize_fifos = 0;
 
 	/* Reset device address to zero */
 	reg = dwc3_readl(dwc->regs, DWC3_DCFG);
@@ -3163,8 +3190,11 @@ static void dwc3_gadget_wakeup_interrupt(struct dwc3 *dwc, bool remote_wakeup)
 
 		/*
 		 * In case of remote wake up dwc3_gadget_wakeup_work()
-		 * is doing pm_runtime_get_sync().
+		 * is doing pm_runtime_get_sync(). But mark last wakeup
+		 * event here to prevent runtime_suspend happening before this
+		 * wakeup event is processed.
 		 */
+		pm_runtime_mark_last_busy(dwc->dev);
 		dev_dbg(dwc->dev, "Notify OTG from %s\n", __func__);
 		dwc->b_suspend = false;
 		dwc3_notify_event(dwc,

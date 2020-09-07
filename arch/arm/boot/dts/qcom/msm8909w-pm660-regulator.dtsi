@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -130,9 +130,9 @@
 	rpm-regulator-ldoa2 {
 		status = "okay";
 		pm660_l2: regulator-l2 {
-			regulator-min-microvolt = <1300000>;
-			regulator-max-microvolt = <1300000>;
-			qcom,init-voltage = <1300000>;
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1200000>;
+			qcom,init-voltage = <1200000>;
 			status = "okay";
 		};
 	};
@@ -227,6 +227,7 @@
 		};
 
 		pm660_l12_ao: regulator-l12-ao {
+			compatible = "qcom,rpm-smd-regulator";
 			regulator-name = "pm660_l12_ao";
 			qcom,set = <1>;
 			regulator-min-microvolt = <1800000>;
@@ -306,6 +307,16 @@
 	};
 };
 
+&pm660_charger {
+	smb2_vbus: qcom,smb2-vbus {
+		regulator-name = "smb2-vbus";
+	};
+
+	smb2_vconn: qcom,smb2-vconn {
+		regulator-name = "smb2-vconn";
+	};
+};
+
 /* SPM controlled regulators */
 &spmi_bus {
 	qcom,pm660@1 {
@@ -315,9 +326,6 @@
 			reg = <0x1400 0x100>;
 			regulator-min-microvolt = <1052000>;
 			regulator-max-microvolt = <1352000>;
-
-			/* TODO: remove after SAW support is enabled */
-			qcom,bypass-spm;
 		};
 	};
 };
@@ -399,5 +407,15 @@
 					<0 (-1) 2 4 9>,
 					<2 (-1) 2 4 6>;
 		qcom,cpr-quot-adjust-scaling-factor-max = <1400>;
+	};
+
+	bob_vreg: bob_vreg {
+		compatible = "regulator-fixed";
+		regulator-name = "bob_vreg";
+		startup-delay-us = <400>;
+		enable-active-high;
+		gpio = <&pm660_gpios 12 0>;
+		status = "okay";
+		regulator-boot-on;
 	};
 };

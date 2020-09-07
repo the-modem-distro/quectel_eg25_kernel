@@ -72,6 +72,7 @@
 #include <linux/fs_struct.h>
 #include <linux/compat.h>
 #include <linux/ctype.h>
+#include <linux/uaccess.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <uapi/linux/limits.h>
@@ -2339,9 +2340,10 @@ int __audit_signal_info(int sig, struct task_struct *t)
 				audit_sig_uid = uid;
 			security_task_getsecid(tsk, &audit_sig_sid);
 		}
-		if (!audit_signals || audit_dummy_context())
-			return 0;
 	}
+
+	if (!audit_signals || audit_dummy_context())
+		return 0;
 
 	/* optimize the common case by putting first signal recipient directly
 	 * in audit_context */

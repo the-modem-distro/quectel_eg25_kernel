@@ -61,18 +61,8 @@
 #include <linux/crc32.h>
 #include <linux/err.h>
 #include <linux/slab.h>
-#include <linux/qstart.h>
 #include <asm/div64.h>
 #include "ubi.h"
-
-#if 1 // def  QUECTEL_SYSTEM_BACKUP    // Ramos add for quectel for linuxfs restore
-/******************************************************************************************
-francis-2018/12/29:Description....
-Refer to [Issue-Depot].[IS0000416][Submitter:dawn.yang@quectel.com,Date:2018-12-28]
-<recovery模式下usrdata 的ubi设备号被改为3，导致概率性被擦除，差分包丢失>
-******************************************************************************************/
-extern unsigned int Quectel_Restore(const char * partition_name, int where);
-#endif
 
 static void self_vtbl_check(const struct ubi_device *ubi);
 
@@ -454,8 +444,6 @@ static struct ubi_vtbl_record *process_lvol(struct ubi_device *ubi,
 			leb_corrupted[1] = memcmp(leb[0], leb[1],
 						  ubi->vtbl_size);
 		if (leb_corrupted[1]) {
-			printk("@Ramos UBI Error  7771111 set restore UBI =%d,  \r\n", ubi->ubi_num);
-			Quectel_Restore(ubi->mtd->name,7);
 			ubi_warn(ubi, "volume table copy #2 is corrupted");
 			err = create_vtbl(ubi, ai, 1, leb[0]);
 			if (err)
@@ -480,8 +468,6 @@ static struct ubi_vtbl_record *process_lvol(struct ubi_device *ubi,
 		}
 
 		ubi_warn(ubi, "volume table copy #1 is corrupted");
-		Quectel_Restore(ubi->mtd->name,7);
-		printk("@Ramos UBI Error  77722222 set restore UBI =%d,  \r\n", ubi->ubi_num);
 		err = create_vtbl(ubi, ai, 0, leb[1]);
 		if (err)
 			goto out_free;

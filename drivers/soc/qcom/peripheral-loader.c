@@ -136,17 +136,6 @@ struct pil_priv {
 	size_t region_size;
 };
 
-#ifdef QUECTEL_REBOOT_WHEN_MODEM_LOAD_FAILED
-void machine_restart(char *cmd);
-extern void quectel_set_system_reset_mode(int mode);
-#endif
-
-#ifdef QUECTEL_REBOOT_WHEN_MODEM_LOAD_FAILED
-void machine_restart(char *cmd);
-extern void quectel_set_system_reset_mode(int mode);
-bool modem_file_lose = false;
-#endif
-
 /**
  * pil_do_ramdump() - Ramdump an image
  * @desc: descriptor from pil_desc_init()
@@ -183,7 +172,11 @@ int pil_do_ramdump(struct pil_desc *desc, void *ramdump_dev)
 	ret = do_elf_ramdump(ramdump_dev, ramdump_segs, count);
 	kfree(ramdump_segs);
 
-	if (!ret && desc->subsys_vmid > 0)
+	if (ret)
+		pil_err(desc, "%s: Ramdump collection failed for subsys %s rc:%d\n",
+				__func__, desc->name, ret);
+
+	if (desc->subsys_vmid > 0)
 		ret = pil_assign_mem_to_subsys(desc, priv->region_start,
 				(priv->region_end - priv->region_start));
 
@@ -635,6 +628,12 @@ static void pil_clear_segment(struct pil_desc *desc)
 	/* Clear memory so that unauthorized ELF code is not left behind */
 	buf = desc->map_fw_mem(priv->region_start, (priv->region_end -
 					priv->region_start), map_data);
+
+	if (!buf) {
+		pil_err(desc, "Failed to map memory\n");
+		return;
+	}
+
 	pil_memset_io(buf, 0, (priv->region_end - priv->region_start));
 	desc->unmap_fw_mem(buf, (priv->region_end - priv->region_start),
 								map_data);
@@ -681,9 +680,6 @@ static int pil_load_seg(struct pil_desc *desc, struct pil_seg *seg)
 		if (ret < 0) {
 			pil_err(desc, "Failed to locate blob %s or blob is too big.\n",
 				fw_name);
-#ifdef QUECTEL_REBOOT_WHEN_MODEM_LOAD_FAILED
-			modem_file_lose = true;
-#endif 				
 			subsys_set_error(desc->subsys_dev, firmware_error_msg);
 			return ret;
 		}
@@ -799,9 +795,6 @@ int pil_boot(struct pil_desc *desc)
 	ret = request_firmware(&fw, fw_name, desc->dev);
 	if (ret) {
 		pil_err(desc, "Failed to locate %s\n", fw_name);
-#ifdef QUECTEL_REBOOT_WHEN_MODEM_LOAD_FAILED
-	modem_file_lose = true;
-#endif 
 		goto out;
 	}
 
@@ -848,7 +841,9 @@ int pil_boot(struct pil_desc *desc)
 	}
 
 	if (desc->ops->init_image)
-		ret = desc->ops->init_image(desc, fw->data, fw->size);
+		ret = desc->ops->init_image(desc, fw->data, fw->size,
+			priv->region_start,
+			priv->region_end - priv->region_start);
 	if (ret) {
 		pil_err(desc, "Invalid firmware metadata\n");
 		subsys_set_error(desc->subsys_dev, firmware_error_msg);
@@ -864,17 +859,6 @@ int pil_boot(struct pil_desc *desc)
 	}
 
 	if (desc->subsys_vmid > 0) {
-		/* In case of modem ssr, we need to assign memory back to linux.
-		 * This is not true after cold boot since linux already owns it.
-		 * Also for secure boot devices, modem memory has to be released
-		 * after MBA is booted. */
-		if (desc->modem_ssr) {
-			ret = pil_assign_mem_to_linux(desc, priv->region_start,
-				(priv->region_end - priv->region_start));
-			if (ret)
-				pil_err(desc, "Failed to assign to linux, ret- %d\n",
-								ret);
-		}
 		ret = pil_assign_mem_to_subsys_and_linux(desc,
 				priv->region_start,
 				(priv->region_end - priv->region_start));
@@ -946,19 +930,6 @@ out:
 			priv->region = NULL;
 		}
 		pil_release_mmap(desc);
-
-#ifdef QUECTEL_REBOOT_WHEN_MODEM_LOAD_FAILED
-		quectel_set_system_reset_mode(0);
-	 	machine_restart(NULL);
-#endif
-
-#ifdef QUECTEL_REBOOT_WHEN_MODEM_LOAD_FAILED
-	if(false == modem_file_lose)
-	{
-		quectel_set_system_reset_mode(0);
-	 	machine_restart(NULL);
-	}
-#endif
 	}
 	return ret;
 }

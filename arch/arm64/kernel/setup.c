@@ -61,9 +61,7 @@
 #include <asm/memblock.h>
 #include <asm/psci.h>
 #include <asm/efi.h>
-
-char* (*arch_read_hardware_id)(void);
-EXPORT_SYMBOL(arch_read_hardware_id);
+#include <asm/system_misc.h>
 
 unsigned int boot_reason;
 EXPORT_SYMBOL(boot_reason);
@@ -71,7 +69,9 @@ EXPORT_SYMBOL(boot_reason);
 unsigned int cold_boot;
 EXPORT_SYMBOL(cold_boot);
 
-static const char *machine_name;
+char* (*arch_read_hardware_id)(void);
+const char *machine_name;
+
 phys_addr_t __fdt_pointer __initdata;
 
 /*
@@ -212,6 +212,7 @@ static void __init setup_machine_fdt(phys_addr_t dt_phys)
 		dump_stack_set_arch_desc("%s (DT)", machine_name);
 		pr_info("Machine: %s\n", machine_name);
 	}
+
 }
 
 static void __init request_standard_resources(void)

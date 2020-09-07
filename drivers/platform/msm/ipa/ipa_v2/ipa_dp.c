@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -419,30 +419,32 @@ int ipa_send(struct ipa_sys_context *sys, u32 num_desc, struct ipa_desc *desc,
 	int i = 0;
 	int j;
 	int result;
-	int fail_dma_wrap = 0;
 	uint size = num_desc * sizeof(struct sps_iovec);
-	u32 mem_flag = GFP_ATOMIC;
+	gfp_t mem_flag = GFP_ATOMIC;
 	struct sps_iovec iov;
 	int ret;
+	gfp_t flag;
 
 	if (unlikely(!in_atomic))
 		mem_flag = GFP_KERNEL;
+
+	flag = mem_flag | (ipa_ctx->use_dma_zone ? GFP_DMA : 0);
 
 	if (num_desc == IPA_NUM_DESC_PER_SW_TX) {
 		transfer.iovec = dma_pool_alloc(ipa_ctx->dma_pool, mem_flag,
 				&dma_addr);
 		if (!transfer.iovec) {
 			IPAERR("fail to alloc dma mem for sps xfr buff\n");
-			return -EFAULT;
+			return -ENOMEM;
 		}
 	} else {
-		transfer.iovec = kmalloc(size, mem_flag);
+		transfer.iovec = kmalloc(size, flag);
 		if (!transfer.iovec) {
 			IPAERR("fail to alloc mem for sps xfr buff ");
 			IPAERR("num_desc = %d size = %d\n", num_desc, size);
-			return -EFAULT;
+			return -ENOMEM;
 		}
-		dma_addr  = dma_map_single(ipa_ctx->pdev,
+		dma_addr = dma_map_single(ipa_ctx->pdev,
 				transfer.iovec, size, DMA_TO_DEVICE);
 		if (dma_mapping_error(ipa_ctx->pdev, dma_addr)) {
 			IPAERR("dma_map_single failed for sps xfr buff\n");
@@ -456,11 +458,11 @@ int ipa_send(struct ipa_sys_context *sys, u32 num_desc, struct ipa_desc *desc,
 	spin_lock_bh(&sys->spinlock);
 
 	for (i = 0; i < num_desc; i++) {
-		fail_dma_wrap = 0;
 		tx_pkt = kmem_cache_zalloc(ipa_ctx->tx_pkt_wrapper_cache,
-					   mem_flag);
+					   GFP_ATOMIC);
 		if (!tx_pkt) {
 			IPAERR("failed to alloc tx wrapper\n");
+			ret = -ENOMEM;
 			goto failure;
 		}
 		/*
@@ -492,15 +494,6 @@ int ipa_send(struct ipa_sys_context *sys, u32 num_desc, struct ipa_desc *desc,
 					tx_pkt->mem.base,
 					tx_pkt->mem.size,
 					DMA_TO_DEVICE);
-
-				if (dma_mapping_error(ipa_ctx->pdev,
-					tx_pkt->mem.phys_base)) {
-					IPAERR("dma_map_single ");
-					IPAERR("failed\n");
-					fail_dma_wrap = 1;
-					goto failure;
-				}
-
 			} else {
 				tx_pkt->mem.phys_base = desc[i].dma_address;
 				tx_pkt->no_unmap_dma = true;
@@ -521,10 +514,10 @@ int ipa_send(struct ipa_sys_context *sys, u32 num_desc, struct ipa_desc *desc,
 			}
 		}
 
-		if (!tx_pkt->mem.phys_base) {
-			IPAERR("failed to alloc tx wrapper\n");
-			fail_dma_wrap = 1;
-			goto failure;
+		if (dma_mapping_error(ipa_ctx->pdev, tx_pkt->mem.phys_base)) {
+			IPAERR("dma_map_single failed\n");
+			ret = -EFAULT;
+			goto failure_dma_map;
 		}
 
 		tx_pkt->sys = sys;
@@ -573,33 +566,37 @@ int ipa_send(struct ipa_sys_context *sys, u32 num_desc, struct ipa_desc *desc,
 	result = sps_transfer(sys->ep->ep_hdl, &transfer);
 	if (result) {
 		IPAERR("sps_transfer failed rc=%d\n", result);
+		ret = -EFAULT;
 		goto failure;
 	}
 
 	spin_unlock_bh(&sys->spinlock);
 	return 0;
 
+failure_dma_map:
+	kmem_cache_free(ipa_ctx->tx_pkt_wrapper_cache, tx_pkt);
+
 failure:
 	tx_pkt = transfer.user;
 	for (j = 0; j < i; j++) {
 		next_pkt = list_next_entry(tx_pkt, link);
 		list_del(&tx_pkt->link);
-		if (desc[j].type != IPA_DATA_DESC_SKB_PAGED) {
-			dma_unmap_single(ipa_ctx->pdev, tx_pkt->mem.phys_base,
-				tx_pkt->mem.size,
-				DMA_TO_DEVICE);
-		} else {
-			dma_unmap_page(ipa_ctx->pdev, tx_pkt->mem.phys_base,
-				tx_pkt->mem.size,
-				DMA_TO_DEVICE);
+		if (!tx_pkt->no_unmap_dma) {
+			if (desc[j].type != IPA_DATA_DESC_SKB_PAGED) {
+				dma_unmap_single(ipa_ctx->pdev,
+					tx_pkt->mem.phys_base,
+					tx_pkt->mem.size,
+					DMA_TO_DEVICE);
+			} else {
+				dma_unmap_page(ipa_ctx->pdev,
+					tx_pkt->mem.phys_base,
+					tx_pkt->mem.size,
+					DMA_TO_DEVICE);
+			}
 		}
 		kmem_cache_free(ipa_ctx->tx_pkt_wrapper_cache, tx_pkt);
 		tx_pkt = next_pkt;
 	}
-	if (j < num_desc)
-		/* last desc failed */
-		if (fail_dma_wrap)
-			kmem_cache_free(ipa_ctx->tx_pkt_wrapper_cache, tx_pkt);
 	if (transfer.iovec_phys) {
 		if (num_desc == IPA_NUM_DESC_PER_SW_TX) {
 			dma_pool_free(ipa_ctx->dma_pool, transfer.iovec,
@@ -611,7 +608,7 @@ failure:
 		}
 	}
 	spin_unlock_bh(&sys->spinlock);
-	return -EFAULT;
+	return ret;
 }
 
 /**
@@ -1562,6 +1559,7 @@ int ipa2_tx_dp(enum ipa_client_type dst, struct sk_buff *skb,
 	struct ipa_sys_context *sys;
 	int src_ep_idx;
 	int num_frags, f;
+	gfp_t flag = GFP_ATOMIC | (ipa_ctx->use_dma_zone ? GFP_DMA : 0);
 
 	if (unlikely(!ipa_ctx)) {
 		IPAERR("IPA driver was not initialized\n");
@@ -1627,7 +1625,7 @@ int ipa2_tx_dp(enum ipa_client_type dst, struct sk_buff *skb,
 
 	if (dst_ep_idx != -1) {
 		/* SW data path */
-		cmd = kzalloc(sizeof(struct ipa_ip_packet_init), GFP_ATOMIC);
+		cmd = kzalloc(sizeof(struct ipa_ip_packet_init), flag);
 		if (!cmd) {
 			IPAERR("failed to alloc immediate command object\n");
 			goto fail_gen;
@@ -2017,8 +2015,10 @@ static void ipa_replenish_rx_cache(struct ipa_sys_context *sys)
 			goto fail_dma_mapping;
 		}
 
+		spin_lock_bh(&sys->spinlock);
 		list_add_tail(&rx_pkt->link, &sys->head_desc_list);
 		rx_len_cached = ++sys->len;
+		spin_unlock_bh(&sys->spinlock);
 
 		ret = sps_transfer_one(sys->ep->ep_hdl,
 			rx_pkt->data.dma_addr, sys->rx_buff_sz, rx_pkt, 0);
@@ -2032,8 +2032,10 @@ static void ipa_replenish_rx_cache(struct ipa_sys_context *sys)
 	return;
 
 fail_sps_transfer:
+	spin_lock_bh(&sys->spinlock);
 	list_del(&rx_pkt->link);
 	rx_len_cached = --sys->len;
+	spin_unlock_bh(&sys->spinlock);
 	dma_unmap_single(ipa_ctx->pdev, rx_pkt->data.dma_addr,
 			sys->rx_buff_sz, DMA_FROM_DEVICE);
 fail_dma_mapping:
@@ -2103,8 +2105,10 @@ static void ipa_replenish_rx_cache_recycle(struct ipa_sys_context *sys)
 			}
 		}
 
+		spin_lock_bh(&sys->spinlock);
 		list_add_tail(&rx_pkt->link, &sys->head_desc_list);
 		rx_len_cached = ++sys->len;
+		spin_unlock_bh(&sys->spinlock);
 
 		ret = sps_transfer_one(sys->ep->ep_hdl,
 			rx_pkt->data.dma_addr, sys->rx_buff_sz, rx_pkt, 0);
@@ -2117,9 +2121,11 @@ static void ipa_replenish_rx_cache_recycle(struct ipa_sys_context *sys)
 
 	return;
 fail_sps_transfer:
+	spin_lock_bh(&sys->spinlock);
 	rx_len_cached = --sys->len;
 	list_del(&rx_pkt->link);
 	INIT_LIST_HEAD(&rx_pkt->link);
+	spin_unlock_bh(&sys->spinlock);
 	dma_unmap_single(ipa_ctx->pdev, rx_pkt->data.dma_addr,
 		sys->rx_buff_sz, DMA_FROM_DEVICE);
 fail_dma_mapping:
@@ -2148,7 +2154,9 @@ static void ipa_fast_replenish_rx_cache(struct ipa_sys_context *sys)
 			break;
 
 		rx_pkt = sys->repl.cache[curr];
+		spin_lock_bh(&sys->spinlock);
 		list_add_tail(&rx_pkt->link, &sys->head_desc_list);
+		spin_unlock_bh(&sys->spinlock);
 
 		ret = sps_transfer_one(sys->ep->ep_hdl,
 			rx_pkt->data.dma_addr, sys->rx_buff_sz, rx_pkt, 0);
@@ -2207,6 +2215,7 @@ static void ipa_cleanup_rx(struct ipa_sys_context *sys)
 	u32 head;
 	u32 tail;
 
+	spin_lock_bh(&sys->spinlock);
 	list_for_each_entry_safe(rx_pkt, r,
 				 &sys->head_desc_list, link) {
 		list_del(&rx_pkt->link);
@@ -2224,6 +2233,7 @@ static void ipa_cleanup_rx(struct ipa_sys_context *sys)
 		sys->free_skb(rx_pkt->data.skb);
 		kmem_cache_free(ipa_ctx->rx_pkt_wrapper_cache, rx_pkt);
 	}
+	spin_unlock_bh(&sys->spinlock);
 
 	if (sys->repl.cache) {
 		head = atomic_read(&sys->repl.head_idx);
@@ -2824,10 +2834,12 @@ void ipa_lan_rx_cb(void *priv, enum ipa_dp_evt_type evt, unsigned long data)
 	struct ipa_ep_context *ep;
 	unsigned int src_pipe;
 	u32 metadata;
+	u8 ucp;
 
 	status = (struct ipa_hw_pkt_status *)rx_skb->data;
 	src_pipe = status->endp_src_idx;
 	metadata = status->metadata;
+	ucp = status->ucp;
 	ep = &ipa_ctx->ep[src_pipe];
 	if (unlikely(src_pipe >= ipa_ctx->ipa_num_pipes ||
 		!ep->valid ||
@@ -2850,8 +2862,10 @@ void ipa_lan_rx_cb(void *priv, enum ipa_dp_evt_type evt, unsigned long data)
 	   ------------------------------------------
 	 */
 	*(u16 *)rx_skb->cb = ((metadata >> 16) & 0xFFFF);
+	*(u8 *)(rx_skb->cb + 4) = ucp;
 	IPADBG_LOW("meta_data: 0x%x cb: 0x%x\n",
-			metadata, *(u32 *)rx_skb->cb);
+		metadata, *(u32 *)rx_skb->cb);
+	IPADBG_LOW("ucp: %d\n", *(u8 *)(rx_skb->cb + 4));
 
 	ep->client_notify(ep->priv, IPA_RECEIVE, (unsigned long)(rx_skb));
 }
@@ -2872,8 +2886,10 @@ static void ipa_wq_rx_common(struct ipa_sys_context *sys, u32 size)
 	struct ipa_rx_pkt_wrapper *rx_pkt_expected;
 	struct sk_buff *rx_skb;
 
+	spin_lock_bh(&sys->spinlock);
 	if (unlikely(list_empty(&sys->head_desc_list))) {
 		WARN_ON(1);
+		spin_unlock_bh(&sys->spinlock);
 		return;
 	}
 	rx_pkt_expected = list_first_entry(&sys->head_desc_list,
@@ -2881,6 +2897,7 @@ static void ipa_wq_rx_common(struct ipa_sys_context *sys, u32 size)
 					   link);
 	list_del(&rx_pkt_expected->link);
 	sys->len--;
+	spin_unlock_bh(&sys->spinlock);
 	if (size)
 		rx_pkt_expected->len = size;
 	rx_skb = rx_pkt_expected->data.skb;
@@ -2901,8 +2918,10 @@ static void ipa_wlan_wq_rx_common(struct ipa_sys_context *sys, u32 size)
 	struct ipa_rx_pkt_wrapper *rx_pkt_expected;
 	struct sk_buff *rx_skb;
 
+	spin_lock_bh(&sys->spinlock);
 	if (unlikely(list_empty(&sys->head_desc_list))) {
 		WARN_ON(1);
+		spin_unlock_bh(&sys->spinlock);
 		return;
 	}
 	rx_pkt_expected = list_first_entry(&sys->head_desc_list,
@@ -2910,6 +2929,7 @@ static void ipa_wlan_wq_rx_common(struct ipa_sys_context *sys, u32 size)
 					   link);
 	list_del(&rx_pkt_expected->link);
 	sys->len--;
+	spin_unlock_bh(&sys->spinlock);
 
 	if (size)
 		rx_pkt_expected->len = size;

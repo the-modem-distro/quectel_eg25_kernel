@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -38,8 +38,13 @@
 #include "ipa_uc_offload_i.h"
 
 #define DRV_NAME "ipa"
-#define NAT_DEV_NAME "ipaNatTable"
 #define IPA_COOKIE 0x57831603
+#define IPA_RT_RULE_COOKIE 0x57831604
+#define IPA_RT_TBL_COOKIE 0x57831605
+#define IPA_FLT_COOKIE 0x57831606
+#define IPA_HDR_COOKIE 0x57831607
+#define IPA_PROC_HDR_COOKIE 0x57831608
+
 #define MTU_BYTE 1500
 
 #define IPA_EP_NOT_ALLOCATED (-1)
@@ -59,6 +64,9 @@
 #define IPA_MAX_STATUS_STAT_NUM 30
 
 #define IPA_IPC_LOG_PAGES 50
+
+#define IPA_PM_THRESHOLD_MAX 2
+#define IPA_MAX_NUM_REQ_CACHE 10
 
 #define IPADBG(fmt, args...) \
 	do { \
@@ -82,6 +90,18 @@
 #define IPAERR(fmt, args...) \
 	do { \
 		pr_err(DRV_NAME " %s:%d " fmt, __func__, __LINE__, ## args);\
+		if (ipa3_ctx) { \
+			IPA_IPC_LOGGING(ipa3_ctx->logbuf, \
+				DRV_NAME " %s:%d " fmt, ## args); \
+			IPA_IPC_LOGGING(ipa3_ctx->logbuf_low, \
+				DRV_NAME " %s:%d " fmt, ## args); \
+		} \
+	} while (0)
+
+#define IPAERR_RL(fmt, args...) \
+	do { \
+		pr_err_ratelimited_ipa(DRV_NAME " %s:%d " fmt, __func__,\
+		__LINE__, ## args);\
 		if (ipa3_ctx) { \
 			IPA_IPC_LOGGING(ipa3_ctx->logbuf, \
 				DRV_NAME " %s:%d " fmt, ## args); \
@@ -187,6 +207,10 @@
 #define IPA_RULE_ID_MAX_VAL (0x1FF)
 #define IPA_RULE_ID_RULE_MISS (0x3FF)
 
+#define IPA_RULE_ID_MIN (0x200)
+#define IPA_RULE_ID_MAX ((IPA_RULE_ID_MIN << 1) - 1)
+
+
 #define IPA_HDR_PROC_CTX_TABLE_ALIGNMENT_BYTE 8
 #define IPA_HDR_PROC_CTX_TABLE_ALIGNMENT(start_ofst) \
 	(((start_ofst) + IPA_HDR_PROC_CTX_TABLE_ALIGNMENT_BYTE - 1) & \
@@ -252,17 +276,19 @@ struct ipa_smmu_cb_ctx {
  * @prio: rule 10bit priority which defines the order of the rule
  *  among other rules at the same integrated table
  * @rule_id: rule 10bit ID to be returned in packet status
+ * @ipacm_installed: indicate if installed by ipacm
  */
 struct ipa3_flt_entry {
 	struct list_head link;
-	struct ipa_flt_rule rule;
 	u32 cookie;
+	struct ipa_flt_rule rule;
 	struct ipa3_flt_tbl *tbl;
 	struct ipa3_rt_tbl *rt_tbl;
 	u32 hw_len;
 	int id;
 	u16 prio;
 	u16 rule_id;
+	bool ipacm_installed;
 };
 
 /**
@@ -284,13 +310,13 @@ struct ipa3_flt_entry {
  */
 struct ipa3_rt_tbl {
 	struct list_head link;
+	u32 cookie;
 	struct list_head head_rt_rule_list;
 	char name[IPA_RESOURCE_NAME_MAX];
 	u32 idx;
 	u32 rule_cnt;
 	u32 ref_cnt;
 	struct ipa3_rt_tbl_set *set;
-	u32 cookie;
 	bool in_sys[IPA_RULE_TYPE_MAX];
 	u32 sz[IPA_RULE_TYPE_MAX];
 	struct ipa_mem_buffer curr_mem[IPA_RULE_TYPE_MAX];
@@ -319,9 +345,11 @@ struct ipa3_rt_tbl {
  * @is_eth2_ofst_valid: is eth2_ofst field valid?
  * @eth2_ofst: offset to start of Ethernet-II/802.3 header
  * @user_deleted: is the header deleted by the user?
+ * @ipacm_installed: indicate if installed by ipacm
  */
 struct ipa3_hdr_entry {
 	struct list_head link;
+	u32 cookie;
 	u8 hdr[IPA_HDR_MAX_SIZE];
 	u32 hdr_len;
 	char name[IPA_RESOURCE_NAME_MAX];
@@ -331,12 +359,12 @@ struct ipa3_hdr_entry {
 	dma_addr_t phys_base;
 	struct ipa3_hdr_proc_ctx_entry *proc_ctx;
 	struct ipa_hdr_offset_entry *offset_entry;
-	u32 cookie;
 	u32 ref_cnt;
 	int id;
 	u8 is_eth2_ofst_valid;
 	u16 eth2_ofst;
 	bool user_deleted;
+	bool ipacm_installed;
 };
 
 /**
@@ -360,33 +388,39 @@ struct ipa3_hdr_tbl {
  * @link: entry's link in global processing context header offset entries list
  * @offset: the offset
  * @bin: bin
+ * @ipacm_installed: indicate if installed by ipacm
  */
 struct ipa3_hdr_proc_ctx_offset_entry {
 	struct list_head link;
 	u32 offset;
 	u32 bin;
+	bool ipacm_installed;
 };
 
 /**
  struct ipa3_hdr_proc_ctx_entry - IPA processing context header table entry
  * @link: entry's link in global header table entries list
- * @type:
+ * @type: header processing context type
+ * @l2tp_params: L2TP parameters
  * @offset_entry: entry's offset
  * @hdr: the header
  * @cookie: cookie used for validity check
  * @ref_cnt: reference counter of routing table
  * @id: processing context header entry id
  * @user_deleted: is the hdr processing context deleted by the user?
+ * @ipacm_installed: indicate if installed by ipacm
  */
 struct ipa3_hdr_proc_ctx_entry {
 	struct list_head link;
+	u32 cookie;
 	enum ipa_hdr_proc_type type;
+	struct ipa_l2tp_hdr_proc_ctx_params l2tp_params;
 	struct ipa3_hdr_proc_ctx_offset_entry *offset_entry;
 	struct ipa3_hdr_entry *hdr;
-	u32 cookie;
 	u32 ref_cnt;
 	int id;
 	bool user_deleted;
+	bool ipacm_installed;
 };
 
 /**
@@ -442,11 +476,13 @@ struct ipa3_flt_tbl {
  * @prio: rule 10bit priority which defines the order of the rule
  *  among other rules at the integrated same table
  * @rule_id: rule 10bit ID to be returned in packet status
+ * @rule_id_valid: indicate if rule_id_valid valid or not?
+ * @ipacm_installed: indicate if installed by ipacm
  */
 struct ipa3_rt_entry {
 	struct list_head link;
-	struct ipa_rt_rule rule;
 	u32 cookie;
+	struct ipa_rt_rule rule;
 	struct ipa3_rt_tbl *tbl;
 	struct ipa3_hdr_entry *hdr;
 	struct ipa3_hdr_proc_ctx_entry *proc_ctx;
@@ -454,6 +490,8 @@ struct ipa3_rt_entry {
 	int id;
 	u16 prio;
 	u16 rule_id;
+	u16 rule_id_valid;
+	bool ipacm_installed;
 };
 
 /**
@@ -554,6 +592,8 @@ struct ipa3_status_stats {
  * @disconnect_in_progress: Indicates client disconnect in progress.
  * @qmi_request_sent: Indicates whether QMI request to enable clear data path
  *					request is sent or not.
+ * @client_lock_unlock: callback function to take mutex lock/unlock for USB
+ *				clients
  */
 struct ipa3_ep_context {
 	int valid;
@@ -590,6 +630,9 @@ struct ipa3_ep_context {
 	u32 uc_offload_state;
 	bool disconnect_in_progress;
 	u32 qmi_request_sent;
+	bool ep_delay_set;
+
+	int (*client_lock_unlock)(bool is_lock);
 
 	/* sys MUST be the last element of this struct */
 	struct ipa3_sys_context *sys;
@@ -1083,6 +1126,11 @@ struct ipa_dma_task_info {
 	struct ipahal_imm_cmd_pyld *cmd_pyld;
 };
 
+struct ipa_cne_evt {
+	struct ipa_wan_msg wan_msg;
+	struct ipa_msg_meta msg_meta;
+};
+
 /**
  * struct ipa3_context - IPA context
  * @class: pointer to the struct class
@@ -1246,6 +1294,8 @@ struct ipa3_context {
 	struct list_head msg_list;
 	struct list_head pull_msg_list;
 	struct mutex msg_lock;
+	struct list_head msg_wlan_client_list;
+	struct mutex msg_wlan_client_lock;
 	wait_queue_head_t msg_waitq;
 	enum ipa_hw_type ipa_hw_type;
 	enum ipa3_hw_mode ipa3_hw_mode;
@@ -1269,6 +1319,8 @@ struct ipa3_context {
 	u32 enable_clock_scaling;
 	u32 curr_ipa_clk_rate;
 	bool q6_proxy_clk_vote_valid;
+	struct mutex q6_proxy_clk_vote_mutex;
+	u32 q6_proxy_clk_vote_cnt;
 	u32 ipa_num_pipes;
 	dma_addr_t pkt_init_imm[IPA3_MAX_NUM_PIPES];
 
@@ -1309,6 +1361,9 @@ struct ipa3_context {
 	u32 ipa_tz_unlock_reg_num;
 	struct ipa_tz_unlock_reg_info *ipa_tz_unlock_reg;
 	struct ipa_dma_task_info dma_task_info;
+	struct ipa_cne_evt ipa_cne_evt_req_cache[IPA_MAX_NUM_REQ_CACHE];
+	int num_ipa_cne_evt_req;
+	struct mutex ipa_cne_evt_lock;
 };
 
 /**
@@ -1339,6 +1394,7 @@ struct ipa3_plat_drv_res {
 	bool ipa_bam_remote_mode;
 	bool modem_cfg_emb_pipe_flt;
 	bool ipa_wdi2;
+	u32 default_threshold[IPA_PM_THRESHOLD_MAX];
 	bool use_64_bit_dma_mask;
 	u32 wan_rx_ring_size;
 	u32 lan_rx_ring_size;
@@ -1347,6 +1403,7 @@ struct ipa3_plat_drv_res {
 	bool apply_rg10_wa;
 	bool gsi_ch20_wa;
 	bool tethered_flow_control;
+	bool ipa_mhi_dynamic_config;
 	u32 ipa_tz_unlock_reg_num;
 	struct ipa_tz_unlock_reg_info *ipa_tz_unlock_reg;
 };
@@ -1488,6 +1545,14 @@ int ipa3_xdci_connect(u32 clnt_hdl);
 
 int ipa3_xdci_disconnect(u32 clnt_hdl, bool should_force_clear, u32 qmi_req_id);
 
+void ipa3_xdci_ep_delay_rm(u32 clnt_hdl);
+void ipa3_register_lock_unlock_callback(int (*client_cb)(bool), u32 ipa_ep_idx);
+void ipa3_deregister_lock_unlock_callback(u32 ipa_ep_idx);
+int ipa3_set_reset_client_prod_pipe_delay(bool set_reset,
+		enum ipa_client_type client);
+int ipa3_set_reset_client_cons_pipe_sus_holb(bool set_reset,
+		enum ipa_client_type client);
+
 int ipa3_xdci_suspend(u32 ul_clnt_hdl, u32 dl_clnt_hdl,
 	bool should_force_clear, u32 qmi_req_id, bool is_dpl);
 
@@ -1541,13 +1606,15 @@ int ipa3_cfg_ep_ctrl(u32 clnt_hdl, const struct ipa_ep_cfg_ctrl *ep_ctrl);
  */
 int ipa3_add_hdr(struct ipa_ioc_add_hdr *hdrs);
 
+int ipa3_add_hdr_usr(struct ipa_ioc_add_hdr *hdrs, bool by_user);
+
 int ipa3_del_hdr(struct ipa_ioc_del_hdr *hdls);
 
 int ipa3_del_hdr_by_user(struct ipa_ioc_del_hdr *hdls, bool by_user);
 
 int ipa3_commit_hdr(void);
 
-int ipa3_reset_hdr(void);
+int ipa3_reset_hdr(bool user_only);
 
 int ipa3_get_hdr(struct ipa_ioc_get_hdr *lookup);
 
@@ -1558,7 +1625,8 @@ int ipa3_copy_hdr(struct ipa_ioc_copy_hdr *copy);
 /*
  * Header Processing Context
  */
-int ipa3_add_hdr_proc_ctx(struct ipa_ioc_add_hdr_proc_ctx *proc_ctxs);
+int ipa3_add_hdr_proc_ctx(struct ipa_ioc_add_hdr_proc_ctx *proc_ctxs,
+							bool user_only);
 
 int ipa3_del_hdr_proc_ctx(struct ipa_ioc_del_hdr_proc_ctx *hdls);
 
@@ -1570,13 +1638,18 @@ int ipa3_del_hdr_proc_ctx_by_user(struct ipa_ioc_del_hdr_proc_ctx *hdls,
  */
 int ipa3_add_rt_rule(struct ipa_ioc_add_rt_rule *rules);
 
+int ipa3_add_rt_rule_usr(struct ipa_ioc_add_rt_rule *rules,
+	bool user_only);
+
+int ipa3_add_rt_rule_ext(struct ipa_ioc_add_rt_rule_ext *rules);
+
 int ipa3_add_rt_rule_after(struct ipa_ioc_add_rt_rule_after *rules);
 
 int ipa3_del_rt_rule(struct ipa_ioc_del_rt_rule *hdls);
 
 int ipa3_commit_rt(enum ipa_ip_type ip);
 
-int ipa3_reset_rt(enum ipa_ip_type ip);
+int ipa3_reset_rt(enum ipa_ip_type ip, bool user_only);
 
 int ipa3_get_rt_tbl(struct ipa_ioc_get_rt_tbl *lookup);
 
@@ -1591,6 +1664,9 @@ int ipa3_mdfy_rt_rule(struct ipa_ioc_mdfy_rt_rule *rules);
  */
 int ipa3_add_flt_rule(struct ipa_ioc_add_flt_rule *rules);
 
+int ipa3_add_flt_rule_usr(struct ipa_ioc_add_flt_rule *rules,
+	bool user_only);
+
 int ipa3_add_flt_rule_after(struct ipa_ioc_add_flt_rule_after *rules);
 
 int ipa3_del_flt_rule(struct ipa_ioc_del_flt_rule *hdls);
@@ -1599,24 +1675,28 @@ int ipa3_mdfy_flt_rule(struct ipa_ioc_mdfy_flt_rule *rules);
 
 int ipa3_commit_flt(enum ipa_ip_type ip);
 
-int ipa3_reset_flt(enum ipa_ip_type ip);
+int ipa3_reset_flt(enum ipa_ip_type ip, bool user_only);
 
 /*
  * NAT
  */
 int ipa3_allocate_nat_device(struct ipa_ioc_nat_alloc_mem *mem);
+int ipa3_allocate_nat_table(
+	struct ipa_ioc_nat_ipv6ct_table_alloc *table_alloc);
 
 int ipa3_nat_init_cmd(struct ipa_ioc_v4_nat_init *init);
 
 int ipa3_nat_dma_cmd(struct ipa_ioc_nat_dma_cmd *dma);
 
 int ipa3_nat_del_cmd(struct ipa_ioc_v4_nat_del *del);
+int ipa3_del_nat_table(struct ipa_ioc_nat_ipv6ct_table_del *del);
 
 /*
  * Messaging
  */
 int ipa3_send_msg(struct ipa_msg_meta *meta, void *buff,
 		  ipa_msg_free_fn callback);
+int ipa3_resend_wlan_msg(void);
 int ipa3_register_pull_msg(struct ipa_msg_meta *meta, ipa_msg_pull_fn callback);
 int ipa3_deregister_pull_msg(struct ipa_msg_meta *meta);
 
@@ -1649,7 +1729,7 @@ int ipa3_tx_dp(enum ipa_client_type dst, struct sk_buff *skb,
  * To transfer multiple data packets
  * While passing the data descriptor list, the anchor node
  * should be of type struct ipa_tx_data_desc not list_head
-*/
+ */
 int ipa3_tx_dp_mul(enum ipa_client_type dst,
 			struct ipa_tx_data_desc *data_desc);
 
@@ -1686,6 +1766,11 @@ int ipa3_setup_uc_ntn_pipes(struct ipa_ntn_conn_in_params *in,
 int ipa3_tear_down_uc_offload_pipes(int ipa_ep_idx_ul, int ipa_ep_idx_dl);
 int ipa3_ntn_uc_reg_rdyCB(void (*ipauc_ready_cb)(void *), void *priv);
 void ipa3_ntn_uc_dereg_rdyCB(void);
+int ipa3_conn_wdi3_pipes(struct ipa_wdi3_conn_in_params *in,
+	struct ipa_wdi3_conn_out_params *out);
+int ipa3_disconn_wdi3_pipes(int ipa_ep_idx_tx, int ipa_ep_idx_rx);
+int ipa3_enable_wdi3_pipes(int ipa_ep_idx_tx, int ipa_ep_idx_rx);
+int ipa3_disable_wdi3_pipes(int ipa_ep_idx_tx, int ipa_ep_idx_rx);
 
 /*
  * To retrieve doorbell physical address of
@@ -1884,10 +1969,6 @@ void ipa3_suspend_handler(enum ipa_irq_type interrupt,
 				void *private_data,
 				void *interrupt_data);
 
-
-int ipa_bridge_init(void);
-void ipa_bridge_cleanup(void);
-
 ssize_t ipa3_read(struct file *filp, char __user *buf, size_t count,
 		 loff_t *f_pos);
 int ipa3_pull_msg(struct ipa_msg_meta *meta, char *buff, size_t count);
@@ -1974,6 +2055,8 @@ void ipa3_uc_register_handlers(enum ipa3_hw_features feature,
 			      struct ipa3_uc_hdlrs *hdlrs);
 int ipa3_create_nat_device(void);
 int ipa3_uc_notify_clk_state(bool enabled);
+int ipa3_dma_setup(void);
+void ipa3_dma_shutdown(void);
 void ipa3_dma_async_memcpy_notify_cb(void *priv,
 		enum ipa_dp_evt_type evt, unsigned long data);
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -48,6 +48,10 @@
 #define MAX_RX_POLL_TIME 5
 #define UPPER_CUTOFF 50
 #define LOWER_CUTOFF 10
+
+#define MAX_RETRY_ALLOC 10
+#define ALLOC_MIN_SLEEP_RX 100000
+#define ALLOC_MAX_SLEEP_RX 200000
 
 #define IPA_DEFAULT_SYS_YELLOW_WM 32
 
@@ -198,6 +202,7 @@ static const int ep_mapping[3][IPA_CLIENT_MAX] = {
 	[IPA_2_0][IPA_CLIENT_TEST2_CONS]         = 16,
 	[IPA_2_0][IPA_CLIENT_TEST3_CONS]         = 13,
 	[IPA_2_0][IPA_CLIENT_TEST4_CONS]         = 15,
+	[IPA_2_0][IPA_CLIENT_DUMMY_CONS]         = -1,
 
 
 	[IPA_2_6L][IPA_CLIENT_HSIC1_PROD]         = -1,
@@ -275,6 +280,7 @@ static const int ep_mapping[3][IPA_CLIENT_MAX] = {
 	[IPA_2_6L][IPA_CLIENT_TEST2_CONS]         = 0,
 	[IPA_2_6L][IPA_CLIENT_TEST3_CONS]         = 1,
 	[IPA_2_6L][IPA_CLIENT_TEST4_CONS]         = 10,
+	[IPA_2_6L][IPA_CLIENT_DUMMY_CONS]         = -1,
 };
 
 static struct msm_bus_vectors ipa_init_vectors_v1_1[]  = {
@@ -932,7 +938,7 @@ int ipa2_get_ep_mapping(enum ipa_client_type client)
 	}
 
 	if (client >= IPA_CLIENT_MAX || client < 0) {
-		IPAERR("Bad client number! client =%d\n", client);
+		IPAERR_RL("Bad client number! client =%d\n", client);
 		return INVALID_EP_MAPPING_INDEX;
 	}
 
@@ -960,7 +966,7 @@ int ipa2_get_ep_mapping(enum ipa_client_type client)
 
 void ipa2_set_client(int index, enum ipacm_client_enum client, bool uplink)
 {
-	if (client >= IPACM_CLIENT_MAX || client < IPACM_CLIENT_USB) {
+	if (client > IPACM_CLIENT_MAX || client < IPACM_CLIENT_USB) {
 		IPAERR("Bad client number! client =%d\n", client);
 	} else if (index >= IPA_MAX_NUM_PIPES || index < 0) {
 		IPAERR("Bad pipe index! index =%d\n", index);
@@ -994,6 +1000,11 @@ enum ipacm_client_enum ipa2_get_client(int pipe_idx)
  */
 bool ipa2_get_client_uplink(int pipe_idx)
 {
+	if (pipe_idx < 0 || pipe_idx >= IPA_MAX_NUM_PIPES) {
+		IPAERR("invalid pipe idx %d\n", pipe_idx);
+		return false;
+	}
+
 	return ipa_ctx->ipacm_client[pipe_idx].uplink;
 }
 
@@ -1520,6 +1531,37 @@ int ipa_generate_hw_rule(enum ipa_ip_type ip,
 			ihl_ofst_meq32++;
 		}
 
+		if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IP_TYPE) {
+			if (ipa_ihl_ofst_meq32[ihl_ofst_meq32] == -1) {
+				IPAERR("ran out of ihl_meq32 eq\n");
+				return -EPERM;
+			}
+			*en_rule |= ipa_ihl_ofst_meq32[ihl_ofst_meq32];
+			/* 22  => offset of IP type after v6 header */
+			*buf = ipa_write_8(22, *buf);
+			*buf = ipa_write_32(0xF0000000, *buf);
+			if (attrib->type == 0x40)
+				*buf = ipa_write_32(0x40000000, *buf);
+			else
+				*buf = ipa_write_32(0x60000000, *buf);
+			*buf = ipa_pad_to_32(*buf);
+			ihl_ofst_meq32++;
+		}
+
+		if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IPV4_DST_ADDR) {
+			if (ipa_ihl_ofst_meq32[ihl_ofst_meq32] == -1) {
+				IPAERR("ran out of ihl_meq32 eq\n");
+				return -EPERM;
+			}
+			*en_rule |= ipa_ihl_ofst_meq32[ihl_ofst_meq32];
+			/* 38  => offset of inner IPv4 addr */
+			*buf = ipa_write_8(38, *buf);
+			*buf = ipa_write_32(attrib->u.v4.dst_addr_mask, *buf);
+			*buf = ipa_write_32(attrib->u.v4.dst_addr, *buf);
+			*buf = ipa_pad_to_32(*buf);
+			ihl_ofst_meq32++;
+		}
+
 		if (attrib->attrib_mask & IPA_FLT_SRC_PORT) {
 			if (ipa_ihl_ofst_rng16[ihl_ofst_rng16] == -1) {
 				IPAERR("ran out of ihl_rng16 eq\n");
@@ -1814,7 +1856,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 		if (attrib->attrib_mask & IPA_FLT_NEXT_HDR ||
 		    attrib->attrib_mask & IPA_FLT_TC || attrib->attrib_mask &
 		    IPA_FLT_FLOW_LABEL) {
-			IPAERR("v6 attrib's specified for v4 rule\n");
+			IPAERR_RL("v6 attrib's specified for v4 rule\n");
 			return -EPERM;
 		}
 
@@ -1826,7 +1868,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_TOS_MASKED) {
 			if (ipa_ofst_meq32[ofst_meq32] == -1) {
-				IPAERR("ran out of meq32 eq\n");
+				IPAERR_RL("ran out of meq32 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq32[ofst_meq32];
@@ -1846,7 +1888,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_SRC_ADDR) {
 			if (ipa_ofst_meq32[ofst_meq32] == -1) {
-				IPAERR("ran out of meq32 eq\n");
+				IPAERR_RL("ran out of meq32 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq32[ofst_meq32];
@@ -1860,7 +1902,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_DST_ADDR) {
 			if (ipa_ofst_meq32[ofst_meq32] == -1) {
-				IPAERR("ran out of meq32 eq\n");
+				IPAERR_RL("ran out of meq32 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq32[ofst_meq32];
@@ -1874,11 +1916,11 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_SRC_PORT_RANGE) {
 			if (ipa_ihl_ofst_rng16[ihl_ofst_rng16] == -1) {
-				IPAERR("ran out of ihl_rng16 eq\n");
+				IPAERR_RL("ran out of ihl_rng16 eq\n");
 				return -EPERM;
 			}
 			if (attrib->src_port_hi < attrib->src_port_lo) {
-				IPAERR("bad src port range param\n");
+				IPAERR_RL("bad src port range param\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_rng16[ihl_ofst_rng16];
@@ -1892,11 +1934,11 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_DST_PORT_RANGE) {
 			if (ipa_ihl_ofst_rng16[ihl_ofst_rng16] == -1) {
-				IPAERR("ran out of ihl_rng16 eq\n");
+				IPAERR_RL("ran out of ihl_rng16 eq\n");
 				return -EPERM;
 			}
 			if (attrib->dst_port_hi < attrib->dst_port_lo) {
-				IPAERR("bad dst port range param\n");
+				IPAERR_RL("bad dst port range param\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_rng16[ihl_ofst_rng16];
@@ -1910,7 +1952,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_TYPE) {
 			if (ipa_ihl_ofst_meq32[ihl_ofst_meq32] == -1) {
-				IPAERR("ran out of ihl_meq32 eq\n");
+				IPAERR_RL("ran out of ihl_meq32 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_meq32[ihl_ofst_meq32];
@@ -1923,7 +1965,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_CODE) {
 			if (ipa_ihl_ofst_meq32[ihl_ofst_meq32] == -1) {
-				IPAERR("ran out of ihl_meq32 eq\n");
+				IPAERR_RL("ran out of ihl_meq32 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_meq32[ihl_ofst_meq32];
@@ -1936,7 +1978,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_SPI) {
 			if (ipa_ihl_ofst_meq32[ihl_ofst_meq32] == -1) {
-				IPAERR("ran out of ihl_meq32 eq\n");
+				IPAERR_RL("ran out of ihl_meq32 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_meq32[ihl_ofst_meq32];
@@ -1950,7 +1992,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_SRC_PORT) {
 			if (ipa_ihl_ofst_rng16[ihl_ofst_rng16] == -1) {
-				IPAERR("ran out of ihl_rng16 eq\n");
+				IPAERR_RL("ran out of ihl_rng16 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_rng16[ihl_ofst_rng16];
@@ -1964,7 +2006,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_DST_PORT) {
 			if (ipa_ihl_ofst_rng16[ihl_ofst_rng16] == -1) {
-				IPAERR("ran out of ihl_rng16 eq\n");
+				IPAERR_RL("ran out of ihl_rng16 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_rng16[ihl_ofst_rng16];
@@ -1991,7 +2033,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_MAC_DST_ADDR_ETHER_II) {
 			if (ipa_ofst_meq128[ofst_meq128] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq128[ofst_meq128];
@@ -2006,7 +2048,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_MAC_SRC_ADDR_ETHER_II) {
 			if (ipa_ofst_meq128[ofst_meq128] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq128[ofst_meq128];
@@ -2021,7 +2063,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_MAC_DST_ADDR_802_3) {
 			if (ipa_ofst_meq128[ofst_meq128] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq128[ofst_meq128];
@@ -2036,7 +2078,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_MAC_SRC_ADDR_802_3) {
 			if (ipa_ofst_meq128[ofst_meq128] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq128[ofst_meq128];
@@ -2051,7 +2093,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_MAC_ETHER_TYPE) {
 			if (ipa_ofst_meq32[ofst_meq32] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq32[ofst_meq32];
@@ -2069,7 +2111,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 		/* error check */
 		if (attrib->attrib_mask & IPA_FLT_TOS ||
 		    attrib->attrib_mask & IPA_FLT_PROTOCOL) {
-			IPAERR("v4 attrib's specified for v6 rule\n");
+			IPAERR_RL("v4 attrib's specified for v6 rule\n");
 			return -EPERM;
 		}
 
@@ -2081,7 +2123,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_TYPE) {
 			if (ipa_ihl_ofst_meq32[ihl_ofst_meq32] == -1) {
-				IPAERR("ran out of ihl_meq32 eq\n");
+				IPAERR_RL("ran out of ihl_meq32 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_meq32[ihl_ofst_meq32];
@@ -2094,7 +2136,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_CODE) {
 			if (ipa_ihl_ofst_meq32[ihl_ofst_meq32] == -1) {
-				IPAERR("ran out of ihl_meq32 eq\n");
+				IPAERR_RL("ran out of ihl_meq32 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_meq32[ihl_ofst_meq32];
@@ -2107,7 +2149,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_SPI) {
 			if (ipa_ihl_ofst_meq32[ihl_ofst_meq32] == -1) {
-				IPAERR("ran out of ihl_meq32 eq\n");
+				IPAERR_RL("ran out of ihl_meq32 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_meq32[ihl_ofst_meq32];
@@ -2119,9 +2161,39 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 			ihl_ofst_meq32++;
 		}
 
+		if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IP_TYPE) {
+			if (ipa_ihl_ofst_meq32[ihl_ofst_meq32] == -1) {
+				IPAERR("ran out of ihl_meq32 eq\n");
+				return -EPERM;
+			}
+			*en_rule |= ipa_ihl_ofst_meq32[ihl_ofst_meq32];
+			/* 22  => offset of inner IP type after v6 header */
+			eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].offset = 22;
+			eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].mask =
+				0xF0000000;
+			eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].value =
+				(u32)attrib->type << 24;
+			ihl_ofst_meq32++;
+		}
+
+		if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IPV4_DST_ADDR) {
+			if (ipa_ihl_ofst_meq32[ihl_ofst_meq32] == -1) {
+				IPAERR("ran out of ihl_meq32 eq\n");
+				return -EPERM;
+			}
+			*en_rule |= ipa_ihl_ofst_meq32[ihl_ofst_meq32];
+			/* 38  => offset of inner IPv4 addr */
+			eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].offset = 38;
+			eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].mask =
+				attrib->u.v4.dst_addr_mask;
+			eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].value =
+				attrib->u.v4.dst_addr;
+			ihl_ofst_meq32++;
+		}
+
 		if (attrib->attrib_mask & IPA_FLT_SRC_PORT) {
 			if (ipa_ihl_ofst_rng16[ihl_ofst_rng16] == -1) {
-				IPAERR("ran out of ihl_rng16 eq\n");
+				IPAERR_RL("ran out of ihl_rng16 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_rng16[ihl_ofst_rng16];
@@ -2135,7 +2207,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_DST_PORT) {
 			if (ipa_ihl_ofst_rng16[ihl_ofst_rng16] == -1) {
-				IPAERR("ran out of ihl_rng16 eq\n");
+				IPAERR_RL("ran out of ihl_rng16 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_rng16[ihl_ofst_rng16];
@@ -2149,11 +2221,11 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_SRC_PORT_RANGE) {
 			if (ipa_ihl_ofst_rng16[ihl_ofst_rng16] == -1) {
-				IPAERR("ran out of ihl_rng16 eq\n");
+				IPAERR_RL("ran out of ihl_rng16 eq\n");
 				return -EPERM;
 			}
 			if (attrib->src_port_hi < attrib->src_port_lo) {
-				IPAERR("bad src port range param\n");
+				IPAERR_RL("bad src port range param\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_rng16[ihl_ofst_rng16];
@@ -2167,11 +2239,11 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_DST_PORT_RANGE) {
 			if (ipa_ihl_ofst_rng16[ihl_ofst_rng16] == -1) {
-				IPAERR("ran out of ihl_rng16 eq\n");
+				IPAERR_RL("ran out of ihl_rng16 eq\n");
 				return -EPERM;
 			}
 			if (attrib->dst_port_hi < attrib->dst_port_lo) {
-				IPAERR("bad dst port range param\n");
+				IPAERR_RL("bad dst port range param\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ihl_ofst_rng16[ihl_ofst_rng16];
@@ -2185,7 +2257,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_SRC_ADDR) {
 			if (ipa_ofst_meq128[ofst_meq128] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq128[ofst_meq128];
@@ -2211,7 +2283,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_DST_ADDR) {
 			if (ipa_ofst_meq128[ofst_meq128] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq128[ofst_meq128];
@@ -2243,7 +2315,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_TOS_MASKED) {
 			if (ipa_ofst_meq128[ofst_meq128] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq128[ofst_meq128];
@@ -2288,7 +2360,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_MAC_DST_ADDR_ETHER_II) {
 			if (ipa_ofst_meq128[ofst_meq128] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq128[ofst_meq128];
@@ -2303,7 +2375,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_MAC_SRC_ADDR_ETHER_II) {
 			if (ipa_ofst_meq128[ofst_meq128] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq128[ofst_meq128];
@@ -2318,7 +2390,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_MAC_DST_ADDR_802_3) {
 			if (ipa_ofst_meq128[ofst_meq128] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq128[ofst_meq128];
@@ -2333,7 +2405,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_MAC_SRC_ADDR_802_3) {
 			if (ipa_ofst_meq128[ofst_meq128] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq128[ofst_meq128];
@@ -2348,7 +2420,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 
 		if (attrib->attrib_mask & IPA_FLT_MAC_ETHER_TYPE) {
 			if (ipa_ofst_meq32[ofst_meq32] == -1) {
-				IPAERR("ran out of meq128 eq\n");
+				IPAERR_RL("ran out of meq128 eq\n");
 				return -EPERM;
 			}
 			*en_rule |= ipa_ofst_meq32[ofst_meq32];
@@ -2361,7 +2433,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 		}
 
 	} else {
-		IPAERR("unsupported ip %d\n", ip);
+		IPAERR_RL("unsupported ip %d\n", ip);
 		return -EPERM;
 	}
 
@@ -2371,7 +2443,7 @@ int ipa_generate_flt_eq(enum ipa_ip_type ip,
 	 */
 	if (attrib->attrib_mask == 0) {
 		if (ipa_ofst_meq32[ofst_meq32] == -1) {
-			IPAERR("ran out of meq32 eq\n");
+			IPAERR_RL("ran out of meq32 eq\n");
 			return -EPERM;
 		}
 		*en_rule |= ipa_ofst_meq32[ofst_meq32];
@@ -3662,19 +3734,19 @@ int ipa2_write_qmap_id(struct ipa_ioc_write_qmapid *param_in)
 	}
 
 	if (param_in->client  >= IPA_CLIENT_MAX) {
-		IPAERR("bad parm client:%d\n", param_in->client);
+		IPAERR_RL("bad parm client:%d\n", param_in->client);
 		goto fail;
 	}
 
 	ipa_ep_idx = ipa2_get_ep_mapping(param_in->client);
 	if (ipa_ep_idx == -1) {
-		IPAERR("Invalid client.\n");
+		IPAERR_RL("Invalid client.\n");
 		goto fail;
 	}
 
 	ep = &ipa_ctx->ep[ipa_ep_idx];
 	if (!ep->valid) {
-		IPAERR("EP not allocated.\n");
+		IPAERR_RL("EP not allocated.\n");
 		goto fail;
 	}
 
@@ -3688,7 +3760,7 @@ int ipa2_write_qmap_id(struct ipa_ioc_write_qmapid *param_in)
 		ipa_ctx->ep[ipa_ep_idx].cfg.meta = meta;
 		result = ipa_write_qmapid_wdi_pipe(ipa_ep_idx, meta.qmap_id);
 		if (result)
-			IPAERR("qmap_id %d write failed on ep=%d\n",
+			IPAERR_RL("qmap_id %d write failed on ep=%d\n",
 					meta.qmap_id, ipa_ep_idx);
 		result = 0;
 	}
@@ -4558,6 +4630,8 @@ int ipa_tag_process(struct ipa_desc desc[],
 	int res;
 	struct ipa_tag_completion *comp;
 	int ep_idx;
+	u32 retry_cnt = 0;
+	gfp_t flag = GFP_KERNEL | (ipa_ctx->use_dma_zone ? GFP_DMA : 0);
 
 	/* Not enough room for the required descriptors for the tag process */
 	if (IPA_TAG_MAX_DESC - descs_num < REQUIRED_TAG_PROCESS_DESCRIPTORS) {
@@ -4575,7 +4649,7 @@ int ipa_tag_process(struct ipa_desc desc[],
 	}
 	sys = ipa_ctx->ep[ep_idx].sys;
 
-	tag_desc = kzalloc(sizeof(*tag_desc) * IPA_TAG_MAX_DESC, GFP_KERNEL);
+	tag_desc = kzalloc(sizeof(*tag_desc) * IPA_TAG_MAX_DESC, flag);
 	if (!tag_desc) {
 		IPAERR("failed to allocate memory\n");
 		res = -ENOMEM;
@@ -4583,7 +4657,7 @@ int ipa_tag_process(struct ipa_desc desc[],
 	}
 
 	/* IP_PACKET_INIT IC for tag status to be sent to apps */
-	pkt_init = kzalloc(sizeof(*pkt_init), GFP_KERNEL);
+	pkt_init = kzalloc(sizeof(*pkt_init), flag);
 	if (!pkt_init) {
 		IPAERR("failed to allocate memory\n");
 		res = -ENOMEM;
@@ -4602,7 +4676,7 @@ int ipa_tag_process(struct ipa_desc desc[],
 	desc_idx++;
 
 	/* NO-OP IC for ensuring that IPA pipeline is empty */
-	reg_write_nop = kzalloc(sizeof(*reg_write_nop), GFP_KERNEL);
+	reg_write_nop = kzalloc(sizeof(*reg_write_nop), flag);
 	if (!reg_write_nop) {
 		IPAERR("no mem\n");
 		res = -ENOMEM;
@@ -4621,7 +4695,7 @@ int ipa_tag_process(struct ipa_desc desc[],
 	desc_idx++;
 
 	/* status IC */
-	status = kzalloc(sizeof(*status), GFP_KERNEL);
+	status = kzalloc(sizeof(*status), flag);
 	if (!status) {
 		IPAERR("no mem\n");
 		res = -ENOMEM;
@@ -4657,7 +4731,7 @@ int ipa_tag_process(struct ipa_desc desc[],
 	atomic_set(&comp->cnt, 2);
 
 	/* dummy packet to send to IPA. packet payload is a completion object */
-	dummy_skb = alloc_skb(sizeof(comp), GFP_KERNEL);
+	dummy_skb = alloc_skb(sizeof(comp), flag);
 	if (!dummy_skb) {
 		IPAERR("failed to allocate memory\n");
 		res = -ENOMEM;
@@ -4673,9 +4747,22 @@ int ipa_tag_process(struct ipa_desc desc[],
 	tag_desc[desc_idx].user1 = dummy_skb;
 	desc_idx++;
 
+retry_alloc:
+
 	/* send all descriptors to IPA with single EOT */
 	res = ipa_send(sys, desc_idx, tag_desc, true);
 	if (res) {
+		if (res == -ENOMEM) {
+			if (retry_cnt < MAX_RETRY_ALLOC) {
+				IPADBG(
+				"Failed to alloc memory retry count %d\n",
+				retry_cnt);
+				retry_cnt++;
+				usleep_range(ALLOC_MIN_SLEEP_RX,
+					ALLOC_MAX_SLEEP_RX);
+				goto retry_alloc;
+			}
+		}
 		IPAERR("failed to send TAG packets %d\n", res);
 		res = -ENOMEM;
 		goto fail_send;
@@ -5063,6 +5150,7 @@ int ipa2_bind_api_controller(enum ipa_hw_type ipa_hw_type,
 	api_ctrl->ipa_cfg_ep_holb_by_client = ipa2_cfg_ep_holb_by_client;
 	api_ctrl->ipa_cfg_ep_ctrl = ipa2_cfg_ep_ctrl;
 	api_ctrl->ipa_add_hdr = ipa2_add_hdr;
+	api_ctrl->ipa_add_hdr_usr = ipa2_add_hdr_usr;
 	api_ctrl->ipa_del_hdr = ipa2_del_hdr;
 	api_ctrl->ipa_commit_hdr = ipa2_commit_hdr;
 	api_ctrl->ipa_reset_hdr = ipa2_reset_hdr;
@@ -5072,6 +5160,7 @@ int ipa2_bind_api_controller(enum ipa_hw_type ipa_hw_type,
 	api_ctrl->ipa_add_hdr_proc_ctx = ipa2_add_hdr_proc_ctx;
 	api_ctrl->ipa_del_hdr_proc_ctx = ipa2_del_hdr_proc_ctx;
 	api_ctrl->ipa_add_rt_rule = ipa2_add_rt_rule;
+	api_ctrl->ipa_add_rt_rule_usr = ipa2_add_rt_rule_usr;
 	api_ctrl->ipa_del_rt_rule = ipa2_del_rt_rule;
 	api_ctrl->ipa_commit_rt = ipa2_commit_rt;
 	api_ctrl->ipa_reset_rt = ipa2_reset_rt;
@@ -5080,6 +5169,7 @@ int ipa2_bind_api_controller(enum ipa_hw_type ipa_hw_type,
 	api_ctrl->ipa_query_rt_index = ipa2_query_rt_index;
 	api_ctrl->ipa_mdfy_rt_rule = ipa2_mdfy_rt_rule;
 	api_ctrl->ipa_add_flt_rule = ipa2_add_flt_rule;
+	api_ctrl->ipa_add_flt_rule_usr = ipa2_add_flt_rule_usr;
 	api_ctrl->ipa_del_flt_rule = ipa2_del_flt_rule;
 	api_ctrl->ipa_mdfy_flt_rule = ipa2_mdfy_flt_rule;
 	api_ctrl->ipa_commit_flt = ipa2_commit_flt;
@@ -5199,6 +5289,10 @@ int ipa2_bind_api_controller(enum ipa_hw_type ipa_hw_type,
 	api_ctrl->ipa_get_pdev = ipa2_get_pdev;
 	api_ctrl->ipa_ntn_uc_reg_rdyCB = ipa2_ntn_uc_reg_rdyCB;
 	api_ctrl->ipa_ntn_uc_dereg_rdyCB = ipa2_ntn_uc_dereg_rdyCB;
+	api_ctrl->ipa_conn_wdi3_pipes = ipa2_conn_wdi3_pipes;
+	api_ctrl->ipa_disconn_wdi3_pipes = ipa2_disconn_wdi3_pipes;
+	api_ctrl->ipa_enable_wdi3_pipes = ipa2_enable_wdi3_pipes;
+	api_ctrl->ipa_disable_wdi3_pipes = ipa2_disable_wdi3_pipes;
 
 	return 0;
 }

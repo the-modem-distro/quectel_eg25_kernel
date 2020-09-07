@@ -64,21 +64,22 @@ struct cnss_dump_seg {
 	unsigned long address;
 	void *v_address;
 	unsigned long size;
-	uint32_t type;
+	u32 type;
 };
 
 struct cnss_dump_data {
-	uint32_t version;
-	uint32_t magic;
+	u32 version;
+	u32 magic;
 	char name[32];
 	phys_addr_t paddr;
-	void *vaddr;
 	int nentries;
+	u32 seg_version;
 };
 
 struct cnss_ramdump_info_v2 {
 	struct ramdump_device *ramdump_dev;
 	unsigned long ramdump_size;
+	void *dump_data_vaddr;
 	bool dump_data_valid;
 	struct cnss_dump_data dump_data;
 };
@@ -92,18 +93,8 @@ struct cnss_esoc_info {
 
 struct cnss_bus_bw_info {
 	struct msm_bus_scale_pdata *bus_scale_table;
-	uint32_t bus_client;
+	u32 bus_client;
 	int current_bw_vote;
-};
-
-struct cnss_wlan_mac_addr {
-	u8 mac_addr[MAX_NO_OF_MAC_ADDR][ETH_ALEN];
-	uint32_t no_of_mac_addr_set;
-};
-
-struct cnss_wlan_mac_info {
-	struct cnss_wlan_mac_addr wlan_mac_addr;
-	bool is_wlan_mac_set;
 };
 
 struct cnss_fw_mem {
@@ -124,6 +115,9 @@ enum cnss_driver_event_type {
 	CNSS_DRIVER_EVENT_REGISTER_DRIVER,
 	CNSS_DRIVER_EVENT_UNREGISTER_DRIVER,
 	CNSS_DRIVER_EVENT_RECOVERY,
+	CNSS_DRIVER_EVENT_FORCE_FW_ASSERT,
+	CNSS_DRIVER_EVENT_POWER_UP,
+	CNSS_DRIVER_EVENT_POWER_DOWN,
 	CNSS_DRIVER_EVENT_MAX,
 };
 
@@ -138,6 +132,7 @@ enum cnss_driver_state {
 	CNSS_DRIVER_RECOVERY,
 	CNSS_FW_BOOT_RECOVERY,
 	CNSS_DEV_ERR_NOTIFY,
+	CNSS_DRIVER_DEBUG,
 };
 
 struct cnss_recovery_data {
@@ -179,8 +174,7 @@ struct cnss_plat_data {
 	unsigned long device_id;
 	struct cnss_wlan_driver *driver_ops;
 	enum cnss_driver_status driver_status;
-	uint32_t recovery_count;
-	struct cnss_wlan_mac_info wlan_mac_info;
+	u32 recovery_count;
 	unsigned long driver_state;
 	struct list_head event_list;
 	spinlock_t event_lock; /* spinlock for driver work event handling */
@@ -199,6 +193,7 @@ struct cnss_plat_data {
 	struct dentry *root_dentry;
 	atomic_t pm_count;
 	struct timer_list fw_boot_timer;
+	struct completion power_up_complete;
 };
 
 void *cnss_bus_dev_to_bus_priv(struct device *dev);
@@ -215,5 +210,6 @@ void cnss_unregister_subsys(struct cnss_plat_data *plat_priv);
 int cnss_register_ramdump(struct cnss_plat_data *plat_priv);
 void cnss_unregister_ramdump(struct cnss_plat_data *plat_priv);
 void cnss_set_pin_connect_status(struct cnss_plat_data *plat_priv);
+u32 cnss_get_wake_msi(struct cnss_plat_data *plat_priv);
 
 #endif /* _CNSS_MAIN_H */

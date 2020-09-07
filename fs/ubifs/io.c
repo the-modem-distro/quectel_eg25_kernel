@@ -72,17 +72,7 @@
 
 #include <linux/crc32.h>
 #include <linux/slab.h>
-#include <linux/qstart.h>
 #include "ubifs.h"
-#include "../../drivers/mtd/ubi/ubi.h"
-#if 1 // def      // Ramos add for quectel for ubi restore
-/******************************************************************************************
-francis-2018/12/29:Description....
-Refer to [Issue-Depot].[IS0000416][Submitter:dawn.yang@quectel.com,Date:2018-12-28]
-<recovery妯″紡涓媢srdata 鐨剈bi璁惧鍙疯鏀逛负3锛屽鑷存鐜囨€ц鎿﹂櫎锛屽樊鍒嗗寘涓㈠け>
-******************************************************************************************/
-extern unsigned int Quectel_Restore(const char * partition_name, int where);
-#endif
 
 /**
  * ubifs_ro_mode - switch UBIFS to read read-only mode.
@@ -119,16 +109,6 @@ int ubifs_leb_read(const struct ubifs_info *c, int lnum, void *buf, int offs,
 	if (err && (err != -EBADMSG || even_ebadmsg)) {
 		ubifs_err(c, "reading %d bytes from LEB %d:%d failed, error %d",
 			  len, lnum, offs, err);
-
-/******************************************************************************************
-francis-2018/10/24:Description....
-Refer to [Issue-Depot].[IS0000275][Submitter:francis.huan,Date:2018-08-28]
-<由于ubi文件系统损坏，低概率的出现读写分区变成只读分区导致部分功能无法使变砖（增加还原点规避
-******************************************************************************************/
-
-		printk("@Ramos UBI Error  6661111 ubifs_check_node vi.dev_num=%d, vi.vol_id=%d , \r\n",  (c)->vi.ubi_num,(c)->vi.vol_id);
-		Quectel_Restore(ubi_get_device(c->vi.ubi_num)->mtd->name,6);
-
 		dump_stack();
 	}
 	return err;
@@ -149,16 +129,6 @@ int ubifs_leb_write(struct ubifs_info *c, int lnum, const void *buf, int offs,
 	if (err) {
 		ubifs_err(c, "writing %d bytes to LEB %d:%d failed, error %d",
 			  len, lnum, offs, err);
-
-/******************************************************************************************
-francis-2018/10/24:Description....
-Refer to [Issue-Depot].[IS0000275][Submitter:francis.huan,Date:2018-08-28]
-<由于ubi文件系统损坏，低概率的出现读写分区变成只读分区导致部分功能无法使变砖（增加还原点规避
-******************************************************************************************/
-
-		printk("@Ramos UBI Error  6661111 ubifs_check_node vi.dev_num=%d, vi.vol_id=%d , \r\n",  (c)->vi.ubi_num,(c)->vi.vol_id);
-		Quectel_Restore(ubi_get_device(c->vi.ubi_num)->mtd->name,6);
-
 		ubifs_ro_mode(c, err);
 		dump_stack();
 	}
@@ -324,10 +294,7 @@ out:
 	if (!quiet) {
 		ubifs_err(c, "bad node at LEB %d:%d", lnum, offs);
 		ubifs_dump_node(c, buf);
-
-		printk("@Ramos UBI Error  6661111 ubifs_check_node vi.dev_num=%d, vi.vol_id=%d , \r\n",  (c)->vi.ubi_num,(c)->vi.vol_id);
-		Quectel_Restore(ubi_get_device(c->vi.ubi_num)->mtd->name,6);
-
+		dump_stack();
 	}
 	return err;
 }
@@ -987,9 +954,7 @@ int ubifs_read_node_wbuf(struct ubifs_wbuf *wbuf, void *buf, int type, int len,
 out:
 	ubifs_err(c, "bad node at LEB %d:%d", lnum, offs);
 	ubifs_dump_node(c, buf);
-
-	printk("@Ramos UBI Error 6662222  ubifs_read_node_wbuf vi.dev_num=%d, vi.vol_id=%d , \r\n",  (c)->vi.ubi_num,(c)->vi.vol_id);
-	Quectel_Restore(ubi_get_device(c->vi.ubi_num)->mtd->name,6);
+	dump_stack();
 	return -EINVAL;
 }
 
@@ -1047,9 +1012,7 @@ out:
 		   offs, ubi_is_mapped(c->ubi, lnum));
 	if (!c->probing) {
 		ubifs_dump_node(c, buf);
-
-	    printk("@Ramos UBI Error 6663333 ubifs_read_node vi.dev_num=%d, vi.vol_id=%d , \r\n",  (c)->vi.ubi_num,(c)->vi.vol_id);
-		Quectel_Restore(ubi_get_device(c->vi.ubi_num)->mtd->name,6);
+		dump_stack();
 	}
 	return -EINVAL;
 }

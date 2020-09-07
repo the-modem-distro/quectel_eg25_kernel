@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -358,7 +358,8 @@ static int parse_legacy_cluster_params(struct device_node *node,
 	int ret;
 	struct lpm_match {
 		char *devname;
-		int (*set_mode)(struct low_power_ops *, int, bool);
+		int (*set_mode)(struct low_power_ops *, int,
+					struct lpm_cluster_level *);
 	};
 	struct lpm_match match_tbl[] = {
 		{"l2", set_l2_mode},
@@ -423,10 +424,6 @@ static int parse_legacy_cluster_params(struct device_node *node,
 	return 0;
 failed:
 	pr_err("%s(): Failed reading %s\n", __func__, key);
-	kfree(c->name);
-	kfree(c->lpm_dev);
-	c->name = NULL;
-	c->lpm_dev = NULL;
 	return ret;
 }
 
@@ -595,6 +592,8 @@ static int parse_cluster_level(struct device_node *node,
 					"qcom,disable-dynamic-int-routing");
 	level->last_core_only = of_property_read_bool(node,
 					"qcom,last-core-only");
+	level->no_cache_flush = of_property_read_bool(node,
+					"qcom,no-cache-flush");
 
 	key = "parse_power_params";
 	ret = parse_power_params(node, &level->pwr);
@@ -612,8 +611,6 @@ static int parse_cluster_level(struct device_node *node,
 	return 0;
 failed:
 	pr_err("Failed %s() key = %s ret = %d\n", __func__, key, ret);
-	kfree(level->mode);
-	level->mode = NULL;
 	return ret;
 }
 
@@ -808,44 +805,19 @@ static int parse_cpu_levels(struct device_node *node, struct lpm_cluster *c)
 
 	return 0;
 failed:
-	for (i = 0; i < c->cpu->nlevels; i++) {
-		kfree(c->cpu->levels[i].name);
-		c->cpu->levels[i].name = NULL;
-	}
-	kfree(c->cpu);
-	c->cpu = NULL;
 	pr_err("%s(): Failed with error code:%d\n", __func__, ret);
 	return ret;
 }
 
 void free_cluster_node(struct lpm_cluster *cluster)
 {
-	struct list_head *list;
-	int i;
+	struct lpm_cluster *cl, *m;
 
-	list_for_each(list, &cluster->child) {
-		struct lpm_cluster *n;
-		n = list_entry(list, typeof(*n), list);
-		list_del(list);
-		free_cluster_node(n);
+	list_for_each_entry_safe(cl, m, &cluster->child, list) {
+		list_del(&cl->list);
+		free_cluster_node(cl);
 	};
 
-	if (cluster->cpu) {
-		for (i = 0; i < cluster->cpu->nlevels; i++) {
-			kfree(cluster->cpu->levels[i].name);
-			cluster->cpu->levels[i].name = NULL;
-		}
-	}
-	for (i = 0; i < cluster->nlevels; i++) {
-		kfree(cluster->levels[i].mode);
-		cluster->levels[i].mode = NULL;
-	}
-	kfree(cluster->cpu);
-	kfree(cluster->name);
-	kfree(cluster->lpm_dev);
-	cluster->cpu = NULL;
-	cluster->name = NULL;
-	cluster->lpm_dev = NULL;
 	cluster->ndevices = 0;
 }
 
@@ -959,9 +931,7 @@ failed_parse_cluster:
 		list_del(&c->list);
 	free_cluster_node(c);
 failed_parse_params:
-	c->parent = NULL;
 	pr_err("Failed parse params\n");
-	kfree(c);
 	return NULL;
 }
 struct lpm_cluster *lpm_of_parse_cluster(struct platform_device *pdev)

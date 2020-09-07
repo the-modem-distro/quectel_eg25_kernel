@@ -275,9 +275,6 @@
 #include <net/tcp.h>
 #include <net/xfrm.h>
 #include <net/ip.h>
-#include <net/ip6_route.h>
-#include <net/ipv6.h>
-#include <net/transp_v6.h>
 #include <net/sock.h>
 
 #include <asm/uaccess.h>
@@ -785,6 +782,12 @@ ssize_t tcp_splice_read(struct socket *sock, loff_t *ppos,
 				ret = -EAGAIN;
 				break;
 			}
+			/* if __tcp_splice_read() got nothing while we have
+			 * an skb in receive queue, we do not want to loop.
+			 * This might happen with URG data.
+			 */
+			if (!skb_queue_empty(&sk->sk_receive_queue))
+				break;
 			sk_wait_data(sk, &timeo);
 			if (signal_pending(current)) {
 				ret = sock_intr_errno(timeo);
@@ -1070,9 +1073,12 @@ static int tcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg,
 				int *copied, size_t size)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
+	struct sockaddr *uaddr = msg->msg_name;
 	int err, flags;
 
-	if (!(sysctl_tcp_fastopen & TFO_CLIENT_ENABLE))
+	if (!(sysctl_tcp_fastopen & TFO_CLIENT_ENABLE) ||
+	    (uaddr && msg->msg_namelen >= sizeof(uaddr->sa_family) &&
+	     uaddr->sa_family == AF_UNSPEC))
 		return -EOPNOTSUPP;
 	if (tp->fastopen_req != NULL)
 		return -EALREADY; /* Another Fast Open is in progress */
@@ -1085,7 +1091,7 @@ static int tcp_sendmsg_fastopen(struct sock *sk, struct msghdr *msg,
 	tp->fastopen_req->size = size;
 
 	flags = (msg->msg_flags & MSG_DONTWAIT) ? O_NONBLOCK : 0;
-	err = __inet_stream_connect(sk->sk_socket, msg->msg_name,
+	err = __inet_stream_connect(sk->sk_socket, uaddr,
 				    msg->msg_namelen, flags);
 	*copied = tp->fastopen_req->copied;
 	tcp_free_fastopen_req(tp);
@@ -1106,7 +1112,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	lock_sock(sk);
 
 	flags = msg->msg_flags;
-	if (flags & MSG_FASTOPEN) {
+	if ((flags & MSG_FASTOPEN) && !tp->repair) {
 		err = tcp_sendmsg_fastopen(sk, msg, &copied_syn, size);
 		if (err == -EINPROGRESS && copied_syn > 0)
 			goto out;
@@ -1678,7 +1684,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			 * shouldn't happen.
 			 */
 			if (WARN(before(*seq, TCP_SKB_CB(skb)->seq),
-				 "recvmsg bug: copied %X seq %X rcvnxt %X fl %X\n",
+				 "TCP recvmsg seq # bug: copied %X, seq %X, rcvnxt %X, fl %X\n",
 				 *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt,
 				 flags))
 				break;
@@ -1691,7 +1697,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 			if (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN)
 				goto found_fin_ok;
 			WARN(!(flags & MSG_PEEK),
-			     "recvmsg bug 2: copied %X seq %X rcvnxt %X fl %X\n",
+			     "TCP recvmsg seq # bug 2: copied %X, seq %X, rcvnxt %X, fl %X\n",
 			     *seq, TCP_SKB_CB(skb)->seq, tp->rcv_nxt, flags);
 		}
 
@@ -2199,6 +2205,9 @@ adjudge_to_death:
 			tcp_send_active_reset(sk, GFP_ATOMIC);
 			NET_INC_STATS_BH(sock_net(sk),
 					LINUX_MIB_TCPABORTONMEMORY);
+		} else if (!check_net(sock_net(sk))) {
+			/* Not possible to send reset; just close */
+			tcp_set_state(sk, TCP_CLOSE);
 		}
 	}
 
@@ -2272,7 +2281,6 @@ int tcp_disconnect(struct sock *sk, int flags)
 	tp->srtt_us = 0;
 	if ((tp->write_seq += tp->max_window + 2) == 0)
 		tp->write_seq = 1;
-	icsk->icsk_backoff = 0;
 	tp->snd_cwnd = 2;
 	icsk->icsk_probes_out = 0;
 	tp->packets_out = 0;
@@ -2282,11 +2290,23 @@ int tcp_disconnect(struct sock *sk, int flags)
 	tcp_set_ca_state(sk, TCP_CA_Open);
 	tcp_clear_retrans(tp);
 	inet_csk_delack_init(sk);
+	/* Initialize rcv_mss to TCP_MIN_MSS to avoid division by 0
+	 * issue in __tcp_select_window()
+	 */
+	icsk->icsk_ack.rcv_mss = TCP_MIN_MSS;
 	tcp_init_send_head(sk);
 	memset(&tp->rx_opt, 0, sizeof(tp->rx_opt));
 	__sk_dst_reset(sk);
+	dst_release(sk->sk_rx_dst);
+	sk->sk_rx_dst = NULL;
 
 	WARN_ON(inet->inet_num && !icsk->icsk_bind_hash);
+
+	if (sk->sk_frag.page) {
+		put_page(sk->sk_frag.page);
+		sk->sk_frag.page = NULL;
+		sk->sk_frag.offset = 0;
+	}
 
 	sk->sk_error_report(sk);
 	return err;
@@ -2463,7 +2483,7 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 	case TCP_REPAIR_QUEUE:
 		if (!tp->repair)
 			err = -EPERM;
-		else if (val < TCP_QUEUES_NR)
+		else if ((unsigned int)val < TCP_QUEUES_NR)
 			tp->repair_queue = val;
 		else
 			err = -EINVAL;
@@ -2595,8 +2615,10 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 
 #ifdef CONFIG_TCP_MD5SIG
 	case TCP_MD5SIG:
-		/* Read the IP->Key mappings from userspace */
-		err = tp->af_specific->md5_parse(sk, optval, optlen);
+		if ((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_LISTEN))
+			err = tp->af_specific->md5_parse(sk, optval, optlen);
+		else
+			err = -EINVAL;
 		break;
 #endif
 	case TCP_USER_TIMEOUT:
@@ -3201,136 +3223,3 @@ void __init tcp_init(void)
 	BUG_ON(tcp_register_congestion_control(&tcp_reno) != 0);
 	tcp_tasklet_init();
 }
-
-static int tcp_is_local(struct net *net, __be32 addr) {
-	struct rtable *rt;
-	struct flowi4 fl4 = { .daddr = addr };
-	int is_local;
-	rt = ip_route_output_key(net, &fl4);
-	if (IS_ERR_OR_NULL(rt))
-		return 0;
-
-	is_local = rt->dst.dev && (rt->dst.dev->flags & IFF_LOOPBACK);
-	ip_rt_put(rt);
-	return is_local;
-}
-
-#if defined(CONFIG_IPV6)
-static int tcp_is_local6(struct net *net, struct in6_addr *addr) {
-	struct rt6_info *rt6 = rt6_lookup(net, addr, addr, 0, 0);
-	int is_local;
-
-	is_local = rt6 && rt6->dst.dev && (rt6->dst.dev->flags & IFF_LOOPBACK);
-	ip6_rt_put(rt6);
-	return is_local;
-}
-#endif
-
-/*
- * tcp_nuke_addr - destroy all sockets on the given local address
- * if local address is the unspecified address (0.0.0.0 or ::), destroy all
- * sockets with local addresses that are not configured.
- */
-int tcp_nuke_addr(struct net *net, struct sockaddr *addr)
-{
-	int family = addr->sa_family;
-	unsigned int bucket;
-
-	struct in_addr *in = NULL;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	struct in6_addr *in6 = NULL;
-#endif
-	if (family == AF_INET) {
-		in = &((struct sockaddr_in *)addr)->sin_addr;
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	} else if (family == AF_INET6) {
-		in6 = &((struct sockaddr_in6 *)addr)->sin6_addr;
-#endif
-	} else {
-		return -EAFNOSUPPORT;
-	}
-
-	for (bucket = 0; bucket <= tcp_hashinfo.ehash_mask; bucket++) {
-		struct hlist_nulls_node *node;
-		struct sock *sk;
-		spinlock_t *lock = inet_ehash_lockp(&tcp_hashinfo, bucket);
-
-restart:
-		spin_lock_bh(lock);
-		sk_nulls_for_each(sk, node, &tcp_hashinfo.ehash[bucket].chain) {
-			struct inet_sock *inet = inet_sk(sk);
-
-			if (sk->sk_state == TCP_TIME_WAIT) {
-				/*
-				 * Sockets that are in TIME_WAIT state are
-				 * instances of lightweight inet_timewait_sock,
-				 * we should simply skip them (or we'll try to
-				 * access non-existing fields and crash).
-				 */
-				continue;
-			}
-
-			if (sysctl_ip_dynaddr && sk->sk_state == TCP_SYN_SENT)
-				continue;
-
-			if (sock_flag(sk, SOCK_DEAD))
-				continue;
-
-			if (family == AF_INET) {
-				__be32 s4 = inet->inet_rcv_saddr;
-				if (s4 == LOOPBACK4_IPV6)
-					continue;
-
-				if (in && in->s_addr != s4 &&
-				    !(in->s_addr == INADDR_ANY &&
-				      !tcp_is_local(net, s4)))
-					continue;
-			}
-
-#if defined(CONFIG_IPV6)
-			if (family == AF_INET6) {
-				struct in6_addr *s6;
-				if (!inet->pinet6)
-					continue;
-
-				if (sk->sk_family == AF_INET)
-					continue;
-
-				s6 = &sk->sk_v6_rcv_saddr;
-				if (ipv6_addr_type(s6) == IPV6_ADDR_MAPPED)
-					continue;
-
-				if (!ipv6_addr_equal(in6, s6) &&
-				    !(ipv6_addr_equal(in6, &in6addr_any) &&
-				      !tcp_is_local6(net, s6)))
-				continue;
-			}
-#endif
-
-			sock_hold(sk);
-			spin_unlock_bh(lock);
-
-			lock_sock(sk);
-			local_bh_disable();
-			bh_lock_sock(sk);
-
-			if (!sock_flag(sk, SOCK_DEAD)) {
-				smp_wmb();  /* be consistent with tcp_reset */
-				sk->sk_err = ETIMEDOUT;
-				sk->sk_error_report(sk);
-				tcp_done(sk);
-			}
-
-			bh_unlock_sock(sk);
-			local_bh_enable();
-			release_sock(sk);
-			sock_put(sk);
-
-			goto restart;
-		}
-		spin_unlock_bh(lock);
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL_GPL(tcp_nuke_addr);

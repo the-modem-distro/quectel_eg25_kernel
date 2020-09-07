@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -87,6 +87,7 @@
 #define TSENS_TM_CRITICAL_INT_EN		BIT(2)
 #define TSENS_TM_UPPER_INT_EN			BIT(1)
 #define TSENS_TM_LOWER_INT_EN			BIT(0)
+#define TSENS_TM_UPPER_LOWER_INT_DISABLE	0xffffffff
 
 #define TSENS_TM_UPPER_INT_MASK(n)	(((n) & 0xffff0000) >> 16)
 #define TSENS_TM_LOWER_INT_MASK(n)	((n) & 0xffff)
@@ -840,8 +841,8 @@ struct tsens_tm_device {
 	uint32_t			tsens_num_sensor;
 	int				tsens_irq;
 	int				tsens_critical_irq;
-	void				*tsens_addr;
-	void				*tsens_calib_addr;
+	void __iomem			*tsens_addr;
+	void __iomem			*tsens_calib_addr;
 	int				tsens_len;
 	int				calib_len;
 	struct resource			*res_tsens_mem;
@@ -1392,7 +1393,8 @@ static int msm_tsens_get_temp(int sensor_client_id, unsigned long *temp)
 	bool last_temp_valid = false, last_temp2_valid = false;
 	bool last_temp3_valid = false;
 	struct tsens_tm_device *tmdev = NULL;
-	uint32_t sensor_hw_num = 0, idx = 0;
+	uint32_t idx = 0;
+	int sensor_hw_num = 0;
 	unsigned long flags;
 
 	tmdev = get_tsens_controller_for_client_id(sensor_client_id);
@@ -2710,6 +2712,7 @@ static int tsens_hw_init(struct tsens_tm_device *tmdev)
 {
 	void __iomem *srot_addr;
 	unsigned int srot_val;
+	void __iomem *int_mask_addr;
 
 	if (!tmdev) {
 		pr_err("Invalid tsens device\n");
@@ -2723,6 +2726,10 @@ static int tsens_hw_init(struct tsens_tm_device *tmdev)
 			pr_err("TSENS device is not enabled\n");
 			return -ENODEV;
 		}
+		int_mask_addr = TSENS_TM_UPPER_LOWER_INT_MASK
+					(tmdev->tsens_addr);
+		writel_relaxed(TSENS_TM_UPPER_LOWER_INT_DISABLE,
+					int_mask_addr);
 		writel_relaxed(TSENS_TM_CRITICAL_INT_EN |
 			TSENS_TM_UPPER_INT_EN | TSENS_TM_LOWER_INT_EN,
 			TSENS_TM_INT_EN(tmdev->tsens_addr));

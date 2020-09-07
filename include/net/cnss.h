@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -102,11 +102,14 @@ struct cnss_platform_cap {
 	u32 cap_flag;
 };
 
-/* WLAN driver status */
+/* WLAN driver status, keep it aligned with cnss2 */
 enum cnss_driver_status {
 	CNSS_UNINITIALIZED,
 	CNSS_INITIALIZED,
-	CNSS_LOAD_UNLOAD
+	CNSS_LOAD_UNLOAD,
+	CNSS_RECOVERY,
+	CNSS_FW_DOWN,
+	CNSS_SSR_FAIL,
 };
 
 enum cnss_runtime_request {
@@ -167,10 +170,6 @@ extern void cnss_set_driver_status(enum cnss_driver_status driver_status);
 
 #ifndef CONFIG_WCNSS_MEM_PRE_ALLOC
 static inline int wcnss_pre_alloc_reset(void) { return 0; }
-#endif
-
-#if !defined(CONFIG_WCNSS_MEM_PRE_ALLOC) || !defined(CONFIG_SLUB_DEBUG)
-static inline void wcnss_prealloc_check_memory_leak(void) {}
 #endif
 
 extern int msm_pcie_enumerate(u32 rc_idx);

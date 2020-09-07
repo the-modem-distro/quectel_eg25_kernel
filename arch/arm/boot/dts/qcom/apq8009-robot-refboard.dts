@@ -16,6 +16,8 @@
 #include "msm8909-mtp.dtsi"
 #include "msm8909-pm8916.dtsi"
 #include "msm8909-pm8916-mtp.dtsi"
+#include "msm8909-pm8916-camera.dtsi"
+#include "msm8909-pm8916-camera-sensor-robot.dtsi"
 
 / {
 	model = "Qualcomm Technologies, Inc. APQ8009 Robot Reference Board";
@@ -76,12 +78,6 @@
 	qcom,hsusb-otg-mode = <3>;
 	vbus_otg-supply = <&smb1360_otg_supply>;
 };
-
-&mdss_fb0 {
-	/delete-node/ qcom,cont-splash-memory;
-};
-
-/delete-node/ &cont_splash_mem;
 
 &msm_gpio{
 	hsuart_active: default {
@@ -169,3 +165,22 @@
 &peripheral_mem {
 	reg = <0x0 0x89f00000 0x0 0x0700000>;
 };
+
+&mdss_fb0 {
+	status = "disabled";
+	/delete-node/ qcom,cont-splash-memory;
+};
+
+&mdss_mdp {
+	status = "disabled";
+};
+
+&mdss_dsi0_pll {
+	status = "disabled";
+};
+
+&mdss_dsi0 {
+	status = "disabled";
+};
+
+/delete-node/ &cont_splash_mem;

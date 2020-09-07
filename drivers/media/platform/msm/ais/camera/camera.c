@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, 2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -369,38 +369,45 @@ static int camera_v4l2_s_fmt_vid_cap_mplane(struct file *filep, void *fh,
 
 	if (pfmt->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 
-		if (WARN_ON(!sp->vb2_q.drv_priv))
-			return -ENOMEM;
-
+		mutex_lock(sp->vb2_q.lock);
+		if (WARN_ON(!sp->vb2_q.drv_priv)) {
+			rc = -ENOMEM;
+			mutex_unlock(sp->vb2_q.lock);
+			goto done;
+		}
 		memcpy(sp->vb2_q.drv_priv, pfmt->fmt.raw_data,
 			sizeof(struct msm_v4l2_format_data));
 		user_fmt = (struct msm_v4l2_format_data *)sp->vb2_q.drv_priv;
 
 		pr_debug("%s: num planes :%c\n", __func__,
 					user_fmt->num_planes);
-		/*num_planes need to bound checked, otherwise for loop
-		can execute forever */
-		if (WARN_ON(user_fmt->num_planes > VIDEO_MAX_PLANES))
-			return -EINVAL;
+		/* num_planes need to bound checked, otherwise for loop
+		 * can execute forever
+		 */
+		if (WARN_ON(user_fmt->num_planes > VIDEO_MAX_PLANES)) {
+			rc = -EINVAL;
+			mutex_unlock(sp->vb2_q.lock);
+			goto done;
+		}
 		for (i = 0; i < user_fmt->num_planes; i++)
 			pr_debug("%s: plane size[%d]\n", __func__,
 					user_fmt->plane_sizes[i]);
-
+		mutex_unlock(sp->vb2_q.lock);
 		if (msm_is_daemon_present() != false) {
 			camera_pack_event(filep, MSM_CAMERA_SET_PARM,
 				MSM_CAMERA_PRIV_S_FMT, -1, &event);
 
 			rc = msm_post_event(&event, MSM_POST_EVT_TIMEOUT);
 			if (rc < 0)
-				return rc;
+				goto done;
 
 			rc = camera_check_event_status(&event);
 			if (rc < 0)
-				return rc;
+				goto done;
 		}
 		sp->is_vb2_valid = 1;
 	}
-
+done:
 	return rc;
 }
 
@@ -462,7 +469,9 @@ static int camera_v4l2_subscribe_event(struct v4l2_fh *fh,
 	int rc = 0;
 	struct camera_v4l2_private *sp = fh_to_private(fh);
 
+	mutex_lock(&sp->lock);
 	rc = v4l2_event_subscribe(&sp->fh, sub, 5, NULL);
+	mutex_unlock(&sp->lock);
 
 	return rc;
 }
@@ -473,7 +482,9 @@ static int camera_v4l2_unsubscribe_event(struct v4l2_fh *fh,
 	int rc = 0;
 	struct camera_v4l2_private *sp = fh_to_private(fh);
 
+	mutex_lock(&sp->lock);
 	rc = v4l2_event_unsubscribe(&sp->fh, sub);
+	mutex_unlock(&sp->lock);
 
 	return rc;
 }
@@ -488,6 +499,9 @@ static long camera_v4l2_vidioc_private_ioctl(struct file *filep, void *fh,
 
 	if (WARN_ON(!k_ioctl || !pvdev))
 		return -EIO;
+
+	if (cmd != VIDIOC_MSM_CAMERA_PRIVATE_IOCTL_CMD)
+		return -EINVAL;
 
 	switch (k_ioctl->id) {
 	case MSM_CAMERA_PRIV_IOCTL_ID_RETURN_BUF: {
@@ -591,6 +605,12 @@ static int camera_v4l2_vb2_q_init(struct file *filep)
 		pr_err("%s : memory not available\n", __func__);
 		return -ENOMEM;
 	}
+	q->lock = kzalloc(sizeof(struct mutex), GFP_KERNEL);
+	if (!q->lock) {
+		kzfree(q->drv_priv);
+		return -ENOMEM;
+	}
+	mutex_init(q->lock);
 
 	q->mem_ops = msm_vb2_get_q_mem_ops();
 	q->ops = msm_vb2_get_q_ops();
@@ -611,6 +631,8 @@ static void camera_v4l2_vb2_q_release(struct file *filep)
 	kzfree(sp->vb2_q.drv_priv);
 	mutex_lock(&sp->lock);
 	vb2_queue_release(&sp->vb2_q);
+	mutex_destroy(sp->vb2_q.lock);
+	kzfree(sp->vb2_q.lock);
 	mutex_unlock(&sp->lock);
 }
 
@@ -624,6 +646,7 @@ static int camera_v4l2_open(struct file *filep)
 	if (WARN_ON(!pvdev))
 		return -EIO;
 
+	mutex_lock(&pvdev->video_drvdata_mutex);
 	rc = camera_v4l2_fh_open(filep);
 	if (rc < 0) {
 		pr_err("%s : camera_v4l2_fh_open failed Line %d rc %d\n",
@@ -694,6 +717,7 @@ static int camera_v4l2_open(struct file *filep)
 	idx |= (1 << find_first_zero_bit((const unsigned long *)&opn_idx,
 				MSM_CAMERA_STREAM_CNT_BITS));
 	atomic_cmpxchg(&pvdev->opened, opn_idx, idx);
+	mutex_unlock(&pvdev->video_drvdata_mutex);
 
 	return rc;
 
@@ -708,6 +732,7 @@ stream_fail:
 vb2_q_fail:
 	camera_v4l2_fh_release(filep);
 fh_open_fail:
+	mutex_unlock(&pvdev->video_drvdata_mutex);
 	return rc;
 }
 
@@ -742,6 +767,7 @@ static int camera_v4l2_close(struct file *filep)
 	if (WARN_ON(!session))
 		return -EIO;
 
+	mutex_lock(&pvdev->video_drvdata_mutex);
 	mutex_lock(&session->close_lock);
 	opn_idx = atomic_read(&pvdev->opened);
 	mask = (1 << sp->stream_id);
@@ -783,6 +809,7 @@ static int camera_v4l2_close(struct file *filep)
 	}
 
 	camera_v4l2_fh_release(filep);
+	mutex_unlock(&pvdev->video_drvdata_mutex);
 
 	return 0;
 }
@@ -929,6 +956,7 @@ int camera_init_v4l2(struct device *dev, unsigned int *session)
 
 	*session = pvdev->vdev->num;
 	atomic_set(&pvdev->opened, 0);
+	mutex_init(&pvdev->video_drvdata_mutex);
 	video_set_drvdata(pvdev->vdev, pvdev);
 	device_init_wakeup(&pvdev->vdev->dev, 1);
 	goto init_end;

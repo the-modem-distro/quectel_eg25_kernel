@@ -1,4 +1,4 @@
-/* Copyright (c) 2007-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2007-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -216,7 +216,7 @@ static inline void mdss_smmu_unmap_dma_buf(struct sg_table *table, int domain,
 }
 
 static inline int mdss_smmu_dma_alloc_coherent(struct device *dev, size_t size,
-		dma_addr_t *phys, dma_addr_t *iova, void *cpu_addr,
+		dma_addr_t *phys, dma_addr_t *iova, void **cpu_addr,
 		gfp_t gfp, int domain)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
@@ -290,6 +290,18 @@ static inline void mdss_smmu_deinit(struct mdss_data_type *mdata)
 {
 	if (mdata->smmu_ops.smmu_deinit)
 		mdata->smmu_ops.smmu_deinit(mdata);
+}
+
+static inline struct sg_table *mdss_smmu_sg_table_clone(struct sg_table
+			*orig_table, gfp_t gfp_mask, bool padding)
+{
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+
+	if (!mdata || !mdata->smmu_ops.smmu_sg_table_clone)
+		return NULL;
+
+	return mdata->smmu_ops.smmu_sg_table_clone(orig_table,
+				gfp_mask, padding);
 }
 
 #endif /* MDSS_SMMU_H */

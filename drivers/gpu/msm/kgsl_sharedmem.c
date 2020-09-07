@@ -1,4 +1,4 @@
-/* Copyright (c) 2002,2007-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2002,2007-2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,6 +20,7 @@
 #include <linux/scatterlist.h>
 #include <soc/qcom/scm.h>
 #include <soc/qcom/secure_buffer.h>
+#include <linux/ratelimit.h>
 
 #include "kgsl.h"
 #include "kgsl_sharedmem.h"
@@ -27,7 +28,6 @@
 #include "kgsl_device.h"
 #include "kgsl_log.h"
 #include "kgsl_mmu.h"
-#include "kgsl_pool.h"
 
 /*
  * The user can set this from debugfs to force failed memory allocations to
@@ -98,6 +98,75 @@ struct mem_entry_stats {
 
 static void kgsl_cma_unlock_secure(struct kgsl_memdesc *memdesc);
 
+static ssize_t
+imported_mem_show(struct kgsl_process_private *priv,
+				int type, char *buf)
+{
+	struct kgsl_mem_entry *entry;
+	uint64_t imported_mem = 0;
+	int id = 0;
+
+	spin_lock(&priv->mem_lock);
+	for (entry = idr_get_next(&priv->mem_idr, &id); entry;
+		id++, entry = idr_get_next(&priv->mem_idr, &id)) {
+
+		int egl_surface_count = 0, egl_image_count = 0;
+		struct kgsl_memdesc *m;
+
+		if (kgsl_mem_entry_get(entry) == 0)
+			continue;
+		spin_unlock(&priv->mem_lock);
+
+		m = &entry->memdesc;
+		if (kgsl_memdesc_usermem_type(m) == KGSL_MEM_ENTRY_ION) {
+			kgsl_get_egl_counts(entry, &egl_surface_count,
+					&egl_image_count);
+
+			if (kgsl_memdesc_get_memtype(m) ==
+						KGSL_MEMTYPE_EGL_SURFACE)
+				imported_mem += m->size;
+			else if (egl_surface_count == 0) {
+				uint64_t size = m->size;
+
+				do_div(size, (egl_image_count ?
+							egl_image_count : 1));
+				imported_mem += size;
+			}
+		}
+
+		kgsl_mem_entry_put(entry);
+		spin_lock(&priv->mem_lock);
+	}
+	spin_unlock(&priv->mem_lock);
+
+	return scnprintf(buf, PAGE_SIZE, "%llu\n", imported_mem);
+}
+
+static ssize_t
+gpumem_mapped_show(struct kgsl_process_private *priv,
+				int type, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%llu\n",
+			priv->gpumem_mapped);
+}
+
+static ssize_t
+gpumem_unmapped_show(struct kgsl_process_private *priv, int type, char *buf)
+{
+	if (priv->gpumem_mapped > priv->stats[type].cur)
+		return -EIO;
+
+	return scnprintf(buf, PAGE_SIZE, "%llu\n",
+			priv->stats[type].cur - priv->gpumem_mapped);
+}
+
+static struct kgsl_mem_entry_attribute debug_memstats[] = {
+	__MEM_ENTRY_ATTR(0, imported_mem, imported_mem_show),
+	__MEM_ENTRY_ATTR(0, gpumem_mapped, gpumem_mapped_show),
+	__MEM_ENTRY_ATTR(KGSL_MEM_ENTRY_KERNEL, gpumem_unmapped,
+				gpumem_unmapped_show),
+};
+
 /**
  * Show the current amount of memory allocated for the given memtype
  */
@@ -127,12 +196,10 @@ static ssize_t mem_entry_sysfs_show(struct kobject *kobj,
 	ssize_t ret;
 
 	/*
-	 * 1. sysfs_remove_file waits for reads to complete before the node
-	 *    is deleted.
-	 * 2. kgsl_process_init_sysfs takes a refcount to the process_private,
-	 *    which is put at the end of kgsl_process_uninit_sysfs.
-	 * These two conditions imply that priv will not be freed until this
-	 * function completes, and no further locking is needed.
+	 * kgsl_process_init_sysfs takes a refcount to the process_private,
+	 * which is put when the kobj is released. This implies that priv will
+	 * not be freed until this function completes, and no further locking
+	 * is needed.
 	 */
 	priv = kobj ? container_of(kobj, struct kgsl_process_private, kobj) :
 			NULL;
@@ -145,12 +212,22 @@ static ssize_t mem_entry_sysfs_show(struct kobject *kobj,
 	return ret;
 }
 
+static void mem_entry_release(struct kobject *kobj)
+{
+	struct kgsl_process_private *priv;
+
+	priv = container_of(kobj, struct kgsl_process_private, kobj);
+	/* Put the refcount we got in kgsl_process_init_sysfs */
+	kgsl_process_private_put(priv);
+}
+
 static const struct sysfs_ops mem_entry_sysfs_ops = {
 	.show = mem_entry_sysfs_show,
 };
 
 static struct kobj_type ktype_mem_entry = {
 	.sysfs_ops = &mem_entry_sysfs_ops,
+	.release = &mem_entry_release,
 };
 
 static struct mem_entry_stats mem_stats[] = {
@@ -173,8 +250,6 @@ kgsl_process_uninit_sysfs(struct kgsl_process_private *private)
 	}
 
 	kobject_put(&private->kobj);
-	/* Put the refcount we got in kgsl_process_init_sysfs */
-	kgsl_process_private_put(private);
 }
 
 /**
@@ -214,7 +289,13 @@ void kgsl_process_init_sysfs(struct kgsl_device *device,
 			&mem_stats[i].max_attr.attr))
 			WARN(1, "Couldn't create sysfs file '%s'\n",
 				mem_stats[i].max_attr.attr.name);
+	}
 
+	for (i = 0; i < ARRAY_SIZE(debug_memstats); i++) {
+		if (sysfs_create_file(&private->kobj,
+			&debug_memstats[i].attr))
+			WARN(1, "Couldn't create sysfs file '%s'\n",
+				debug_memstats[i].attr.name);
 	}
 }
 
@@ -560,16 +641,73 @@ static inline unsigned int _fixup_cache_range_op(unsigned int op)
 }
 #endif
 
+static int kgsl_do_cache_op(struct page *page, void *addr,
+		uint64_t offset, uint64_t size, unsigned int op)
+{
+	void (*cache_op)(const void *, const void *);
+
+	/*
+	 * The dmac_xxx_range functions handle addresses and sizes that
+	 * are not aligned to the cacheline size correctly.
+	 */
+	switch (_fixup_cache_range_op(op)) {
+	case KGSL_CACHE_OP_FLUSH:
+		cache_op = dmac_flush_range;
+		break;
+	case KGSL_CACHE_OP_CLEAN:
+		cache_op = dmac_clean_range;
+		break;
+	case KGSL_CACHE_OP_INV:
+		cache_op = dmac_inv_range;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	if (page != NULL) {
+		unsigned long pfn = page_to_pfn(page) + offset / PAGE_SIZE;
+		/*
+		 *  page_address() returns the kernel virtual address of page.
+		 *  For high memory kernel virtual address exists only if page
+		 *  has been mapped. So use a version of kmap rather than
+		 *  page_address() for high memory.
+		 */
+		if (PageHighMem(page)) {
+			offset &= ~PAGE_MASK;
+
+			do {
+				unsigned int len = size;
+
+				if (len + offset > PAGE_SIZE)
+					len = PAGE_SIZE - offset;
+
+				page = pfn_to_page(pfn++);
+				addr = kmap_atomic(page);
+				cache_op(addr + offset, addr + offset + len);
+				kunmap_atomic(addr);
+
+				size -= len;
+				offset = 0;
+			} while (size);
+
+			return 0;
+		}
+
+		addr = page_address(page);
+	}
+
+	cache_op(addr + offset, addr + offset + (size_t) size);
+	return 0;
+}
+
 int kgsl_cache_range_op(struct kgsl_memdesc *memdesc, uint64_t offset,
 		uint64_t size, unsigned int op)
 {
-	/*
-	 * If the buffer is mapped in the kernel operate on that address
-	 * otherwise use the user address
-	 */
-
-	void *addr = (memdesc->hostptr) ?
-		memdesc->hostptr : (void *) memdesc->useraddr;
+	void *addr = NULL;
+	struct sg_table *sgt = NULL;
+	struct scatterlist *sg;
+	unsigned int i, pos = 0;
+	int ret = 0;
 
 	if (size == 0 || size > UINT_MAX)
 		return -EINVAL;
@@ -578,38 +716,57 @@ int kgsl_cache_range_op(struct kgsl_memdesc *memdesc, uint64_t offset,
 	if ((offset + size < offset) || (offset + size < size))
 		return -ERANGE;
 
-	/* Make sure the offset + size do not overflow the address */
-	if (addr + ((size_t) offset + (size_t) size) < addr)
-		return -ERANGE;
-
 	/* Check that offset+length does not exceed memdesc->size */
 	if (offset + size > memdesc->size)
 		return -ERANGE;
 
-	/* Return quietly if the buffer isn't mapped on the CPU */
-	if (addr == NULL)
-		return 0;
+	if (memdesc->hostptr) {
+		addr = memdesc->hostptr;
+		/* Make sure the offset + size do not overflow the address */
+		if (addr + ((size_t) offset + (size_t) size) < addr)
+			return -ERANGE;
 
-	addr = addr + offset;
-
-	/*
-	 * The dmac_xxx_range functions handle addresses and sizes that
-	 * are not aligned to the cacheline size correctly.
-	 */
-
-	switch (_fixup_cache_range_op(op)) {
-	case KGSL_CACHE_OP_FLUSH:
-		dmac_flush_range(addr, addr + (size_t) size);
-		break;
-	case KGSL_CACHE_OP_CLEAN:
-		dmac_clean_range(addr, addr + (size_t) size);
-		break;
-	case KGSL_CACHE_OP_INV:
-		dmac_inv_range(addr, addr + (size_t) size);
-		break;
+		ret = kgsl_do_cache_op(NULL, addr, offset, size, op);
+		return ret;
 	}
 
-	return 0;
+	/*
+	 * If the buffer is not to mapped to kernel, perform cache
+	 * operations after mapping to kernel.
+	 */
+	if (memdesc->sgt != NULL)
+		sgt = memdesc->sgt;
+	else {
+		if (memdesc->pages == NULL)
+			return ret;
+
+		sgt = kgsl_alloc_sgt_from_pages(memdesc);
+		if (IS_ERR(sgt))
+			return PTR_ERR(sgt);
+	}
+
+	for_each_sg(sgt->sgl, sg, sgt->nents, i) {
+		uint64_t sg_offset, sg_left;
+
+		if (offset >= (pos + sg->length)) {
+			pos += sg->length;
+			continue;
+		}
+		sg_offset = offset > pos ? offset - pos : 0;
+		sg_left = (sg->length - sg_offset > size) ? size :
+					sg->length - sg_offset;
+		ret = kgsl_do_cache_op(sg_page(sg), NULL, sg_offset,
+							sg_left, op);
+		size -= sg_left;
+		if (size == 0)
+			break;
+		pos += sg->length;
+	}
+
+	if (memdesc->sgt == NULL)
+		kgsl_free_sgt(sgt);
+
+	return ret;
 }
 EXPORT_SYMBOL(kgsl_cache_range_op);
 
@@ -622,6 +779,10 @@ kgsl_sharedmem_page_alloc_user(struct kgsl_memdesc *memdesc,
 	unsigned int pcount = 0;
 	size_t len;
 	unsigned int align;
+
+	static DEFINE_RATELIMIT_STATE(_rs,
+					DEFAULT_RATELIMIT_INTERVAL,
+					DEFAULT_RATELIMIT_BURST);
 
 	size = PAGE_ALIGN(size);
 	if (size == 0 || size > UINT_MAX)
@@ -685,7 +846,8 @@ kgsl_sharedmem_page_alloc_user(struct kgsl_memdesc *memdesc,
 			 */
 			memdesc->size = (size - len);
 
-			if (sharedmem_noretry_flag != true)
+			if (sharedmem_noretry_flag != true &&
+					__ratelimit(&_rs))
 				KGSL_CORE_ERR(
 					"Out of memory: only allocated %lldKB of %lldKB requested\n",
 					(size - len) >> 10, size >> 10);

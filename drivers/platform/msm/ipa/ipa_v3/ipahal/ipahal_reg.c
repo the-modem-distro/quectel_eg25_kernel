@@ -44,6 +44,7 @@ static const char *ipareg_name_to_str[IPA_REG_MAX] = {
 	__stringify(IPA_ENDP_INIT_MODE_n),
 	__stringify(IPA_ENDP_INIT_NAT_n),
 	__stringify(IPA_ENDP_INIT_CTRL_n),
+	__stringify(IPA_ENDP_INIT_CTRL_SCND_n),
 	__stringify(IPA_ENDP_INIT_HOL_BLOCK_EN_n),
 	__stringify(IPA_ENDP_INIT_HOL_BLOCK_TIMER_n),
 	__stringify(IPA_ENDP_INIT_DEAGGR_n),
@@ -660,6 +661,17 @@ static void ipareg_parse_endp_init_ctrl_n(enum ipahal_reg_name reg,
 		IPA_ENDP_INIT_CTRL_n_ENDP_DELAY_SHFT);
 }
 
+static void ipareg_construct_endp_init_ctrl_scnd_n(enum ipahal_reg_name reg,
+	const void *fields, u32 *val)
+{
+	struct ipahal_ep_cfg_ctrl_scnd *ep_ctrl_scnd =
+		(struct ipahal_ep_cfg_ctrl_scnd *)fields;
+
+	IPA_SETFIELD_IN_REG(*val, ep_ctrl_scnd->endp_delay,
+		IPA_ENDP_INIT_CTRL_SCND_n_ENDP_DELAY_SHFT,
+		IPA_ENDP_INIT_CTRL_SCND_n_ENDP_DELAY_BMSK);
+}
+
 static void ipareg_construct_endp_init_nat_n(enum ipahal_reg_name reg,
 		const void *fields, u32 *val)
 {
@@ -1062,6 +1074,9 @@ static struct ipahal_reg_obj ipahal_reg_objs[IPA_HW_MAX][IPA_REG_MAX] = {
 		ipareg_construct_endp_init_ctrl_n,
 		ipareg_parse_endp_init_ctrl_n,
 		0x00000800, 0x70},
+	[IPA_HW_v3_0][IPA_ENDP_INIT_CTRL_SCND_n] = {
+		ipareg_construct_endp_init_ctrl_scnd_n, ipareg_parse_dummy,
+		0x00000804, 0x70},
 	[IPA_HW_v3_0][IPA_ENDP_INIT_HOL_BLOCK_EN_n] = {
 		ipareg_construct_endp_init_hol_block_en_n,
 		ipareg_parse_dummy,
@@ -1544,6 +1559,8 @@ void ipahal_get_aggr_force_close_valmask(int ep_idx,
 		return;
 	}
 
+	memset(valmask, 0, sizeof(struct ipahal_reg_valmask));
+
 	if (ipahal_ctx->hw_type <= IPA_HW_v3_1) {
 		shft = IPA_AGGR_FORCE_CLOSE_AGGR_FORCE_CLOSE_PIPE_BITMAP_SHFT;
 		bmsk = IPA_AGGR_FORCE_CLOSE_AGGR_FORCE_CLOSE_PIPE_BITMAP_BMSK;
@@ -1554,6 +1571,11 @@ void ipahal_get_aggr_force_close_valmask(int ep_idx,
 		IPA_AGGR_FORCE_CLOSE_AGGR_FORCE_CLOSE_PIPE_BITMAP_BMSK_V3_5;
 	}
 
+	if (ep_idx > (sizeof(valmask->val) * 8 - 1)) {
+		IPAHAL_ERR("too big ep_idx %d\n", ep_idx);
+		ipa_assert();
+		return;
+	}
 	IPA_SETFIELD_IN_REG(valmask->val, 1 << ep_idx, shft, bmsk);
 	valmask->mask = bmsk << shft;
 }
@@ -1584,21 +1606,4 @@ void ipahal_get_fltrt_hash_flush_valmask(
 			(1<<IPA_FILT_ROUT_HASH_FLUSH_IPv4_FILT_SHFT);
 
 	valmask->mask = valmask->val;
-}
-
-void ipahal_get_status_ep_valmask(int pipe_num,
-	struct ipahal_reg_valmask *valmask)
-{
-	if (!valmask) {
-		IPAHAL_ERR("Input error\n");
-		return;
-	}
-
-	valmask->val =
-		(pipe_num & IPA_ENDP_STATUS_n_STATUS_ENDP_BMSK) <<
-		IPA_ENDP_STATUS_n_STATUS_ENDP_SHFT;
-
-	valmask->mask =
-		IPA_ENDP_STATUS_n_STATUS_ENDP_BMSK <<
-		IPA_ENDP_STATUS_n_STATUS_ENDP_SHFT;
 }

@@ -518,7 +518,7 @@ dtb-$(CONFIG_MACH_DOVE) += dove-cm-a510.dtb \
 dtb-$(CONFIG_ARCH_MEDIATEK) += mt6589-aquaris5.dtb
 
 #used for cleaning - not building
-subdir- := qcom
+# subdir- := qcom
 endif
 
 dtbs: $(addprefix $(obj)/, $(DTB_LIST))
@@ -526,3 +526,4 @@ dtbs: $(addprefix $(obj)/, $(DTB_LIST))
 
 clean-files := *.dtb
 dtbs_install: $(addsuffix _dtbinst_, $(dtb-y))
+

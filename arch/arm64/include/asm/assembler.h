@@ -226,17 +226,6 @@ lr	.req	x30		// link register
 	.endm
 
 /*
- * Annotate a function as position independent, i.e., safe to be called before
- * the kernel virtual mapping is activated.
- */
-#define ENDPIPROC(x)			\
-	.globl	__pi_##x;		\
-	.type 	__pi_##x, %function;	\
-	.set	__pi_##x, x;		\
-	.size	__pi_##x, . - x;	\
-	ENDPROC(x)
-
-/*
  * vma_vm_mm - get mm pointer from vma pointer (vma->vm_mm)
  */
 	.macro	vma_vm_mm, rd, rn
@@ -315,10 +304,41 @@ lr	.req	x30		// link register
 	.endm
 
 /*
+ * Annotate a function as position independent, i.e., safe to be called before
+ * the kernel virtual mapping is activated.
+ */
+#define ENDPIPROC(x)			\
+	.globl	__pi_##x;		\
+	.type 	__pi_##x, %function;	\
+	.set	__pi_##x, x;		\
+	.size	__pi_##x, . - x;	\
+	ENDPROC(x)
+
+/*
  * Return the current thread_info.
  */
 	.macro	get_thread_info, rd
 	mrs	\rd, sp_el0
+	.endm
+
+	/*
+	 * mov_q - move an immediate constant into a 64-bit register using
+	 *         between 2 and 4 movz/movk instructions (depending on the
+	 *         magnitude and sign of the operand)
+	 */
+	.macro	mov_q, reg, val
+	.if (((\val) >> 31) == 0 || ((\val) >> 31) == 0x1ffffffff)
+	movz	\reg, :abs_g1_s:\val
+	.else
+	.if (((\val) >> 47) == 0 || ((\val) >> 47) == 0x1ffff)
+	movz	\reg, :abs_g2_s:\val
+	.else
+	movz	\reg, :abs_g3:\val
+	movk	\reg, :abs_g2_nc:\val
+	.endif
+	movk	\reg, :abs_g1_nc:\val
+	.endif
+	movk	\reg, :abs_g0_nc:\val
 	.endm
 
 #endif	/* __ASM_ASSEMBLER_H */

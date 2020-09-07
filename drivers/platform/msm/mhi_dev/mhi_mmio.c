@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015, 2017-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -258,7 +258,8 @@ int mhi_dev_mmio_disable_erdb_a7(struct mhi_dev *dev, uint32_t erdb_id)
 }
 EXPORT_SYMBOL(mhi_dev_mmio_disable_erdb_a7);
 
-int mhi_dev_mmio_get_mhi_state(struct mhi_dev *dev, enum mhi_dev_state *state)
+int mhi_dev_mmio_get_mhi_state(struct mhi_dev *dev, enum mhi_dev_state *state,
+						bool *mhi_reset)
 {
 	uint32_t reg_value = 0;
 	int rc = 0;
@@ -276,6 +277,9 @@ int mhi_dev_mmio_get_mhi_state(struct mhi_dev *dev, enum mhi_dev_state *state)
 	rc = mhi_dev_mmio_read(dev, MHICTRL, &reg_value);
 	if (rc)
 		return rc;
+
+	if (reg_value & MHICTRL_RESET_MASK)
+		*mhi_reset = true;
 
 	pr_debug("MHICTRL is 0x%x\n", reg_value);
 
@@ -862,6 +866,9 @@ int mhi_dev_restore_mmio(struct mhi_dev *dev)
 
 	mhi_dev_mmio_clear_interrupts(dev);
 	mhi_dev_mmio_enable_ctrl_interrupt(dev);
+
+	/*Enable chdb interrupt*/
+	mhi_dev_mmio_enable_chdb_interrupts(dev);
 
 	/* Mask and enable control interrupt */
 	mb();

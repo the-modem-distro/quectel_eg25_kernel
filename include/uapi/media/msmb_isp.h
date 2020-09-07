@@ -917,6 +917,10 @@ struct msm_isp_ahb_clk_cfg {
 #define V4L2_PIX_FMT_P16GBRG10 v4l2_fourcc('P', 'G', 'B', '0')
 #define V4L2_PIX_FMT_P16GRBG10 v4l2_fourcc('P', 'G', 'R', '0')
 #define V4L2_PIX_FMT_P16RGGB10 v4l2_fourcc('P', 'R', 'G', '0')
+#define V4L2_PIX_FMT_P16BGGR12 v4l2_fourcc('P', 'B', 'G', '2')
+#define V4L2_PIX_FMT_P16GBRG12 v4l2_fourcc('P', 'G', 'B', '2')
+#define V4L2_PIX_FMT_P16GRBG12 v4l2_fourcc('P', 'G', 'R', '2')
+#define V4L2_PIX_FMT_P16RGGB12 v4l2_fourcc('P', 'R', 'G', '2')
 #define V4L2_PIX_FMT_NV14 v4l2_fourcc('N', 'V', '1', '4')
 #define V4L2_PIX_FMT_NV41 v4l2_fourcc('N', 'V', '4', '1')
 #define V4L2_PIX_FMT_META v4l2_fourcc('Q', 'M', 'E', 'T')
@@ -1087,4 +1091,8 @@ enum msm_isp_ioctl_cmd_code {
 
 #define VIDIOC_MSM_ISP_AHB_CLK_CFG \
 	_IOWR('V', MSM_ISP_AHB_CLK_CFG, struct msm_isp_ahb_clk_cfg)
-#endif /* __MSMB_ISP__ */
+
+#define VIDIOC_MSM_ISP_BUF_DONE \
+	_IOWR('V', BASE_VIDIOC_PRIVATE+21, struct msm_isp32_event_data)
+
+#endif/* __MSMB_ISP__ */

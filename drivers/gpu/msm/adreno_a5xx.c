@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -61,8 +61,8 @@ static const struct adreno_vbif_platform a5xx_vbif_platforms[] = {
 };
 
 static void a5xx_irq_storm_worker(struct work_struct *work);
-static int _read_fw2_block_header(uint32_t *header, uint32_t id,
-	uint32_t major, uint32_t minor);
+static int _read_fw2_block_header(uint32_t *header, uint32_t remain,
+	uint32_t id, uint32_t major, uint32_t minor);
 static void a5xx_gpmu_reset(struct work_struct *work);
 static int a5xx_gpmu_init(struct adreno_device *adreno_dev);
 
@@ -659,10 +659,15 @@ static int _load_gpmu_firmware(struct adreno_device *adreno_dev)
 	if (data[1] != GPMU_FIRMWARE_ID)
 		goto err;
 	ret = _read_fw2_block_header(&data[2],
+		data[0] - 2,
 		GPMU_FIRMWARE_ID,
 		adreno_dev->gpucore->gpmu_major,
 		adreno_dev->gpucore->gpmu_minor);
 	if (ret)
+		goto err;
+
+	/* Integer overflow check for cmd_size */
+	if (data[2] > (data[0] - 2))
 		goto err;
 
 	cmds = data + data[2] + 3;
@@ -1116,8 +1121,8 @@ void a5xx_hwcg_set(struct adreno_device *adreno_dev, bool on)
 	kgsl_regwrite(device, A5XX_RBBM_ISDB_CNT, on ? 0x00000182 : 0x00000180);
 }
 
-static int _read_fw2_block_header(uint32_t *header, uint32_t id,
-				uint32_t major, uint32_t minor)
+static int _read_fw2_block_header(uint32_t *header, uint32_t remain,
+			uint32_t id, uint32_t major, uint32_t minor)
 {
 	uint32_t header_size;
 	int i = 1;
@@ -1127,7 +1132,8 @@ static int _read_fw2_block_header(uint32_t *header, uint32_t id,
 
 	header_size = header[0];
 	/* Headers have limited size and always occur as pairs of words */
-	if (header_size > MAX_HEADER_SIZE || header_size % 2)
+	if (header_size >  MAX_HEADER_SIZE || header_size >= remain ||
+				header_size % 2 || header_size == 0)
 		return -EINVAL;
 	/* Sequences must have an identifying id first thing in their header */
 	if (id == GPMU_SEQUENCE_ID) {
@@ -1191,8 +1197,8 @@ static void _load_regfile(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	const struct firmware *fw;
-	uint32_t block_size = 0, block_total = 0, fw_size;
-	uint32_t *block;
+	uint64_t block_size = 0, block_total = 0;
+	uint32_t fw_size, *block;
 	int ret = -EINVAL;
 
 	if (!adreno_dev->gpucore->regfw_name)
@@ -1214,7 +1220,8 @@ static void _load_regfile(struct adreno_device *adreno_dev)
 	/* All offset numbers calculated from file description */
 	while (block_total < fw_size) {
 		block_size = block[0];
-		if (block_size >= fw_size || block_size < 2)
+		if (((block_total + block_size) >= fw_size)
+				|| block_size < 5)
 			goto err;
 		if (block[1] != GPMU_SEQUENCE_ID)
 			goto err;
@@ -1222,6 +1229,7 @@ static void _load_regfile(struct adreno_device *adreno_dev)
 		/* For now ignore blocks other than the LM sequence */
 		if (block[4] == LM_SEQUENCE_ID) {
 			ret = _read_fw2_block_header(&block[2],
+				block_size - 2,
 				GPMU_SEQUENCE_ID,
 				adreno_dev->gpucore->lm_major,
 				adreno_dev->gpucore->lm_minor);
@@ -1229,6 +1237,9 @@ static void _load_regfile(struct adreno_device *adreno_dev)
 				goto err;
 
 			adreno_dev->lm_fw = fw;
+
+			if (block[2] > (block_size - 2))
+				goto err;
 			adreno_dev->lm_sequence = block + block[2] + 3;
 			adreno_dev->lm_size = block_size - block[2] - 2;
 		}
@@ -1241,7 +1252,7 @@ static void _load_regfile(struct adreno_device *adreno_dev)
 err:
 	release_firmware(fw);
 	KGSL_PWR_ERR(device,
-		"Register file failed to load sz=%d bsz=%d header=%d\n",
+		"Register file failed to load sz=%d bsz=%llu header=%d\n",
 		fw_size, block_size, ret);
 	return;
 }
@@ -1254,31 +1265,27 @@ static int _execute_reg_sequence(struct adreno_device *adreno_dev,
 
 	/* todo double check the reg writes */
 	while ((cur - opcode) < length) {
-		switch (cur[0]) {
-		/* Write a 32 bit value to a 64 bit reg */
-		case 1:
+		if (cur[0] == 1 && (length - (cur - opcode) >= 4)) {
+			/* Write a 32 bit value to a 64 bit reg */
 			reg = cur[2];
 			reg = (reg << 32) | cur[1];
 			kgsl_regwrite(KGSL_DEVICE(adreno_dev), reg, cur[3]);
 			cur += 4;
-			break;
-		/* Write a 64 bit value to a 64 bit reg */
-		case 2:
+		} else if (cur[0] == 2 && (length - (cur - opcode) >= 5)) {
+			/* Write a 64 bit value to a 64 bit reg */
 			reg = cur[2];
 			reg = (reg << 32) | cur[1];
 			val = cur[4];
 			val = (val << 32) | cur[3];
 			kgsl_regwrite(KGSL_DEVICE(adreno_dev), reg, val);
 			cur += 5;
-			break;
-		/* Delay for X usec */
-		case 3:
+		} else if (cur[0] == 3 && (length - (cur - opcode) >= 2)) {
+			/* Delay for X usec */
 			udelay(cur[1]);
 			cur += 2;
-			break;
-		default:
+		} else
 			return -EINVAL;
-	} }
+	}
 	return 0;
 }
 
@@ -2022,6 +2029,9 @@ static void a5xx_start(struct adreno_device *adreno_dev)
 
 	}
 
+	/* Disable All flat shading optimization */
+	kgsl_regrmw(device, A5XX_VPC_DBG_ECO_CNTL, 0, 0x1 << 10);
+
 	/*
 	 * VPC corner case with local memory load kill leads to corrupt
 	 * internal state. Normal Disable does not work for all a5x chips.
@@ -2206,7 +2216,7 @@ static int a5xx_microcode_load(struct adreno_device *adreno_dev)
 		desc.args[1] = 13;
 		desc.arginfo = SCM_ARGS(2);
 
-		ret = scm_call2(SCM_SIP_FNID(SCM_SVC_BOOT, 0xA), &desc);
+		ret = scm_call2_atomic(SCM_SIP_FNID(SCM_SVC_BOOT, 0xA), &desc);
 		if (ret) {
 			pr_err("SCM resume call failed with error %d\n", ret);
 			return ret;
@@ -2431,8 +2441,8 @@ static int a5xx_rb_start(struct adreno_device *adreno_dev,
 	adreno_writereg(adreno_dev, ADRENO_REG_CP_RB_CNTL,
 		A5XX_CP_RB_CNTL_DEFAULT);
 
-	adreno_writereg(adreno_dev, ADRENO_REG_CP_RB_BASE,
-			rb->buffer_desc.gpuaddr);
+	adreno_writereg64(adreno_dev, ADRENO_REG_CP_RB_BASE,
+			ADRENO_REG_CP_RB_BASE_HI, rb->buffer_desc.gpuaddr);
 
 	ret = a5xx_microcode_load(adreno_dev);
 	if (ret)
@@ -3035,6 +3045,10 @@ static unsigned int a5xx_register_offsets[ADRENO_REG_REGISTER_MAX] = {
 		ADRENO_REG_DEFINE(ADRENO_REG_RBBM_BLOCK_SW_RESET_CMD2,
 					  A5XX_RBBM_BLOCK_SW_RESET_CMD2),
 	ADRENO_REG_DEFINE(ADRENO_REG_UCHE_INVALIDATE0, A5XX_UCHE_INVALIDATE0),
+	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_PERFCTR_RBBM_0_LO,
+				A5XX_RBBM_PERFCTR_RBBM_0_LO),
+	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_PERFCTR_RBBM_0_HI,
+				A5XX_RBBM_PERFCTR_RBBM_0_HI),
 	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_PERFCTR_LOAD_VALUE_LO,
 				A5XX_RBBM_PERFCTR_LOAD_VALUE_LO),
 	ADRENO_REG_DEFINE(ADRENO_REG_RBBM_PERFCTR_LOAD_VALUE_HI,

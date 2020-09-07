@@ -3,7 +3,8 @@ menu "Qualcomm MSM specific device drivers"
 
 config MSM_AVTIMER
 	tristate "Avtimer Driver"
-	depends on MSM_QDSP6_APRV2 || MSM_QDSP6_APRV3
+	depends on MSM_QDSP6_APRV2 || MSM_QDSP6_APRV3 || \
+		MSM_QDSP6_APRV2_VM
 	help
 		This driver gets the Q6 out of power collapsed state and
 		exposes ioctl control to read avtimer tick.
@@ -193,16 +194,6 @@ config IPA_UT
 	  into suites according to the sub-unit of the IPA being tested.
 	  The user interface to run and control the tests is debugfs file
 	  system.
-
-config SSM
-	tristate "QTI Secure Service Module"
-	depends on QSEECOM
-	depends on MSM_SMD
-	help
-	  Provides an interface for OEM driver to communicate with Trustzone
-	  and modem for key exchange and mode change.
-	  This driver uses Secure Channel Manager interface for trustzone
-	  communication and communicates with modem over SMD channel.
 
 config MSM_MHI
 	tristate "Modem Host Interface Driver"

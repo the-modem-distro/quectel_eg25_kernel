@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, 2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -340,7 +340,7 @@ struct hfi_buffer_info {
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x014)
 #define  HFI_PROPERTY_PARAM_VENC_H264_PPS_ID               \
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x015)
-#define HFI_PROPERTY_PARAM_VENC_H264_GENERATE_AUDNAL	\
+#define HFI_PROPERTY_PARAM_VENC_GENERATE_AUDNAL	\
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x016)
 #define HFI_PROPERTY_PARAM_VENC_ASPECT_RATIO			\
 	(HFI_PROPERTY_PARAM_VENC_COMMON_START + 0x017)
@@ -972,6 +972,11 @@ struct vidc_hal_session_cmd_pkt {
 	u32 size;
 	u32 packet_type;
 	u32 session_id;
+};
+
+struct hfi_packet_header {
+	u32 size;
+	u32 packet_type;
 };
 
 struct hfi_cmd_sys_init_packet {

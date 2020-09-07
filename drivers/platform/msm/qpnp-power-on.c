@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -29,6 +29,8 @@
 #include <linux/regulator/machine.h>
 #include <linux/regulator/of_regulator.h>
 #include <linux/qpnp/power-on.h>
+#include <linux/qpnp/qpnp-pbs.h>
+#include <linux/qpnp-misc.h>
 
 #define CREATE_MASK(NUM_BITS, POS) \
 	((unsigned char) (((1 << (NUM_BITS)) - 1) << (POS)))
@@ -207,12 +209,13 @@ struct qpnp_pon {
 	struct list_head	list;
 	struct delayed_work	bark_work;
 	struct dentry		*debugfs;
+	struct device_node	*pbs_dev_node;
 	int			pon_trigger_reason;
 	int			pon_power_off_reason;
 	int			num_pon_reg;
 	int			num_pon_config;
 	int			reg_count;
-	u32			dbc;
+	u32			dbc_time_us;
 	u32			uvlo;
 	int			warm_reset_poff_type;
 	int			hard_reset_poff_type;
@@ -222,8 +225,13 @@ struct qpnp_pon {
 	u8			pon_ver;
 	u8			warm_reset_reason1;
 	u8			warm_reset_reason2;
+	u8			twm_state;
 	bool			is_spon;
 	bool			store_hard_reset_reason;
+	bool			kpdpwr_dbc_enable;
+	bool			support_twm_config;
+	ktime_t			kpdpwr_last_release_time;
+	struct notifier_block	pon_nb;
 };
 
 static struct qpnp_pon *sys_reset_dev;
@@ -396,7 +404,7 @@ static int qpnp_pon_set_dbc(struct qpnp_pon *pon, u32 delay)
 	int rc = 0;
 	u32 val;
 
-	if (delay == pon->dbc)
+	if (delay == pon->dbc_time_us)
 		goto out;
 
 	if (pon->pon_input)
@@ -424,7 +432,7 @@ static int qpnp_pon_set_dbc(struct qpnp_pon *pon, u32 delay)
 		goto unlock;
 	}
 
-	pon->dbc = delay;
+	pon->dbc_time_us = delay;
 
 unlock:
 	if (pon->pon_input)
@@ -433,12 +441,35 @@ out:
 	return rc;
 }
 
+static int qpnp_pon_get_dbc(struct qpnp_pon *pon, u32 *delay)
+{
+	int rc;
+	u8 val;
+
+	rc = spmi_ext_register_readl(pon->spmi->ctrl, pon->spmi->sid,
+					QPNP_PON_DBC_CTL(pon), &val, 1);
+	if (rc) {
+		pr_err("Unable to read pon_dbc_ctl rc=%d\n", rc);
+		return rc;
+	}
+	val &= QPNP_PON_DBC_DELAY_MASK(pon);
+
+	if (is_pon_gen2(pon))
+		*delay = USEC_PER_SEC /
+			(1 << (QPNP_PON_GEN2_DELAY_BIT_SHIFT - val));
+	else
+		*delay = USEC_PER_SEC /
+			(1 << (QPNP_PON_DELAY_BIT_SHIFT - val));
+
+	return rc;
+}
+
 static ssize_t qpnp_pon_dbc_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct qpnp_pon *pon = dev_get_drvdata(dev);
 
-	return snprintf(buf, QPNP_PON_BUFFER_SIZE, "%d\n", pon->dbc);
+	return snprintf(buf, QPNP_PON_BUFFER_SIZE, "%d\n", pon->dbc_time_us);
 }
 
 static ssize_t qpnp_pon_dbc_store(struct device *dev,
@@ -463,13 +494,53 @@ static ssize_t qpnp_pon_dbc_store(struct device *dev,
 	return size;
 }
 
+static struct qpnp_pon_config *
+qpnp_get_cfg(struct qpnp_pon *pon, u32 pon_type)
+{
+	int i;
+
+	for (i = 0; i < pon->num_pon_config; i++) {
+		if (pon_type == pon->pon_cfg[i].pon_type)
+			return  &pon->pon_cfg[i];
+	}
+
+	return NULL;
+}
+
 static DEVICE_ATTR(debounce_us, 0664, qpnp_pon_dbc_show, qpnp_pon_dbc_store);
 
+#define PON_TWM_ENTRY_PBS_BIT		BIT(0)
 static int qpnp_pon_reset_config(struct qpnp_pon *pon,
 		enum pon_power_off_type type)
 {
 	int rc;
 	u16 rst_en_reg;
+	struct qpnp_pon_config *cfg;
+
+	/* Ignore the PS_HOLD reset config if TWM ENTRY is enabled */
+	if (pon->support_twm_config && pon->twm_state == PMIC_TWM_ENABLE) {
+		rc = qpnp_pbs_trigger_event(pon->pbs_dev_node,
+					PON_TWM_ENTRY_PBS_BIT);
+		if (rc < 0) {
+			pr_err("Unable to trigger PBS trigger for TWM entry rc=%d\n",
+							rc);
+			return rc;
+		}
+
+		cfg = qpnp_get_cfg(pon, PON_KPDPWR);
+		if (cfg) {
+			/* configure KPDPWR_S2 to Hard reset */
+			rc = qpnp_pon_masked_write(pon, cfg->s2_cntl_addr,
+						QPNP_PON_S2_CNTL_TYPE_MASK,
+						PON_POWER_OFF_HARD_RESET);
+			if (rc < 0)
+				pr_err("Unable to config KPDPWR_N S2 for hard-reset rc=%d\n",
+					rc);
+		}
+
+		pr_crit("PMIC configured for TWM entry\n");
+		return 0;
+	}
 
 	if (pon->pon_ver == QPNP_PON_GEN1_V1)
 		rst_en_reg = QPNP_PON_PS_HOLD_RST_CTL(pon);
@@ -751,19 +822,6 @@ static int qpnp_pon_store_and_clear_warm_reset(struct qpnp_pon *pon)
 	return 0;
 }
 
-static struct qpnp_pon_config *
-qpnp_get_cfg(struct qpnp_pon *pon, u32 pon_type)
-{
-	int i;
-
-	for (i = 0; i < pon->num_pon_config; i++) {
-		if (pon_type == pon->pon_cfg[i].pon_type)
-			return  &pon->pon_cfg[i];
-	}
-
-	return NULL;
-}
-
 static int
 qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 {
@@ -771,6 +829,7 @@ qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 	struct qpnp_pon_config *cfg = NULL;
 	u8 pon_rt_sts = 0, pon_rt_bit = 0;
 	u32 key_status;
+	u64 elapsed_us;
 
 	cfg = qpnp_get_cfg(pon, pon_type);
 	if (!cfg)
@@ -782,6 +841,15 @@ qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 
 	if (device_may_wakeup(&pon->spmi->dev))
 		pm_wakeup_event(&pon->spmi->dev, WAKEUP_TIMEOUT_MSEC);
+
+	if (pon->kpdpwr_dbc_enable && cfg->pon_type == PON_KPDPWR) {
+		elapsed_us = ktime_us_delta(ktime_get(),
+				pon->kpdpwr_last_release_time);
+		if (elapsed_us < pon->dbc_time_us) {
+			pr_debug("Ignoring kpdpwr event - within debounce time\n");
+			return 0;
+		}
+	}
 
 	/* check the RT status to get the current status of the line */
 	rc = spmi_ext_register_readl(pon->spmi->ctrl, pon->spmi->sid,
@@ -811,6 +879,11 @@ qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 	pr_debug("PMIC input: code=%d, sts=0x%hhx\n",
 					cfg->key_code, pon_rt_sts);
 	key_status = pon_rt_sts & pon_rt_bit;
+
+	if (pon->kpdpwr_dbc_enable && cfg->pon_type == PON_KPDPWR) {
+		if (!key_status)
+			pon->kpdpwr_last_release_time = ktime_get();
+	}
 
 	/* simulate press event in case release event occured
 	 * without a press event
@@ -1944,6 +2017,35 @@ static int read_gen2_pon_off_reason(struct qpnp_pon *pon, u16 *reason,
 	return 0;
 }
 
+static int pon_twm_notifier_cb(struct notifier_block *nb,
+				unsigned long action, void *data)
+{
+	struct qpnp_pon *pon = container_of(nb, struct qpnp_pon, pon_nb);
+
+	if (action != PMIC_TWM_CLEAR &&
+			action != PMIC_TWM_ENABLE) {
+		pr_debug("Unsupported option %lu\n", action);
+		return NOTIFY_OK;
+	}
+
+	pon->twm_state = (u8)action;
+	pr_debug("TWM state = %d\n", pon->twm_state);
+
+	return NOTIFY_OK;
+}
+
+static int pon_register_twm_notifier(struct qpnp_pon *pon)
+{
+	int rc;
+
+	pon->pon_nb.notifier_call = pon_twm_notifier_cb;
+	rc = qpnp_misc_twm_notifier_register(&pon->pon_nb);
+	if (rc < 0)
+		pr_err("Failed to register pon_twm_notifier_cb rc=%d\n", rc);
+
+	return rc;
+}
+
 static int qpnp_pon_probe(struct spmi_device *spmi)
 {
 	struct qpnp_pon *pon;
@@ -2201,6 +2303,22 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 		return rc;
 	}
 
+	if (of_property_read_bool(pon->spmi->dev.of_node,
+					"qcom,support-twm-config")) {
+		pon->support_twm_config = true;
+		rc = pon_register_twm_notifier(pon);
+		if (rc < 0) {
+			pr_err("Failed to register TWM notifier rc=%d\n", rc);
+			return rc;
+		}
+		pon->pbs_dev_node = of_parse_phandle(pon->spmi->dev.of_node,
+						"qcom,pbs-client", 0);
+		if (!pon->pbs_dev_node) {
+			pr_err("Missing qcom,pbs-client property\n");
+			return -EINVAL;
+		}
+	}
+
 	rc = of_property_read_u32(pon->spmi->dev.of_node,
 				"qcom,pon-dbc-delay", &delay);
 	if (rc) {
@@ -2211,7 +2329,21 @@ static int qpnp_pon_probe(struct spmi_device *spmi)
 		}
 	} else {
 		rc = qpnp_pon_set_dbc(pon, delay);
+		if (rc) {
+			dev_err(&spmi->dev,
+				"Unable to set PON debounce delay rc=%d\n", rc);
+			return rc;
+		}
 	}
+	rc = qpnp_pon_get_dbc(pon, &pon->dbc_time_us);
+	if (rc) {
+		dev_err(&spmi->dev,
+			"Unable to get PON debounce delay rc=%d\n", rc);
+		return rc;
+	}
+
+	pon->kpdpwr_dbc_enable = of_property_read_bool(pon->spmi->dev.of_node,
+					"qcom,kpdpwr-sw-debounce");
 
 	rc = of_property_read_u32(pon->spmi->dev.of_node,
 				"qcom,warm-reset-poweroff-type",

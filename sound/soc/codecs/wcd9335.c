@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -108,7 +108,7 @@
 /* Convert from vout ctl to micbias voltage in mV */
 #define WCD_VOUT_CTL_TO_MICB(v) (1000 + v * 50)
 
-#define TASHA_ZDET_NUM_MEASUREMENTS 150
+#define TASHA_ZDET_NUM_MEASUREMENTS 900
 #define TASHA_MBHC_GET_C1(c)  ((c & 0xC000) >> 14)
 #define TASHA_MBHC_GET_X1(x)  (x & 0x3FFF)
 /* z value compared in milliOhm */
@@ -189,7 +189,7 @@ MODULE_PARM_DESC(sido_buck_svs_voltage,
 
 #define TASHA_TX_UNMUTE_DELAY_MS	25
 
-static int tx_unmute_delay = TASHA_TX_UNMUTE_DELAY_MS;
+static u32 tx_unmute_delay = TASHA_TX_UNMUTE_DELAY_MS;
 module_param(tx_unmute_delay, int,
 		S_IRUGO | S_IWUSR | S_IWGRP);
 MODULE_PARM_DESC(tx_unmute_delay, "delay to unmute the tx path");
@@ -851,6 +851,15 @@ static const struct tasha_reg_mask_val tasha_spkr_mode1[] = {
 	{WCD9335_CDC_BOOST1_BOOST_CTL, 0x7C, 0x44},
 };
 
+static const struct tasha_reg_mask_val tasha_high_impedance[] = {
+	{WCD9335_TLMM_I2S_TX_SD0_PINCFG, 0x1F, 0x0C},
+	{WCD9335_TLMM_I2S_TX_SD1_PINCFG, 0x1F, 0x0C},
+	{WCD9335_TLMM_I2S_TX_SCK_PINCFG, 0x1F, 0x0C},
+	{WCD9335_TLMM_I2S_TX_WS_PINCFG, 0x1F, 0x0C},
+	{WCD9335_TEST_DEBUG_PIN_CTL_OE_1, 0xE0, 0xE0},
+	{WCD9335_TEST_DEBUG_PIN_CTL_OE_2, 0x01, 0x01},
+};
+
 /**
  * tasha_set_spkr_gain_offset - offset the speaker path
  * gain with the given offset value.
@@ -952,6 +961,20 @@ static void tasha_cdc_sido_ccl_enable(struct tasha_priv *tasha, bool ccl_flag)
 			snd_soc_update_bits(codec,
 				WCD9335_SIDO_SIDO_CCL_10, 0xFF, 0x02);
 	}
+}
+
+static void tasha_set_high_impedance_mode(struct snd_soc_codec *codec)
+{
+	const struct tasha_reg_mask_val *regs;
+	int i, size;
+
+	dev_dbg(codec->dev, "%s: setting TX I2S in Hi-Z mode\n", __func__);
+	regs = tasha_high_impedance;
+	size = ARRAY_SIZE(tasha_high_impedance);
+
+	for (i = 0; i < size; i++)
+		snd_soc_update_bits(codec, regs[i].reg,
+				    regs[i].mask, regs[i].val);
 }
 
 static bool tasha_cdc_is_svs_enabled(struct tasha_priv *tasha)
@@ -3982,19 +4005,13 @@ static void tasha_codec_bridge_mclk_enable(struct snd_soc_codec *codec,
 		 */
 		snd_soc_update_bits(codec,
 				    WCD9335_DATA_HUB_DATA_HUB_I2S_CLK,
-				    0x02, 0x02);
-		snd_soc_update_bits(codec,
-				    WCD9335_DATA_HUB_DATA_HUB_I2S_CLK,
-				    0x1, 0x0);
+				    0x03, 0x02);
 	} else {
 		snd_soc_update_bits(codec,
 				    WCD9335_DATA_HUB_DATA_HUB_I2S_CLK,
-				    0x02, 0x00);
-		snd_soc_update_bits(codec,
-				    WCD9335_DATA_HUB_DATA_HUB_I2S_CLK,
-				    0x1, 0x1);
-	};
-};
+				    0x03, 0x01);
+	}
+}
 
 static int tasha_codec_bridge_tx_mclk_supply(struct snd_soc_dapm_widget *w,
 					   struct snd_kcontrol *kcontrol,
@@ -5831,6 +5848,7 @@ static int tasha_codec_enable_dec(struct snd_soc_dapm_widget *w,
 	char *dec;
 	u8 hpf_cut_off_freq;
 	struct tasha_priv *tasha = snd_soc_codec_get_drvdata(codec);
+	struct wcd9xxx_pdata *pdata = dev_get_platdata(codec->dev->parent);
 
 	dev_dbg(codec->dev, "%s %d\n", __func__, event);
 
@@ -5913,8 +5931,6 @@ static int tasha_codec_enable_dec(struct snd_soc_dapm_widget *w,
 					    CF_MIN_3DB_150HZ << 5);
 		/* Enable TX PGA Mute */
 		snd_soc_update_bits(codec, tx_vol_ctl_reg, 0x10, 0x10);
-		/* Enable APC */
-		snd_soc_update_bits(codec, dec_cfg_reg, 0x08, 0x08);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		snd_soc_update_bits(codec, hpf_gate_reg, 0x01, 0x00);
@@ -5925,6 +5941,9 @@ static int tasha_codec_enable_dec(struct snd_soc_dapm_widget *w,
 			snd_soc_write(codec, WCD9335_MBHC_ZDET_RAMP_CTL, 0x83);
 			snd_soc_write(codec, WCD9335_MBHC_ZDET_RAMP_CTL, 0x03);
 		}
+		if (pdata->mic_unmute_delay)
+			tx_unmute_delay = pdata->mic_unmute_delay;
+
 		/* schedule work queue to Remove Mute */
 		schedule_delayed_work(&tasha->tx_mute_dwork[decimator].dwork,
 				      msecs_to_jiffies(tx_unmute_delay));
@@ -5941,7 +5960,6 @@ static int tasha_codec_enable_dec(struct snd_soc_dapm_widget *w,
 		hpf_cut_off_freq =
 			tasha->tx_hpf_work[decimator].hpf_cut_off_freq;
 		snd_soc_update_bits(codec, tx_vol_ctl_reg, 0x10, 0x10);
-		snd_soc_update_bits(codec, dec_cfg_reg, 0x08, 0x00);
 		if (cancel_delayed_work_sync(
 		    &tasha->tx_hpf_work[decimator].dwork)) {
 			if (hpf_cut_off_freq != CF_MIN_3DB_150HZ) {
@@ -5997,8 +6015,14 @@ static u32 tasha_get_dmic_sample_rate(struct snd_soc_codec *codec,
 	if (dec_found == true && adc_mux_index <= 8) {
 		tx_fs_reg = WCD9335_CDC_TX0_TX_PATH_CTL + (16 * adc_mux_index);
 		tx_stream_fs = snd_soc_read(codec, tx_fs_reg) & 0x0F;
-		dmic_fs = tx_stream_fs <= 4 ? WCD9XXX_DMIC_SAMPLE_RATE_2P4MHZ :
-					WCD9XXX_DMIC_SAMPLE_RATE_4P8MHZ;
+		if (tx_stream_fs <= 4)  {
+			if (pdata->dmic_sample_rate <=
+					WCD9XXX_DMIC_SAMPLE_RATE_2P4MHZ)
+				dmic_fs = pdata->dmic_sample_rate;
+			else
+				dmic_fs = WCD9XXX_DMIC_SAMPLE_RATE_2P4MHZ;
+		} else
+			dmic_fs = WCD9XXX_DMIC_SAMPLE_RATE_4P8MHZ;
 
 		/*
 		 * Check for ECPP path selection and DEC1 not connected to
@@ -11481,10 +11505,10 @@ static int tasha_set_decimator_rate(struct snd_soc_dai *dai,
 	struct tasha_priv *tasha = snd_soc_codec_get_drvdata(codec);
 	u32 tx_port;
 	u8 shift, shift_val, tx_mux_sel;
-	int decimator = -1;
 	u16 tx_port_reg, tx_fs_reg;
 
 	list_for_each_entry(ch, &tasha->dai[dai->id].wcd9xxx_ch_list, list) {
+		int decimator = -1;
 		tx_port = ch->port;
 		dev_dbg(codec->dev, "%s: dai->id = %d, tx_port = %d",
 			__func__, dai->id, tx_port);
@@ -11753,7 +11777,10 @@ static int tasha_hw_params(struct snd_pcm_substream *substream,
 			return -EINVAL;
 		}
 		tasha->dai[dai->id].rate = params_rate(params);
-		if (tasha->intf_type == WCD9XXX_INTERFACE_TYPE_I2C) {
+
+		/* Set Bridge RX Sampling rate and Bit Width */
+		if (tasha->intf_type == WCD9XXX_INTERFACE_TYPE_I2C
+		    || dai->id == AIF5_PB) {
 			switch (params_rate(params)) {
 			case 8000:
 				rx_fs_rate = 0;
@@ -11785,39 +11812,13 @@ static int tasha_hw_params(struct snd_pcm_substream *substream,
 			snd_soc_update_bits(codec,
 					WCD9335_DATA_HUB_DATA_HUB_RX_I2S_CTL,
 					0x1c, (rx_fs_rate << 2));
+			snd_soc_update_bits(codec,
+					WCD9335_DATA_HUB_DATA_HUB_TX_I2S_CTL,
+					0x20, i2s_bit_mode << 5);
+			snd_soc_update_bits(codec,
+					WCD9335_DATA_HUB_DATA_HUB_TX_I2S_CTL,
+					0x1c, (rx_fs_rate << 2));
 		}
-		/* Set Bridge RX Sampling Rate */
-		if (dai->id == AIF5_PB) {
-			switch (params_rate(params)) {
-			case 8000:
-				rx_fs_rate = 0;
-				break;
-			case 16000:
-				rx_fs_rate = 1;
-				break;
-			case 32000:
-				rx_fs_rate = 2;
-				break;
-			case 48000:
-				rx_fs_rate = 3;
-				break;
-			case 96000:
-				rx_fs_rate = 4;
-				break;
-			case 192000:
-				rx_fs_rate = 5;
-				break;
-			default:
-				dev_err(tasha->dev,
-				"%s: Invalid RX sample rate: %d\n",
-				__func__, params_rate(params));
-				return -EINVAL;
-			};
-			snd_soc_update_bits(dai->codec,
-				WCD9335_DATA_HUB_DATA_HUB_RX_I2S_CTL,
-				0xC, (rx_fs_rate << 2));
-		};
-
 		break;
 	case SNDRV_PCM_STREAM_CAPTURE:
 		switch (params_rate(params)) {
@@ -11929,16 +11930,25 @@ static int tasha_hw_params(struct snd_pcm_substream *substream,
 				__func__, params_rate(params));
 				return -EINVAL;
 			};
+			snd_soc_update_bits(codec,
+					WCD9335_DATA_HUB_DATA_HUB_TX_I2S_CTL,
+					0x20, i2s_bit_mode << 5);
 			snd_soc_update_bits(dai->codec,
 					WCD9335_DATA_HUB_DATA_HUB_TX_I2S_CTL,
 					0x1C, (tx_fs_rate << 2));
-		};
+			snd_soc_update_bits(codec,
+					WCD9335_DATA_HUB_DATA_HUB_RX_I2S_CTL,
+					0x20, i2s_bit_mode << 5);
+			snd_soc_update_bits(dai->codec,
+					WCD9335_DATA_HUB_DATA_HUB_RX_I2S_CTL,
+					0x1C, (tx_fs_rate << 2));
+		}
 		break;
 	default:
 		pr_err("%s: Invalid stream type %d\n", __func__,
 			substream->stream);
 		return -EINVAL;
-	};
+	}
 	if (dai->id == AIF4_VIFEED)
 		tasha->dai[dai->id].bit_width = 32;
 
@@ -13959,6 +13969,9 @@ static int tasha_codec_probe(struct snd_soc_codec *codec)
 	snd_soc_dapm_disable_pin(dapm, "ANC EAR");
 	mutex_unlock(&codec->mutex);
 	snd_soc_dapm_sync(dapm);
+
+	if (pdata->wcd9xxx_mic_tristate)
+		tasha_set_high_impedance_mode(codec);
 
 	return ret;
 

@@ -217,6 +217,8 @@ struct cfs_bandwidth {
 	/* statistics */
 	int nr_periods, nr_throttled;
 	u64 throttled_time;
+
+	bool distribute_running;
 #endif
 };
 
@@ -1070,6 +1072,11 @@ static inline u32 cpu_cycles_to_freq(u64 cycles, u32 period)
 static inline bool hmp_capable(void)
 {
 	return max_possible_capacity != min_max_possible_capacity;
+}
+
+static inline bool is_min_capacity_cpu(int cpu)
+{
+	return cpu_max_possible_capacity(cpu) == min_max_possible_capacity;
 }
 
 /*

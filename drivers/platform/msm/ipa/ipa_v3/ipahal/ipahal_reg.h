@@ -47,6 +47,7 @@ enum ipahal_reg_name {
 	IPA_ENDP_INIT_MODE_n,
 	IPA_ENDP_INIT_NAT_n,
 	IPA_ENDP_INIT_CTRL_n,
+	IPA_ENDP_INIT_CTRL_SCND_n,
 	IPA_ENDP_INIT_HOL_BLOCK_EN_n,
 	IPA_ENDP_INIT_HOL_BLOCK_TIMER_n,
 	IPA_ENDP_INIT_DEAGGR_n,
@@ -343,6 +344,14 @@ struct ipahal_reg_idle_indication_cfg {
 };
 
 /*
+ * struct ipa_ep_cfg_ctrl_scnd - PA_ENDP_INIT_CTRL_SCND_n register
+ * @endp_delay: delay endpoint
+ */
+struct ipahal_ep_cfg_ctrl_scnd {
+	bool endp_delay;
+};
+
+/*
  * ipahal_reg_name_str() - returns string that represent the register
  * @reg_name: [in] register name
  */
@@ -454,8 +463,6 @@ void ipahal_get_aggr_force_close_valmask(int ep_idx,
 	struct ipahal_reg_valmask *valmask);
 void ipahal_get_fltrt_hash_flush_valmask(
 	struct ipahal_reg_fltrt_hash_flush *flush,
-	struct ipahal_reg_valmask *valmask);
-void ipahal_get_status_ep_valmask(int pipe_num,
 	struct ipahal_reg_valmask *valmask);
 
 #endif /* _IPAHAL_REG_H_ */

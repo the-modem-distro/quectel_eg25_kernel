@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017,2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -294,6 +294,16 @@ void mdss_dsi_read_phy_revision(struct mdss_dsi_ctrl_pdata *ctrl)
 		return;
 
 	reg_val = MIPI_INP(ctrl->phy_io.base);
+	if (!reg_val) {
+		/*
+		 * DSI_0_PHY_DSIPHY_REVISION_ID3 for phy 1.0
+		 * reset value = 0x10
+		 * 7:4 Major
+		 * 3:0 Minor
+		 */
+		reg_val = MIPI_INP(ctrl->phy_io.base + 0x20c);
+		reg_val = reg_val >> 4;
+	}
 
 	if (reg_val == DSI_PHY_REV_20)
 		ctrl->shared_data->phy_rev = DSI_PHY_REV_20;
@@ -1523,6 +1533,7 @@ static int mdss_dsi_cmd_dma_tpg_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	int len, i, ret = 0, data = 0;
 	u32 *bp;
 	struct mdss_dsi_ctrl_pdata *mctrl = NULL;
+	int ignored = 0;        /* overflow ignored */
 
 	if (tp->len > DMA_TPG_FIFO_LEN) {
 		pr_debug("command length more than FIFO length\n");
@@ -1538,9 +1549,22 @@ static int mdss_dsi_cmd_dma_tpg_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	len = ALIGN(tp->len, 4);
 
 	reinit_completion(&ctrl->dma_comp);
+	if (ctrl->panel_mode == DSI_VIDEO_MODE)
+		ignored = 1;
 
-	if (mdss_dsi_sync_wait_trigger(ctrl))
+	if (mdss_dsi_sync_wait_trigger(ctrl)) {
 		mctrl = mdss_dsi_get_other_ctrl(ctrl);
+			if ((mctrl) && (ignored == 1)) {
+				/* mask out overflow isr */
+				mdss_dsi_set_reg(mctrl, 0x10c,
+					 0x0f0000, 0x0f0000);
+			}
+	}
+
+	if (ignored) {
+		/* mask out overflow isr */
+		mdss_dsi_set_reg(ctrl, 0x10c, 0x0f0000, 0x0f0000);
+	}
 
 	data = BIT(16) | BIT(17);	/* select CMD_DMA_PATTERN_SEL to 3 */
 	data |= BIT(2);			/* select CMD_DMA_FIFO_MODE to 1 */
@@ -1601,6 +1625,13 @@ static int mdss_dsi_cmd_dma_tpg_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 	/* Disable CMD_DMA_TPG */
 	MIPI_OUTP(ctrl->ctrl_base + 0x15c, 0x0);
 
+	if (ignored) {
+		/* clear pending overflow status */
+		mdss_dsi_set_reg(ctrl, 0xc, 0xffffffff, 0x44440000);
+		/* restore overflow isr */
+		mdss_dsi_set_reg(ctrl, 0x10c, 0x0f0000, 0);
+	}
+
 	if (mctrl) {
 		/* Reset the DMA TPG FIFO */
 		MIPI_OUTP(mctrl->ctrl_base + 0x1ec, 0x1);
@@ -1609,8 +1640,13 @@ static int mdss_dsi_cmd_dma_tpg_tx(struct mdss_dsi_ctrl_pdata *ctrl,
 		wmb(); /* make sure FIFO reset happens */
 		/* Disable CMD_DMA_TPG */
 		MIPI_OUTP(mctrl->ctrl_base + 0x15c, 0x0);
+		if (ignored) {
+			/* clear pending overflow status */
+			mdss_dsi_set_reg(mctrl, 0xc, 0xffffffff, 0x44440000);
+			/* restore overflow isr */
+			mdss_dsi_set_reg(mctrl, 0x10c, 0x0f0000, 0);
+		}
 	}
-
 	return ret;
 }
 
@@ -2471,15 +2507,8 @@ void mdss_dsi_cmd_mdp_busy(struct mdss_dsi_ctrl_pdata *ctrl)
 		if (!ctrl->mdp_busy)
 			rc = 1;
 		spin_unlock_irqrestore(&ctrl->mdp_lock, flags);
-		if (!rc) {
-			if (mdss_dsi_mdp_busy_tout_check(ctrl)) {
-				pr_err("%s: timeout error\n", __func__);
-				MDSS_XLOG_TOUT_HANDLER("mdp", "dsi0_ctrl",
-					"dsi0_phy", "dsi1_ctrl", "dsi1_phy",
-					"vbif", "vbif_nrt", "dbg_bus",
-					"vbif_dbg_bus", "panic");
-			}
-		}
+		if (!rc && mdss_dsi_mdp_busy_tout_check(ctrl))
+			pr_err("%s: timeout error\n", __func__);
 	}
 	pr_debug("%s: done pid=%d\n", __func__, current->pid);
 	MDSS_XLOG(ctrl->ndx, ctrl->mdp_busy, current->pid, XLOG_FUNC_EXIT);

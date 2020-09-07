@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -43,6 +43,7 @@
 #define PCIE20_PARF_AXI_MSTR_WR_ADDR_HALT      0x1A8
 #define PCIE20_PARF_Q2A_FLUSH          0x1AC
 #define PCIE20_PARF_LTSSM              0x1B0
+#define PCIE20_PARF_CFG_BITS           0x210
 #define PCIE20_PARF_LTR_MSI_EXIT_L1SS  0x214
 #define PCIE20_PARF_INT_ALL_STATUS     0x224
 #define PCIE20_PARF_INT_ALL_CLEAR      0x228
@@ -99,6 +100,12 @@
 
 #define PCIE20_MHICFG                  0x110
 #define PCIE20_BHI_EXECENV             0x228
+#define PCIE20_MHIVER                  0x108
+#define PCIE20_MHICTRL                 0x138
+#define PCIE20_MHISTATUS               0x148
+#define PCIE20_BHI_VERSION_LOWER	0x200
+#define PCIE20_BHI_VERSION_UPPER	0x204
+#define PCIE20_BHI_INTVEC		0x220
 
 #define PCIE20_AUX_CLK_FREQ_REG        0xB40
 
@@ -119,6 +126,7 @@
 #define MSI_EXIT_L1SS_WAIT	              10
 #define MSI_EXIT_L1SS_WAIT_MAX_COUNT          100
 #define XMLH_LINK_UP                          0x400
+#define PARF_XMLH_LINK_UP                     0x40000000
 
 #define MAX_PROP_SIZE 32
 #define MAX_MSG_LEN 80
@@ -209,6 +217,7 @@ enum ep_pcie_irq {
 	EP_PCIE_INT_LINK_UP,
 	EP_PCIE_INT_LINK_DOWN,
 	EP_PCIE_INT_BRIDGE_FLUSH_N,
+	EP_PCIE_INT_BME,
 	EP_PCIE_INT_GLOBAL,
 	EP_PCIE_MAX_IRQ,
 };
@@ -287,6 +296,7 @@ struct ep_pcie_dev_t {
 	u32                          link_speed;
 	bool                         active_config;
 	bool                         aggregated_irq;
+	bool                         mhi_a7_irq;
 	u32                          dbi_base_reg;
 	u32                          slv_space_reg;
 	u32                          phy_status_reg;
@@ -308,6 +318,7 @@ struct ep_pcie_dev_t {
 	unsigned long                isr_save_flags;
 	ulong                        linkdown_counter;
 	ulong                        linkup_counter;
+	ulong                        bme_counter;
 	ulong                        pm_to_counter;
 	ulong                        d0_counter;
 	ulong                        d3_counter;
@@ -318,7 +329,7 @@ struct ep_pcie_dev_t {
 	ulong                        global_irq_counter;
 
 	bool                         dump_conf;
-
+	bool                         config_mmio_init;
 	bool                         enumerated;
 	enum ep_pcie_link_status     link_status;
 	bool                         perst_deast;
@@ -327,9 +338,13 @@ struct ep_pcie_dev_t {
 	bool                         l23_ready;
 	bool                         l1ss_enabled;
 	struct ep_pcie_msi_config    msi_cfg;
+	bool                         no_notify;
+	bool                         client_ready;
 
 	struct ep_pcie_register_event *event_reg;
 	struct work_struct	     handle_perst_work;
+	struct work_struct           handle_bme_work;
+	struct work_struct           handle_d3cold_work;
 };
 
 extern struct ep_pcie_dev_t ep_pcie_dev;
@@ -346,14 +361,14 @@ static inline void ep_pcie_write_mask(void __iomem *addr,
 	wmb();
 }
 
-static inline void ep_pcie_write_reg(void *base, u32 offset, u32 value)
+static inline void ep_pcie_write_reg(void __iomem *base, u32 offset, u32 value)
 {
 	writel_relaxed(value, base + offset);
 	/* ensure register write goes through before next regiser operation */
 	wmb();
 }
 
-static inline void ep_pcie_write_reg_field(void *base, u32 offset,
+static inline void ep_pcie_write_reg_field(void __iomem *base, u32 offset,
 	const u32 mask, u32 val)
 {
 	u32 shift = find_first_bit((void *)&mask, 32);

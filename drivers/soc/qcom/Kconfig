@@ -9,6 +9,8 @@ config QCOM_GSBI
           functions for connecting the underlying serial UART, SPI, and I2C
           devices to the output pins.
 
+source "drivers/soc/qcom/hab/Kconfig"
+
 if ARCH_MSM
 
 config CP_ACCESS64
@@ -38,6 +40,15 @@ config MSM_QDSP6_APRV2
           application processor and QDSP6. APR is
           used by audio driver to configure QDSP6's
           ASM, ADM and AFE.
+
+config MSM_QDSP6_APRV2_VM
+        bool "Audio QDSP6 APRv2 virtualization support"
+        depends on MSM_HAB
+        help
+          Enable APRv2 IPC protocol support over
+          HAB between application processor and
+          QDSP6. APR is used by audio driver to
+          configure QDSP6's ASM, ADM and AFE.
 
 config MSM_GLADIATOR_ERP
 	tristate "GLADIATOR coherency interconnect error reporting driver"
@@ -487,6 +498,17 @@ config MSM_GLINK_SMEM_NATIVE_XPRT
 	  transport to only connecting with entities internal to the
 	  System-on-Chip.
 
+config MSM_GLINK_BGCOM_XPRT
+	depends on MSM_GLINK
+	depends on MSM_BGCOM
+	tristate "Generic Link (G-Link) BGCOM Transport"
+	help
+	  G-Link BGCOM Transport is a Transport plug-in developed over BGCOM.
+	  This transport plug-in performs marshaling of G-Link
+	  commands & data to the appropriate BGCOM format and
+	  allows for G-Link communication with remote subsystems that are
+	  external to the System-on-Chip.
+
 config MSM_SPCOM
 	depends on MSM_GLINK
 	bool "Secure Processor Communication over GLINK"
@@ -519,6 +541,15 @@ config MSM_SMP2P
 	  memory and interrupts. A client can open multiple
 	  32-bit values by specifying a unique string and
 	  remote processor ID.
+
+config MSM_BGCOM_INTERFACE
+	bool "Driver support for Blackghost Communication"
+	depends on MSM_BGCOM
+	help
+	 Create a bg_com_dev device node for user space communication.
+	 Single user space client can open device node for communication
+	 from hardware. Hardware will provide access to read
+	 registers and read/write AHB memory in the device.
 
 config MSM_SMP2P_TEST
 	bool "SMSM Point-to-Point Test"
@@ -629,6 +660,16 @@ config MSM_IPC_ROUTER_MHI_XPRT
 	  registers the transport with IPC Router and enable message
 	  exchange.
 
+config MSM_IPC_ROUTER_MHI_DEV_XPRT
+	depends on MSM_MHI_DEV
+	depends on IPC_ROUTER
+	bool "MSM MHI_DEV XPRT Layer"
+	help
+	  MHI_DEV Transport Layer that enables off-chip communication of
+	  IPC Router. When the MHI endpoint becomes available, this layer
+	  registers the transport with IPC Router and enables message
+	  exchange.
+
 config MSM_SYSTEM_HEALTH_MONITOR
 	bool "System Health Monitor"
 	depends on MSM_QMI_INTERFACE && MSM_SUBSYSTEM_RESTART
@@ -648,6 +689,15 @@ config MSM_GLINK_PKT
 	  clients to communicate over G-Link via deivce nodes.
 	  This enable the usersapce clients to read and write to
 	  some glink packets channel.
+
+config MSM_BGRSB
+	bool "Provide support for rsb events on Blackghost chipset"
+	depends on MSM_GLINK
+	help
+		BGRSB communicates to BG over Glink for RSB configuration and
+		enable/disable on device power state change. It enables/disables
+		the regulator specific to RSB. Sends the side band events generated
+		by BG to input framework.
 
 config MSM_TZ_SMMU
 	bool "Helper functions for SMMU configuration through TZ"
@@ -697,6 +747,15 @@ config MSM_PIL_SSR_GENERIC
 	  or a fatal error. Subsystems include LPASS, Venus, VPU, WCNSS and
 	  BCSS.
 
+config MSM_PIL_SSR_BG
+        tristate "MSM Subsystem Blackghost(BG) Support"
+        depends on MSM_PIL && MSM_SUBSYSTEM_RESTART
+        help
+	  Support for booting and shutting down Blackghost(BG) SOC which is
+	  an external SOC. This driver communicates with Blackghost(BG) SOC
+	  via pair of IPC GPIOs for inward and outward signals between MSM
+	  and Blackghost(BG) SOC.
+
 config MSM_PIL_MSS_QDSP6V5
 	tristate "MSS QDSP6v5 (Hexagon) Boot Support"
 	depends on MSM_PIL && MSM_SUBSYSTEM_RESTART
@@ -730,6 +789,7 @@ config MSM_SECURE_BUFFER
 
 config ICNSS
 	tristate "Platform driver for Q6 integrated connectivity"
+	select CNSS_UTILS
 	---help---
 	  This module adds support for Q6 integrated WLAN connectivity
 	  subsystem. This module is responsible for communicating WLAN on/off
@@ -829,6 +889,14 @@ config MSM_KERNEL_PROTECT_TEST
           read-only.  This test is FATAL whether it passes or fails!
           Success is signaled by a stage-2 fault.
 
+config MSM_BGCOM
+	bool "Provide APIs to communicate with Blackghost chipset"
+	help
+		BGCOM is a thin layer above SPI. It is used whithin a SoC for
+		communication between G-Link/bg_com_dev and BG processor over SPI.
+		This handle the interrupts raised by BG and notify the G-link with
+		interrupt event and event data.
+
 config MSM_REMOTEQDSS
 	bool "Allow debug tools to enable events on other processors"
 	depends on MSM_SCM && DEBUG_FS
@@ -851,6 +919,34 @@ config QCOM_EARLY_RANDOM
 	  process which means that any calls to get random numbers before then
 	  may not be truly random. Select this option to make an early call
 	  to get some random data to put in the pool. If unsure, say N.
+
+config QCOM_QDSS_BRIDGE
+	bool "Configure bridge driver for Qualcomm Technologies, Inc. MDM"
+	depends on MSM_MHI
+	help
+	  The driver will help route diag traffic over the QDSS sub-system to
+	  USB on APPS side. The driver acts as a bridge between the PCIE MHI
+	  and USB interface. The amount of buffer memory allocated at runtime
+	  can be modified via module params. If unsure, say N.
+
+config MSM_BG_GLINK
+	tristate "WCD DSP GLINK Driver"
+	depends on MSM_GLINK
+	default y if MSM_BGCOM=y
+	help
+	  This option enables driver which provides communication interface
+	  between MSM and BG over glink transport protocol. This driver
+	  provides read and write interface via char device.This driver is
+	  used by the audio codec driver to interface with BG.
+
+config WCD_DSP_GLINK
+	tristate "WCD DSP GLINK Driver"
+	depends on MSM_GLINK
+	default y if (SND_SOC_WCD934X=y || MSM_BG_GLINK=y)
+	help
+	   This option enables driver which provides communication interface
+	   between MSM and WCD DSP over glink transport protocol. This driver
+	   provides read and write interface via char device.
 
 source "drivers/soc/qcom/memshare/Kconfig"
 

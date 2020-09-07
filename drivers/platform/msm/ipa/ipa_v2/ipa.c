@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -280,6 +280,28 @@ int ipa2_active_clients_log_print_table(char *buf, int size)
 	return cnt;
 }
 
+
+static int ipa2_clean_modem_rule(void)
+{
+	struct ipa_install_fltr_rule_req_msg_v01 *req;
+	int val = 0;
+
+	req = kzalloc(
+		sizeof(struct ipa_install_fltr_rule_req_msg_v01),
+		GFP_KERNEL);
+	if (!req) {
+		IPAERR("mem allocated failed!\n");
+		return -ENOMEM;
+	}
+	req->filter_spec_list_valid = false;
+	req->filter_spec_list_len = 0;
+	req->source_pipe_index_valid = 0;
+	val = qmi_filter_request_send(req);
+	kfree(req);
+
+	return val;
+}
+
 static int ipa2_active_clients_panic_notifier(struct notifier_block *this,
 		unsigned long event, void *ptr)
 {
@@ -532,11 +554,13 @@ static void ipa_wan_msg_free_cb(void *buff, u32 len, u32 type)
 	kfree(buff);
 }
 
-static int ipa_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
+static int ipa_send_wan_msg(unsigned long usr_param,
+			uint8_t msg_type, bool is_cache)
 {
 	int retval;
 	struct ipa_wan_msg *wan_msg;
 	struct ipa_msg_meta msg_meta;
+	struct ipa_wan_msg cache_wan_msg;
 
 	wan_msg = kzalloc(sizeof(struct ipa_wan_msg), GFP_KERNEL);
 	if (!wan_msg) {
@@ -550,6 +574,8 @@ static int ipa_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
 		return -EFAULT;
 	}
 
+	memcpy(&cache_wan_msg, wan_msg, sizeof(cache_wan_msg));
+
 	memset(&msg_meta, 0, sizeof(struct ipa_msg_meta));
 	msg_meta.msg_type = msg_type;
 	msg_meta.msg_len = sizeof(struct ipa_wan_msg);
@@ -558,6 +584,25 @@ static int ipa_send_wan_msg(unsigned long usr_param, uint8_t msg_type)
 		IPAERR("ipa2_send_msg failed: %d\n", retval);
 		kfree(wan_msg);
 		return retval;
+	}
+
+	if (is_cache) {
+		mutex_lock(&ipa_ctx->ipa_cne_evt_lock);
+
+		/* cache the cne event */
+		memcpy(&ipa_ctx->ipa_cne_evt_req_cache[
+			ipa_ctx->num_ipa_cne_evt_req].wan_msg,
+			&cache_wan_msg,
+			sizeof(cache_wan_msg));
+
+		memcpy(&ipa_ctx->ipa_cne_evt_req_cache[
+			ipa_ctx->num_ipa_cne_evt_req].msg_meta,
+			&msg_meta,
+			sizeof(struct ipa_msg_meta));
+
+		ipa_ctx->num_ipa_cne_evt_req++;
+		ipa_ctx->num_ipa_cne_evt_req %= IPA_MAX_NUM_REQ_CACHE;
+		mutex_unlock(&ipa_ctx->ipa_cne_evt_lock);
 	}
 
 	return 0;
@@ -642,7 +687,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_nat_dma_cmd *)param)->entries
 			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_nat_dma_cmd *)param)->entries,
 				pre_entry);
 			retval = -EINVAL;
@@ -689,13 +734,14 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_add_hdr *)param)->num_hdrs
 			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_add_hdr *)param)->num_hdrs,
 				pre_entry);
 			retval = -EINVAL;
 			break;
 		}
-		if (ipa2_add_hdr((struct ipa_ioc_add_hdr *)param)) {
+		if (ipa2_add_hdr_usr((struct ipa_ioc_add_hdr *)param,
+			true)) {
 			retval = -EFAULT;
 			break;
 		}
@@ -728,7 +774,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_del_hdr *)param)->num_hdls
 			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_del_hdr *)param)->num_hdls,
 				pre_entry);
 			retval = -EINVAL;
@@ -768,14 +814,15 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_add_rt_rule *)param)->num_rules
 			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_add_rt_rule *)param)->
 				num_rules,
 				pre_entry);
 			retval = -EINVAL;
 			break;
 		}
-		if (ipa2_add_rt_rule((struct ipa_ioc_add_rt_rule *)param)) {
+		if (ipa2_add_rt_rule_usr((struct ipa_ioc_add_rt_rule *)param,
+				true)) {
 			retval = -EFAULT;
 			break;
 		}
@@ -808,7 +855,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_mdfy_rt_rule *)param)->num_rules
 			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_mdfy_rt_rule *)param)->
 				num_rules,
 				pre_entry);
@@ -848,7 +895,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_del_rt_rule *)param)->num_hdls
 			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_del_rt_rule *)param)->num_hdls,
 				pre_entry);
 			retval = -EINVAL;
@@ -887,14 +934,15 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_add_flt_rule *)param)->num_rules
 			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_add_flt_rule *)param)->
 				num_rules,
 				pre_entry);
 			retval = -EINVAL;
 			break;
 		}
-		if (ipa2_add_flt_rule((struct ipa_ioc_add_flt_rule *)param)) {
+		if (ipa2_add_flt_rule_usr((struct ipa_ioc_add_flt_rule *)param,
+				true)) {
 			retval = -EFAULT;
 			break;
 		}
@@ -927,7 +975,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_del_flt_rule *)param)->num_hdls
 			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_del_flt_rule *)param)->
 				num_hdls,
 				pre_entry);
@@ -967,7 +1015,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_mdfy_flt_rule *)param)->num_rules
 			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_mdfy_flt_rule *)param)->
 				num_rules,
 				pre_entry);
@@ -988,19 +1036,19 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		retval = ipa2_commit_hdr();
 		break;
 	case IPA_IOC_RESET_HDR:
-		retval = ipa2_reset_hdr();
+		retval = ipa2_reset_hdr(false);
 		break;
 	case IPA_IOC_COMMIT_RT:
 		retval = ipa2_commit_rt(arg);
 		break;
 	case IPA_IOC_RESET_RT:
-		retval = ipa2_reset_rt(arg);
+		retval = ipa2_reset_rt(arg, false);
 		break;
 	case IPA_IOC_COMMIT_FLT:
 		retval = ipa2_commit_flt(arg);
 		break;
 	case IPA_IOC_RESET_FLT:
-		retval = ipa2_reset_flt(arg);
+		retval = ipa2_reset_flt(arg, false);
 		break;
 	case IPA_IOC_GET_RT_TBL:
 		if (copy_from_user(header, (u8 *)arg,
@@ -1105,7 +1153,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		if (unlikely(((struct ipa_ioc_query_intf_tx_props *)
 			param)->num_tx_props
 			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_query_intf_tx_props *)
 				param)->num_tx_props, pre_entry);
 			retval = -EINVAL;
@@ -1150,7 +1198,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_query_intf_rx_props *)
 			param)->num_rx_props != pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_query_intf_rx_props *)
 				param)->num_rx_props, pre_entry);
 			retval = -EINVAL;
@@ -1195,7 +1243,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_query_intf_ext_props *)
 			param)->num_ext_props != pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_query_intf_ext_props *)
 				param)->num_ext_props, pre_entry);
 			retval = -EINVAL;
@@ -1233,7 +1281,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_msg_meta *)param)->msg_len
 			!= pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_msg_meta *)param)->msg_len,
 				pre_entry);
 			retval = -EINVAL;
@@ -1329,21 +1377,21 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_UPSTREAM_ROUTE_ADD:
-		retval = ipa_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_ADD);
+		retval = ipa_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_ADD, true);
 		if (retval) {
 			IPAERR("ipa_send_wan_msg failed: %d\n", retval);
 			break;
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_UPSTREAM_ROUTE_DEL:
-		retval = ipa_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_DEL);
+		retval = ipa_send_wan_msg(arg, WAN_UPSTREAM_ROUTE_DEL, true);
 		if (retval) {
 			IPAERR("ipa_send_wan_msg failed: %d\n", retval);
 			break;
 		}
 		break;
 	case IPA_IOC_NOTIFY_WAN_EMBMS_CONNECTED:
-		retval = ipa_send_wan_msg(arg, WAN_EMBMS_CONNECT);
+		retval = ipa_send_wan_msg(arg, WAN_EMBMS_CONNECT, false);
 		if (retval) {
 			IPAERR("ipa_send_wan_msg failed: %d\n", retval);
 			break;
@@ -1373,14 +1421,14 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_add_hdr_proc_ctx *)
 			param)->num_proc_ctxs != pre_entry)) {
-			IPAERR(" prevent memory corruption(%d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_add_hdr_proc_ctx *)
 				param)->num_proc_ctxs, pre_entry);
 			retval = -EINVAL;
 			break;
 		}
 		if (ipa2_add_hdr_proc_ctx(
-			(struct ipa_ioc_add_hdr_proc_ctx *)param)) {
+			(struct ipa_ioc_add_hdr_proc_ctx *)param, true)) {
 			retval = -EFAULT;
 			break;
 		}
@@ -1412,7 +1460,7 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		/* add check in case user-space module compromised */
 		if (unlikely(((struct ipa_ioc_del_hdr_proc_ctx *)
 			param)->num_hdls != pre_entry)) {
-			IPAERR(" prevent memory corruption( %d not match %d)\n",
+			IPAERR_RL("current %d pre %d\n",
 				((struct ipa_ioc_del_hdr_proc_ctx *)param)->
 				num_hdls,
 				pre_entry);
@@ -1444,7 +1492,22 @@ static long ipa_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		break;
 
-	default:        /* redundant, as cmd was checked against MAXNR */
+	case IPA_IOC_CLEANUP:
+		/*Route and filter rules will also be clean*/
+		IPADBG("Got IPA_IOC_CLEANUP\n");
+		retval = ipa2_reset_hdr(true);
+		memset(&nat_del, 0, sizeof(nat_del));
+		nat_del.table_index = 0;
+		retval = ipa2_nat_del_cmd(&nat_del);
+		retval = ipa2_clean_modem_rule();
+		break;
+
+	case IPA_IOC_QUERY_WLAN_CLIENT:
+		IPADBG("Got IPA_IOC_QUERY_WLAN_CLIENT\n");
+		retval = ipa2_resend_wlan_msg();
+		break;
+
+	default:
 		IPA_ACTIVE_CLIENTS_DEC_SIMPLE();
 		return -ENOTTY;
 	}
@@ -1837,6 +1900,7 @@ static int ipa_q6_clean_q6_tables(void)
 	struct ipa_mem_buffer mem = { 0 };
 	u32 *entry;
 	u32 max_cmds = ipa_get_max_flt_rt_cmds(ipa_ctx->ipa_num_pipes);
+	gfp_t flag = GFP_KERNEL | (ipa_ctx->use_dma_zone ? GFP_DMA : 0);
 
 	mem.base = dma_alloc_coherent(ipa_ctx->pdev, 4, &mem.phys_base,
 		GFP_ATOMIC);
@@ -1857,7 +1921,7 @@ static int ipa_q6_clean_q6_tables(void)
 	}
 
 	cmd = kcalloc(max_cmds, sizeof(struct ipa_hw_imm_cmd_dma_shared_mem),
-		GFP_KERNEL);
+		flag);
 	if (!cmd) {
 		IPAERR("failed to allocate memory\n");
 		retval = -ENOMEM;
@@ -1979,6 +2043,7 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 	int index;
 	struct ipa_register_write *reg_write;
 	int retval;
+	gfp_t flag = GFP_KERNEL | (ipa_ctx->use_dma_zone ? GFP_DMA : 0);
 
 	desc = kcalloc(ipa_ctx->ipa_num_pipes, sizeof(struct ipa_desc),
 			GFP_KERNEL);
@@ -1996,7 +2061,7 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 		if (ipa_ctx->ep[ep_idx].valid &&
 			ipa_ctx->ep[ep_idx].skip_ep_cfg) {
 			BUG_ON(num_descs >= ipa_ctx->ipa_num_pipes);
-			reg_write = kzalloc(sizeof(*reg_write), GFP_KERNEL);
+			reg_write = kzalloc(sizeof(*reg_write), flag);
 
 			if (!reg_write) {
 				IPAERR("failed to allocate memory\n");
@@ -2029,7 +2094,7 @@ static int ipa_q6_set_ex_path_dis_agg(void)
 			continue;
 		if (IPA_CLIENT_IS_Q6_NON_ZIP_CONS(client_idx) ||
 			IPA_CLIENT_IS_Q6_ZIP_CONS(client_idx)) {
-			reg_write = kzalloc(sizeof(*reg_write), GFP_KERNEL);
+			reg_write = kzalloc(sizeof(*reg_write), flag);
 
 			if (!reg_write) {
 				IPAERR("failed to allocate memory\n");
@@ -3876,7 +3941,7 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 
 	ipa_ctx->logbuf = ipc_log_context_create(IPA_IPC_LOG_PAGES, "ipa", 0);
 	if (ipa_ctx->logbuf == NULL)
-		IPAERR("failed to create IPC log, continue...\n");
+		IPADBG("failed to create IPC log, continue...\n");
 
 	ipa_ctx->pdev = ipa_dev;
 	ipa_ctx->uc_pdev = ipa_dev;
@@ -4177,8 +4242,13 @@ static int ipa_init(const struct ipa_plat_drv_res *resource_p,
 	init_waitqueue_head(&ipa_ctx->msg_waitq);
 	mutex_init(&ipa_ctx->msg_lock);
 
+	/* store wlan client-connect-msg-list */
+	INIT_LIST_HEAD(&ipa_ctx->msg_wlan_client_list);
+	mutex_init(&ipa_ctx->msg_wlan_client_lock);
+
 	mutex_init(&ipa_ctx->lock);
 	mutex_init(&ipa_ctx->nat_mem.lock);
+	mutex_init(&ipa_ctx->ipa_cne_evt_lock);
 
 	idr_init(&ipa_ctx->ipa_idr);
 	spin_lock_init(&ipa_ctx->idr_lock);

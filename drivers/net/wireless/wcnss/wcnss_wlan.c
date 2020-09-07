@@ -36,6 +36,7 @@
 #include <linux/qpnp/qpnp-adc.h>
 #include <linux/pinctrl/consumer.h>
 #include <linux/pm_qos.h>
+#include <soc/qcom/socinfo.h>
 
 #include <soc/qcom/subsystem_restart.h>
 #include <soc/qcom/subsystem_notif.h>
@@ -186,16 +187,14 @@ static DEFINE_SPINLOCK(reg_spinlock);
 #define WCNSS_MAX_BUILD_VER_LEN		256
 #define WCNSS_MAX_CMD_LEN		(128)
 #define WCNSS_MIN_CMD_LEN		(3)
-#define WCNSS_MIN_SERIAL_LEN		(6)
+#define WCNSS_CMD_INFO_LEN		2
 
 /* control messages from userspace */
 #define WCNSS_USR_CTRL_MSG_START  0x00000000
-#define WCNSS_USR_SERIAL_NUM      (WCNSS_USR_CTRL_MSG_START + 1)
 #define WCNSS_USR_HAS_CAL_DATA    (WCNSS_USR_CTRL_MSG_START + 2)
 #define WCNSS_USR_WLAN_MAC_ADDR   (WCNSS_USR_CTRL_MSG_START + 3)
 
 #define MAC_ADDRESS_STR "%02x:%02x:%02x:%02x:%02x:%02x"
-#define SHOW_MAC_ADDRESS_STR	"%02x:%02x:%02x:%02x:%02x:%02x\n"
 #define WCNSS_USER_MAC_ADDR_LENGTH	18
 
 /* message types */
@@ -401,7 +400,7 @@ static struct {
 	int	user_cal_read;
 	int	user_cal_available;
 	u32	user_cal_rcvd;
-	int	user_cal_exp_size;
+	u32	user_cal_exp_size;
 	int	iris_xo_mode_set;
 	int	fw_vbatt_state;
 	char	wlan_nv_macAddr[WLAN_MAC_ADDR_SIZE];
@@ -458,11 +457,7 @@ static ssize_t wcnss_wlan_macaddr_store(struct device *dev,
 		       (char *)&macAddr[index], sizeof(char));
 	}
 
-	pr_info("%s: Write MAC Addr:" MAC_ADDRESS_STR "\n", __func__,
-		penv->wlan_nv_macAddr[0], penv->wlan_nv_macAddr[1],
-		penv->wlan_nv_macAddr[2], penv->wlan_nv_macAddr[3],
-		penv->wlan_nv_macAddr[4], penv->wlan_nv_macAddr[5]);
-
+	pr_info("%s: Write MAC Addr: %pM\n", __func__, penv->wlan_nv_macAddr);
 	return count;
 }
 
@@ -472,42 +467,11 @@ static ssize_t wcnss_wlan_macaddr_show(struct device *dev,
 	if (!penv)
 		return -ENODEV;
 
-	return scnprintf(buf, PAGE_SIZE, SHOW_MAC_ADDRESS_STR,
-		penv->wlan_nv_macAddr[0], penv->wlan_nv_macAddr[1],
-		penv->wlan_nv_macAddr[2], penv->wlan_nv_macAddr[3],
-		penv->wlan_nv_macAddr[4], penv->wlan_nv_macAddr[5]);
+	return scnprintf(buf, PAGE_SIZE, "%pM\n", penv->wlan_nv_macAddr);
 }
 
 static DEVICE_ATTR(wcnss_mac_addr, S_IRUSR | S_IWUSR,
 	wcnss_wlan_macaddr_show, wcnss_wlan_macaddr_store);
-
-static ssize_t wcnss_serial_number_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	if (!penv)
-		return -ENODEV;
-
-	return scnprintf(buf, PAGE_SIZE, "%08X\n", penv->serial_number);
-}
-
-static ssize_t wcnss_serial_number_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	unsigned int value;
-
-	if (!penv)
-		return -ENODEV;
-
-	if (sscanf(buf, "%08X", &value) != 1)
-		return -EINVAL;
-
-	penv->serial_number = value;
-	return count;
-}
-
-static DEVICE_ATTR(serial_number, S_IRUSR | S_IWUSR,
-	wcnss_serial_number_show, wcnss_serial_number_store);
-
 
 static ssize_t wcnss_thermal_mitigation_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
@@ -1203,13 +1167,9 @@ static int wcnss_create_sysfs(struct device *dev)
 	if (!dev)
 		return -ENODEV;
 
-	ret = device_create_file(dev, &dev_attr_serial_number);
-	if (ret)
-		return ret;
-
 	ret = device_create_file(dev, &dev_attr_thermal_mitigation);
 	if (ret)
-		goto remove_serial;
+		return ret;
 
 	ret = device_create_file(dev, &dev_attr_wcnss_version);
 	if (ret)
@@ -1225,8 +1185,6 @@ remove_version:
 	device_remove_file(dev, &dev_attr_wcnss_version);
 remove_thermal:
 	device_remove_file(dev, &dev_attr_thermal_mitigation);
-remove_serial:
-	device_remove_file(dev, &dev_attr_serial_number);
 
 	return ret;
 }
@@ -1234,7 +1192,6 @@ remove_serial:
 static void wcnss_remove_sysfs(struct device *dev)
 {
 	if (dev) {
-		device_remove_file(dev, &dev_attr_serial_number);
 		device_remove_file(dev, &dev_attr_thermal_mitigation);
 		device_remove_file(dev, &dev_attr_wcnss_version);
 		device_remove_file(dev, &dev_attr_wcnss_mac_addr);
@@ -1682,8 +1639,13 @@ EXPORT_SYMBOL(wcnss_unregister_thermal_mitigation);
 
 unsigned int wcnss_get_serial_number(void)
 {
-	if (penv)
+	if (penv) {
+		penv->serial_number = socinfo_get_serial_number();
+		pr_info("%s: Device serial number: %u\n",
+			__func__, penv->serial_number);
 		return penv->serial_number;
+	}
+
 	return 0;
 }
 EXPORT_SYMBOL(wcnss_get_serial_number);
@@ -1694,10 +1656,8 @@ int wcnss_get_wlan_mac_address(char mac_addr[WLAN_MAC_ADDR_SIZE])
 		return -ENODEV;
 
 	memcpy(mac_addr, penv->wlan_nv_macAddr, WLAN_MAC_ADDR_SIZE);
-	pr_debug("%s: Get MAC Addr:" MAC_ADDRESS_STR "\n", __func__,
-		penv->wlan_nv_macAddr[0], penv->wlan_nv_macAddr[1],
-		penv->wlan_nv_macAddr[2], penv->wlan_nv_macAddr[3],
-		penv->wlan_nv_macAddr[4], penv->wlan_nv_macAddr[5]);
+	pr_debug("%s: Get MAC Addr: %pM\n", __func__, penv->wlan_nv_macAddr);
+
 	return 0;
 }
 EXPORT_SYMBOL(wcnss_get_wlan_mac_address);
@@ -2680,65 +2640,56 @@ static int wcnss_ctrl_open(struct inode *inode, struct file *file)
 	return rc;
 }
 
-
-void process_usr_ctrl_cmd(u8 *buf, size_t len)
-{
-	u16 cmd = buf[0] << 8 | buf[1];
-
-	switch (cmd) {
-
-	case WCNSS_USR_SERIAL_NUM:
-		if (WCNSS_MIN_SERIAL_LEN > len) {
-			pr_err("%s: Invalid serial number\n", __func__);
-			return;
-		}
-		penv->serial_number = buf[2] << 24 | buf[3] << 16
-			| buf[4] << 8 | buf[5];
-		break;
-
-	case WCNSS_USR_HAS_CAL_DATA:
-		if (1 < buf[2])
-			pr_err("%s: Invalid data for cal %d\n", __func__,
-				buf[2]);
-		has_calibrated_data = buf[2];
-		break;
-
-	case WCNSS_USR_WLAN_MAC_ADDR:
-		memcpy(&penv->wlan_nv_macAddr,  &buf[2],
-				sizeof(penv->wlan_nv_macAddr));
-
-		pr_debug("%s: MAC Addr:" MAC_ADDRESS_STR "\n", __func__,
-			penv->wlan_nv_macAddr[0], penv->wlan_nv_macAddr[1],
-			penv->wlan_nv_macAddr[2], penv->wlan_nv_macAddr[3],
-			penv->wlan_nv_macAddr[4], penv->wlan_nv_macAddr[5]);
-		break;
-
-	default:
-		pr_err("%s: Invalid command %d\n", __func__, cmd);
-		break;
-	}
-}
-
 static ssize_t wcnss_ctrl_write(struct file *fp, const char __user
 			*user_buffer, size_t count, loff_t *position)
 {
 	int rc = 0;
+	u16 cmd;
 	u8 buf[WCNSS_MAX_CMD_LEN];
 
-	if (!penv || !penv->ctrl_device_opened || WCNSS_MAX_CMD_LEN < count
-			|| WCNSS_MIN_CMD_LEN > count)
+	if (!penv || !penv->ctrl_device_opened ||
+	    WCNSS_MAX_CMD_LEN < count || WCNSS_MIN_CMD_LEN > count)
 		return -EFAULT;
 
 	mutex_lock(&penv->ctrl_lock);
 	rc = copy_from_user(buf, user_buffer, count);
-	if (0 == rc)
-		process_usr_ctrl_cmd(buf, count);
+	if (rc) {
+		pr_err("%s: Failed to copy ctrl data\n", __func__);
+		goto exit;
+	}
 
+	cmd = buf[0] << 8 | buf[1];
+	switch (cmd) {
+	case WCNSS_USR_HAS_CAL_DATA:
+		if (buf[2] > 1) {
+			pr_err("%s: Invalid cal data %d\n", __func__, buf[2]);
+			rc = -EINVAL;
+			goto exit;
+		}
+		has_calibrated_data = buf[2];
+		break;
+
+	case WCNSS_USR_WLAN_MAC_ADDR:
+		if ((count - WCNSS_CMD_INFO_LEN) != WLAN_MAC_ADDR_SIZE) {
+			pr_err("%s: Invalid Mac addr %d\n", __func__, buf[2]);
+			rc = -EINVAL;
+			goto exit;
+		}
+
+		memcpy(&penv->wlan_nv_macAddr, &buf[2],
+		       sizeof(penv->wlan_nv_macAddr));
+		pr_debug("%s:MAC Addr: %pM\n", __func__, penv->wlan_nv_macAddr);
+		break;
+	default:
+		pr_err("%s: Invalid command %d\n", __func__, cmd);
+		rc = -EINVAL;
+		break;
+	}
+
+exit:
 	mutex_unlock(&penv->ctrl_lock);
-
 	return rc;
 }
-
 
 static const struct file_operations wcnss_ctrl_fops = {
 	.owner = THIS_MODULE,
@@ -2796,23 +2747,23 @@ wcnss_trigger_config(struct platform_device *pdev)
 	int is_pronto_vadc;
 	int is_pronto_v3;
 	int pil_retry = 0;
-	int has_pronto_hw = of_property_read_bool(pdev->dev.of_node,
-							"qcom,has-pronto-hw");
+	struct wcnss_wlan_config *wlan_cfg = &penv->wlan_config;
+	struct device_node *node = (&pdev->dev)->of_node;
+	int has_pronto_hw = of_property_read_bool(node, "qcom,has-pronto-hw");
 
-	is_pronto_vadc = of_property_read_bool(pdev->dev.of_node,
-					       "qcom,is-pronto-vadc");
+	is_pronto_vadc = of_property_read_bool(node, "qcom,is-pronto-vadc");
+	is_pronto_v3 = of_property_read_bool(node, "qcom,is-pronto-v3");
 
-	is_pronto_v3 = of_property_read_bool(pdev->dev.of_node,
-							"qcom,is-pronto-v3");
+	penv->is_vsys_adc_channel =
+		of_property_read_bool(node, "qcom,has-vsys-adc-channel");
+	penv->is_a2xb_split_reg =
+		of_property_read_bool(node, "qcom,has-a2xb-split-reg");
 
-	penv->is_vsys_adc_channel = of_property_read_bool(pdev->dev.of_node,
-						"qcom,has-vsys-adc-channel");
+	wlan_cfg->wcn_external_gpio_support =
+		of_property_read_bool(node, "qcom,wcn-external-gpio-support");
 
-	penv->is_a2xb_split_reg = of_property_read_bool(pdev->dev.of_node,
-						"qcom,has-a2xb-split-reg");
-
-	if (of_property_read_u32(pdev->dev.of_node,
-			"qcom,wlan-rx-buff-count", &penv->wlan_rx_buff_count)) {
+	if (of_property_read_u32(node, "qcom,wlan-rx-buff-count",
+				 &penv->wlan_rx_buff_count)) {
 		penv->wlan_rx_buff_count = WCNSS_DEF_WLAN_RX_BUFF_COUNT;
 	}
 
@@ -2873,15 +2824,18 @@ wcnss_trigger_config(struct platform_device *pdev)
 		goto fail;
 	}
 
-	index++;
-	ret = wcnss_dt_parse_vreg_level(&pdev->dev, index,
-					"qcom,iris-vddpa-current",
-					"qcom,iris-vddpa-voltage-level",
-					penv->wlan_config.iris_vlevel);
-
-	if (ret) {
-		dev_err(&pdev->dev, "error reading voltage-level property\n");
-		goto fail;
+	if (!wlan_cfg->wcn_external_gpio_support) {
+		index++;
+		ret = wcnss_dt_parse_vreg_level(
+				&pdev->dev, index,
+				"qcom,iris-vddpa-current",
+				"qcom,iris-vddpa-voltage-level",
+				penv->wlan_config.iris_vlevel);
+		if (ret) {
+			dev_err(&pdev->dev,
+				"error reading voltage-level property\n");
+			goto fail;
+		}
 	}
 
 	index++;
@@ -2904,8 +2858,8 @@ wcnss_trigger_config(struct platform_device *pdev)
 	pdata = pdev->dev.platform_data;
 	if (WCNSS_CONFIG_UNSPECIFIED == has_48mhz_xo) {
 		if (has_pronto_hw) {
-			has_48mhz_xo = of_property_read_bool(pdev->dev.of_node,
-							"qcom,has-48mhz-xo");
+			has_48mhz_xo =
+			of_property_read_bool(node, "qcom,has-48mhz-xo");
 		} else {
 			has_48mhz_xo = pdata->has_48mhz_xo;
 		}
@@ -2916,8 +2870,8 @@ wcnss_trigger_config(struct platform_device *pdev)
 	penv->wlan_config.is_pronto_v3 = is_pronto_v3;
 
 	if (WCNSS_CONFIG_UNSPECIFIED == has_autodetect_xo && has_pronto_hw) {
-		has_autodetect_xo = of_property_read_bool(pdev->dev.of_node,
-							"qcom,has-autodetect-xo");
+		has_autodetect_xo =
+			of_property_read_bool(node, "qcom,has-autodetect-xo");
 	}
 
 	penv->thermal_mitigation = 0;
@@ -3198,8 +3152,8 @@ wcnss_trigger_config(struct platform_device *pdev)
 			goto fail_ioremap2;
 		}
 
-		if (of_property_read_bool(
-			pdev->dev.of_node, "qcom,is-dual-band-disabled")) {
+		if (of_property_read_bool(node,
+					  "qcom,is-dual-band-disabled")) {
 			ret = wcnss_get_dual_band_capability_info(pdev);
 			if (ret) {
 				pr_err(

@@ -38,6 +38,7 @@ enum cnss_mhi_state {
 	CNSS_MHI_RESUME,
 	CNSS_MHI_POWER_OFF,
 	CNSS_MHI_POWER_ON,
+	CNSS_MHI_TRIGGER_RDDM,
 	CNSS_MHI_RDDM,
 	CNSS_MHI_RDDM_KERNEL_PANIC,
 	CNSS_MHI_NOTIFY_LINK_ERROR,
@@ -46,7 +47,7 @@ enum cnss_mhi_state {
 struct cnss_msi_user {
 	char *name;
 	int num_vectors;
-	uint32_t base_vector;
+	u32 base_vector;
 };
 
 struct cnss_msi_config {
@@ -72,7 +73,7 @@ struct cnss_pci_data {
 	size_t smmu_iova_len;
 	void __iomem *bar;
 	struct cnss_msi_config *msi_config;
-	uint32_t msi_ep_base_data;
+	u32 msi_ep_base_data;
 	struct mhi_device mhi_dev;
 	unsigned long mhi_state;
 };
@@ -136,5 +137,6 @@ int cnss_pci_start_mhi(struct cnss_pci_data *pci_priv);
 void cnss_pci_stop_mhi(struct cnss_pci_data *pci_priv);
 void cnss_pci_collect_dump_info(struct cnss_pci_data *pci_priv);
 void cnss_pci_clear_dump_info(struct cnss_pci_data *pci_priv);
+int cnss_pm_request_resume(struct cnss_pci_data *pci_priv);
 
 #endif /* _CNSS_PCI_H */

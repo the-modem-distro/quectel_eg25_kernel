@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -31,7 +31,7 @@ MODULE_PARM_DESC(rmnet_dl_max_pkt_per_xfer,
 #define RMNET_NOTIFY_INTERVAL	5
 #define RMNET_MAX_NOTIFY_SIZE	sizeof(struct usb_cdc_notification)
 
-#define QUECTEL_MULTI_IP_PACKAGES
+
 #define ACM_CTRL_DTR	(1 << 0)
 
 /* TODO: use separate structures for data and
@@ -59,17 +59,6 @@ struct f_rmnet {
 	const struct usb_endpoint_descriptor *in_ep_desc_backup;
 	const struct usb_endpoint_descriptor *out_ep_desc_backup;
 };
-
-#ifdef QUECTEL_MULTI_IP_PACKAGES
-
-#define USB_CDC_SET_MULTI_PACKAGE_COMMAND (0x5C)
-
-extern unsigned int multi_package_max_len;;
-extern unsigned int wait_for_package_timeout; //us
-extern unsigned int package_max_count_in_queue;
-extern unsigned int multi_package_enabled;
-#endif
-
 
 static unsigned int nr_rmnet_ports;
 static unsigned int no_ctrl_smd_ports;
@@ -622,7 +611,7 @@ static void frmnet_suspend(struct usb_function *f)
 		__func__, xport_to_str(dxport),
 		dev, dev->port_num, remote_wakeup_allowed);
 
-	usb_ep_fifo_flush(dev->notify);
+	usb_ep_dequeue(dev->notify, dev->notify_req);
 	frmnet_purge_responses(dev);
 
 	port_num = rmnet_ports[dev->port_num].data_xport_num;
@@ -877,14 +866,6 @@ static void frmnet_ctrl_response_available(struct f_rmnet *dev)
 	spin_unlock_irqrestore(&dev->lock, flags);
 
 	ret = usb_ep_queue(dev->notify, dev->notify_req, GFP_ATOMIC);
-#if 1 //add by carl, PC maybe not open qmi-channel, store this qmi and wait PC to read
-	if (ret == -EBUSY) {
-		unsigned long notify_count = dev->notify_count;
-		pr_info("frmnet ep enqueue busy notify_count = %ld\n", notify_count);
-		if (notify_count < 1000) //OFFLINE_UL_Q_LIMIT
-			ret = 0;
-	}
-#endif
 	if (ret) {
 		spin_lock_irqsave(&dev->lock, flags);
 		if (!list_empty(&dev->cpkt_resp_q)) {
@@ -940,9 +921,8 @@ static void frmnet_disconnect(struct grmnet *gr)
 		return;
 	}
 
-	usb_ep_fifo_flush(dev->notify);
+	usb_ep_dequeue(dev->notify, dev->notify_req);
 
-#if 0 //comment by carl, this will make dev->notify_count un-corrent and one qmi response miss to notify to PC, I think PC donot care this cdc-msg, so remove it
 	event = dev->notify_req->buf;
 	event->bmRequestType = USB_DIR_IN | USB_TYPE_CLASS
 			| USB_RECIP_INTERFACE;
@@ -958,7 +938,6 @@ static void frmnet_disconnect(struct grmnet *gr)
 		pr_err("%s: rmnet notify ep enqueue error %d\n",
 				__func__, status);
 	}
-#endif
 
 	frmnet_purge_responses(dev);
 }
@@ -1087,31 +1066,6 @@ static void frmnet_notify_complete(struct usb_ep *ep, struct usb_request *req)
 	}
 }
 
-#ifdef QUECTEL_MULTI_IP_PACKAGES
-static void
-frmnet_set_multi_package_complete(struct usb_ep *ep, struct usb_request *req)
-{
-	struct multi_package_config {
-		__le32 enable;
-		__le32 package_max_len;
-		__le32 package_max_count_in_queue;
-		__le32 timeout;
-	} __packed;
-
-	struct multi_package_config cfg;
-	
-	if (sizeof(cfg) != req->actual) {
-		return;
-	}
-
-	memcpy(&cfg, req->buf, sizeof(cfg));
-	multi_package_enabled = le32_to_cpu(cfg.enable);
-	multi_package_max_len = le32_to_cpu(cfg.package_max_len);
-	package_max_count_in_queue = le32_to_cpu(cfg.package_max_count_in_queue);
-	wait_for_package_timeout = le32_to_cpu(cfg.timeout);
-}
-#endif
-
 static int
 frmnet_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 {
@@ -1132,14 +1086,6 @@ frmnet_setup(struct usb_function *f, const struct usb_ctrlrequest *ctrl)
 	}
 
 	switch ((ctrl->bRequestType << 8) | ctrl->bRequest) {
-#ifdef QUECTEL_MULTI_IP_PACKAGES
-	case ((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8)
-			| USB_CDC_SET_MULTI_PACKAGE_COMMAND:
-		ret = w_length;
-		req->complete = frmnet_set_multi_package_complete;
-		req->context = dev;
-		break;
-#endif
 
 	case ((USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE) << 8)
 			| USB_CDC_SEND_ENCAPSULATED_COMMAND:

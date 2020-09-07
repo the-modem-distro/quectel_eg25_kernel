@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -2703,6 +2703,7 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 	u32 mad_dmic_sample_rate = 0;
 	u32 ecpp_dmic_sample_rate = 0;
 	u32 dmic_clk_drive;
+	u32 mic_unmute_delay = 0;
 	const char *static_prop_name = "qcom,cdc-static-supplies";
 	const char *ond_prop_name = "qcom,cdc-on-demand-supplies";
 	const char *cp_supplies_name = "qcom,cdc-cp-supplies";
@@ -2856,6 +2857,16 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 	else
 		pdata->dmic_clk_drv = dmic_clk_drive;
 
+	ret = of_property_read_u32(dev->of_node,
+				"qcom,cdc-mic-unmute-delay",
+				&mic_unmute_delay);
+	if (ret) {
+		dev_err(dev, "Looking up %s property in node %s failed",
+			"qcom,cdc-mic-unmute-delay",
+			dev->of_node->full_name);
+	}
+	pdata->mic_unmute_delay = mic_unmute_delay;
+
 	ret = of_property_read_string(dev->of_node,
 				"qcom,cdc-variant",
 				&cdc_name);
@@ -2870,6 +2881,8 @@ static struct wcd9xxx_pdata *wcd9xxx_populate_dt_pdata(struct device *dev)
 		else
 			pdata->cdc_variant = WCD9XXX;
 	}
+	pdata->wcd9xxx_mic_tristate = of_property_read_bool(dev->of_node,
+						 "qcom,wcd9xxx-mic-tristate");
 
 	return pdata;
 err:
@@ -3119,19 +3132,19 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 		("wcd9xxx_core", 0);
 	if (!IS_ERR(debugfs_wcd9xxx_dent)) {
 		debugfs_peek = debugfs_create_file("slimslave_peek",
-		S_IFREG | S_IRUGO, debugfs_wcd9xxx_dent,
+		S_IFREG | S_IRUSR, debugfs_wcd9xxx_dent,
 		(void *) "slimslave_peek", &codec_debug_ops);
 
 		debugfs_poke = debugfs_create_file("slimslave_poke",
-		S_IFREG | S_IRUGO, debugfs_wcd9xxx_dent,
+		S_IFREG | S_IRUSR, debugfs_wcd9xxx_dent,
 		(void *) "slimslave_poke", &codec_debug_ops);
 
 		debugfs_power_state = debugfs_create_file("power_state",
-		S_IFREG | S_IRUGO, debugfs_wcd9xxx_dent,
+		S_IFREG | S_IRUSR, debugfs_wcd9xxx_dent,
 		(void *) "power_state", &codec_debug_ops);
 
 		debugfs_reg_dump = debugfs_create_file("slimslave_reg_dump",
-		S_IFREG | S_IRUGO, debugfs_wcd9xxx_dent,
+		S_IFREG | S_IRUSR, debugfs_wcd9xxx_dent,
 		(void *) "slimslave_reg_dump", &codec_debug_ops);
 	}
 #endif

@@ -19,6 +19,7 @@
 #include <linux/vmalloc.h>
 #include <linux/log2.h>
 #include <linux/dm-kcopyd.h>
+#include <linux/semaphore.h>
 
 #include "dm.h"
 
@@ -98,6 +99,9 @@ struct dm_snapshot {
 	/* The on disk metadata handler */
 	struct dm_exception_store *store;
 
+	/* Maximum number of in-flight COW jobs. */
+	struct semaphore cow_count;
+
 	struct dm_kcopyd_client *kcopyd_client;
 
 	/* Wait for events based on state_bits */
@@ -137,6 +141,19 @@ struct dm_snapshot {
  */
 #define RUNNING_MERGE          0
 #define SHUTDOWN_MERGE         1
+
+/*
+ * Maximum number of chunks being copied on write.
+ *
+ * The value was decided experimentally as a trade-off between memory
+ * consumption, stalling the kernel's workqueues and maintaining a high enough
+ * throughput.
+ */
+#define DEFAULT_COW_THRESHOLD 2048
+
+static int cow_threshold = DEFAULT_COW_THRESHOLD;
+module_param_named(snapshot_cow_threshold, cow_threshold, int, 0644);
+MODULE_PARM_DESC(snapshot_cow_threshold, "Maximum number of chunks being copied on write");
 
 DECLARE_DM_KCOPYD_THROTTLE_WITH_MODULE_PARM(snapshot_copy_throttle,
 		"A percentage of time allocated for copy on write");
@@ -1099,6 +1116,7 @@ static int snapshot_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 	int i;
 	int r = -EINVAL;
 	char *origin_path, *cow_path;
+	dev_t origin_dev, cow_dev;
 	unsigned args_used, num_flush_bios = 1;
 	fmode_t origin_mode = FMODE_READ;
 
@@ -1129,10 +1147,18 @@ static int snapshot_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		ti->error = "Cannot get origin device";
 		goto bad_origin;
 	}
+	origin_dev = s->origin->bdev->bd_dev;
 
 	cow_path = argv[0];
 	argv++;
 	argc--;
+
+	cow_dev = dm_get_dev_t(cow_path);
+	if (cow_dev && cow_dev == origin_dev) {
+		ti->error = "COW device cannot be the same as origin device";
+		r = -EINVAL;
+		goto bad_cow;
+	}
 
 	r = dm_get_device(ti, cow_path, dm_table_get_mode(ti->table), &s->cow);
 	if (r) {
@@ -1172,6 +1198,8 @@ static int snapshot_ctr(struct dm_target *ti, unsigned int argc, char **argv)
 		r = -ENOMEM;
 		goto bad_hash_tables;
 	}
+
+	sema_init(&s->cow_count, (cow_threshold > 0) ? cow_threshold : INT_MAX);
 
 	s->kcopyd_client = dm_kcopyd_client_create(&dm_kcopyd_throttle);
 	if (IS_ERR(s->kcopyd_client)) {
@@ -1545,6 +1573,7 @@ static void copy_callback(int read_err, unsigned long write_err, void *context)
 		}
 		list_add(&pe->out_of_order_entry, lh);
 	}
+	up(&s->cow_count);
 }
 
 /*
@@ -1568,6 +1597,7 @@ static void start_copy(struct dm_snap_pending_exception *pe)
 	dest.count = src.count;
 
 	/* Hand over to kcopyd */
+	down(&s->cow_count);
 	dm_kcopyd_copy(s->kcopyd_client, &src, 1, &dest, 0, copy_callback, pe);
 }
 
@@ -1588,6 +1618,7 @@ static void start_full_bio(struct dm_snap_pending_exception *pe,
 	pe->full_bio_end_io = bio->bi_end_io;
 	pe->full_bio_private = bio->bi_private;
 
+	down(&s->cow_count);
 	callback_data = dm_kcopyd_prepare_callback(s->kcopyd_client,
 						   copy_callback, pe);
 
