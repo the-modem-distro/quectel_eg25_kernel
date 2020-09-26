@@ -680,8 +680,9 @@
 			<0x44 0x80 0x38 0x81 0x24 0x82 0x13 0x83 0xffffffff>;
 
 		qcom,hsusb-otg-phy-type = <3>; /* SNPS Femto PHY */
-		qcom,hsusb-otg-mode = <3>; /* OTG mode */
-		qcom,hsusb-otg-otg-control = <2>; /* PMIC control */
+		qcom,hsusb-otg-mode = <1>; /* OTG mode */
+		qcom,hsusb-otg-default-mode=<1>; 
+		qcom,hsusb-otg-otg-control = <3>; /* PMIC control */
 		qcom,usbid-gpio = <&pm8019_mpps 1 0>;
 		qcom,hsusb-log2-itc = <4>;
 		qcom,dp-manual-pullup;
