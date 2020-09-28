@@ -37,13 +37,15 @@
 		modem_adsp_mem: modem_adsp_region@0 {
 			compatible = "removed-dma-pool";
 			no-map-fixup;
-			reg = <0x82c00000 0x5000000>;
+			/* Quectel: add modem memory */
+			reg = <0x82700000 0x5300000>;
 		};
 
 		cnss_debug_mem: cnss_debug_region@0 {
 			compatible = "removed-dma-pool";
 			no-map;
-			reg = <0x82a00000 0x200000>;
+			/* Quectel: change memory reserves - check 3.18.48 */
+			reg = <0x87a00000 0x200000>;
 		};
 
 		external_image_mem: external_image_region@0 {
@@ -80,11 +82,14 @@
 		smd8 = &smdtty_data4;
 		smd9 = &smdtty_data2;
 		smd10 = &smdtty_data3;
-		smd11 = &smdtty_data11;
+		/* smd11 = &smdtty_data11;*/ // Removed by quectel
 		smd21 = &smdtty_data21;
 		smd36 = &smdtty_loopback;
 		/* spi device */
 		spi1  = &spi_1;
+		/* I'm not adding all the UART and SPIs since we don't use them.
+		If you got here looking for it, feel free to add them to the dtb 
+		using the 3.18.48 as a kernel reference */
 		i2c4 = &i2c_4;
 		sdhc2 = &sdhc_2; /* SDC2 SD card slot */
 	};
@@ -401,6 +406,37 @@
 			<&dma_blsp1 19 32 0x20000020 0x20>;
 		dma-names = "tx", "rx";
 		status = "disabled";
+		/* Potential source for inconsistencies.
+		Quectel doesn't use the default tomtom_codec.
+		Adding theirs here but not disabling the other in
+		case we need it for other vendors */
+			// achang-20180607, for update codec driver. (start)
+		rt5616_codec@1b{
+			compatible = "realtek,rt5616";
+			reg = <0x1b>;
+		};
+
+		nau8810_codec@1a{
+			compatible = "nuvoton,nau8810";
+			reg = <0x1a>;
+		};
+
+		tlv320aic3x_codec@18{
+			compatible = "ti,tlv320aic3104";
+			reg = <0x18>;
+			ai3x-ocmv = <0>;
+			ai3x-micbias-vg = <2>;
+		};
+
+		max9867_tlv_codec@18{
+			compatible = "maxim,quec_max9867_tlv";
+			reg = <0x19>;//<0x18>;
+		};
+		quec_stub_codec@1{
+			compatible = "quec,quec-stub-i2c";
+			reg = <0x01>;
+		};
+		// achang-20180607, for update codec driver. (end)
 
 		wcd9xxx_tomtom_codec@0d{
 			compatible = "qcom,wcd9xxx-i2c";
@@ -581,19 +617,16 @@
 		reg = <0x78b1000 0x200>,
 			<0x7884000 0x2b000>;
 		reg-names = "core_mem", "bam_mem";
-		interrupt-names = "core_irq", "bam_irq", "wakeup_irq";
+		interrupt-names = "core_irq", "bam_irq";
 		#address-cells = <0>;
 		interrupt-parent = <&blsp1_uart3>;
-		interrupts = <0 1 2>;
+		interrupts = <0 1>;
 		#interrupt-cells = <1>;
 		interrupt-map-mask = <0xffffffff>;
 		interrupt-map = <0 &intc 0 119 0
-				1 &intc 0 238 0
-				2 &tlmm_pinmux 1 0>;
+				1 &intc 0 238 0>;
 
-		qcom,inject-rx-on-wakeup;
-		qcom,rx-char-to-inject = <0xFD>;
-
+	
 		qcom,bam-tx-ep-pipe-index = <4>;
 		qcom,bam-rx-ep-pipe-index = <5>;
 		qcom,master-id = <86>;
@@ -1186,7 +1219,7 @@
 		qcom,msm-cpudai-auxpcm-num-slots = <1>, <1>;
 		qcom,msm-cpudai-auxpcm-slot-mapping = <1>, <1>;
 		qcom,msm-cpudai-auxpcm-data = <0>, <0>;
-		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <2048000>;
+		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <4096000>; // For PCM Codec 16K
 		qcom,msm-auxpcm-interface = "primary";
 		qcom,msm-cpudai-afe-clk-ver = <2>;
 	};
@@ -1841,6 +1874,29 @@
 		gpios = <&tlmm_pinmux 53 0>;
 		status = "okay";
 	};
+	// 2016-01-29,add by jun.wu, for quectel power manager
+	quec,quectel-power-manager{
+		compatible = "quec,quectel-power-manager";	
+
+		//gpios = <&tlmm_pinmux 74  0>,		/* DTR */	
+		//		<&tlmm_pinmux 42 0>,		/* WAKEUP-IN*/
+		//		<&tlmm_pinmux 25 0>;		/* SLEEP-IND*/
+		//quec,gpio-names = "dtr", "wakeup_in", "sleep_ind";	
+
+		/*pinctrl-names = "default";
+		pinctrl-0 = <&quectel_power_wakeup_in
+				&quectel_power_sleep_ind>;*/
+
+		/*
+		pinctrl-names = "default", "idle";
+		pinctrl-0 = <&quec_gpio_sleep_state_active
+					 &quec_gpio_wakeup_active
+					 &quec_gpio_dtr_active>
+		pinctrl-1 = <&quec_gpio_sleep_state_idle
+					 &quec_gpio_wakeup_idle
+					 &quec_gpio_dtr_idle>
+		*/
+	};
 
 	qcom,msm-dai-tdm-pri-rx {
 		compatible = "qcom,msm-dai-tdm";
@@ -1934,11 +1990,11 @@
 		status = "okay";
 	};
 };
-
+/* Not used in quectel
 &usb_otg {
 	vbus_otg-supply = <&smb358_otg_vreg>;
 };
-
+*/
 &pm8019_vadc {
 	chan@6 {
 		label = "vbat_sns";
@@ -1961,7 +2017,29 @@
 		qcom,hw-settle-time = <0>;
 		qcom,fast-avg-setup = <0>;
 	};
-
+	/* Add by gale 2017-08-22, for adc0 function */
+	chan@23 {
+		label = "mpp4_vadc";
+		reg = <0x23>; 				// channe0 for MPP4
+		qcom,decimation = <0>;
+		qcom,pre-div-channel-scaling = <1>; 	//Use 1:3 scaling to keep input
+		qcom,calibration-type = "absolute";
+		qcom,scale-function = <0>;
+		qcom,hw-settle-time = <1>;
+		qcom,fast-avg-setup = <2>;
+	};
+	
+	/* Add by gale 2017-08-22, for adc1 function */
+	chan@25 {
+		label = "mpp6_vadc";
+		reg = <0x25>;				// channe1 for MPP6
+		qcom,decimation = <0>;
+		qcom,pre-div-channel-scaling = <1>;	//Use 1:3 scaling to keep input
+		qcom,calibration-type = "absolute";
+		qcom,scale-function = <0>;
+		qcom,hw-settle-time = <1>;
+		qcom,fast-avg-setup = <2>;
+	};
 	chan@31 {
 		label = "batt_id_therm";
 		reg = <0x31>;
@@ -1989,10 +2067,10 @@
 		reg = <0x34>;
 		qcom,decimation = <0>;
 		qcom,pre-div-channel-scaling = <0>;
-		qcom,calibration-type = "ratiometric";
-		qcom,scale-function = <2>;
+		qcom,calibration-type = "absolute";
+		qcom,scale-function = <0>;
 		qcom,hw-settle-time = <2>;
-		qcom,fast-avg-setup = <0>;
+		qcom,fast-avg-setup = <2>;
 	};
 
 	chan@32 {

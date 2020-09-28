@@ -208,11 +208,11 @@
 	sdc1_wlan_gpio {
 		sdc1_wlan_gpio_active: sdc1_wlan_gpio_active {
 			mux {
-				pins = "gpio38";
+				pins = "gpio54"; // was gpio38 in CAF
 				function  = "gpio";
 			};
 			config {
-				pins  = "gpio38";
+				pins  = "gpio54";
 				output-high;
 				drive-strength = <8>;
 				bias-pull-up;
@@ -221,11 +221,11 @@
 
 		sdc1_wlan_gpio_sleep: sdc1_wlan_gpio_sleep {
 			mux {
-				pins = "gpio38";
+				pins = "gpio54";
 				function  = "gpio";
 			};
 			config {
-				pins  = "gpio38";
+				pins  = "gpio54";
 				drive-strength = <2>;
 				bias-disable;
 				output-low;
@@ -261,7 +261,7 @@
 			};
 		};
 
-		sensor_int1_default: sensor_int1_default {
+		sensor_int1_default: sensor_int1_default { //bmi160_int1_default
 			mux {
 				pins = "gpio78";
 				function = "gpio";
@@ -273,7 +273,7 @@
 			};
 		};
 
-		sensor_int2_default: sensor_int2_default {
+		sensor_int2_default: sensor_int2_default { //bmi160_int2_default
 			mux {
 				pins = "gpio79";
 				function = "gpio";
@@ -313,7 +313,7 @@
 
 
 		pmx_pri_mi2s_aux {
-			pri_ws_active_master: pri_ws_active_master {
+			pri_ws_active_master: pri_ws_active_master { //pri_mi2s_ws_active
 				mux {
 					pins = "gpio20";
 					function = "pri_mi2s_ws_a";
@@ -327,7 +327,7 @@
 				};
 			};
 
-			pri_sck_active_master: pri_sck_active_master {
+			pri_sck_active_master: pri_sck_active_master { //pri_mi2s_sck_active
 				mux {
 					pins = "gpio23";
 					function = "pri_mi2s_sck_a";

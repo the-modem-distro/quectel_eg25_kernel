@@ -60,7 +60,7 @@
 		spi-max-frequency = <4800000>;
 		reg = <0>;
 		interrupt-parent = <&tlmm_pinmux>;
-		interrupts = <25 1>;
+		interrupts = <25 0>; /* CAF Says int. 25 1 */
 		reset-gpio = <&tlmm_pinmux 11 0x1>;
 		pinctrl-names = "active", "sleep";
 		pinctrl-0 = <&can_rst_on>;
@@ -84,10 +84,11 @@
 &pm8019_mpps {
 	mpp@a100 {
 		qcom,mode = <0>;	/* Digital input */
-		qcom,vin-sel = <3>;	/* 1.8V (L11) */
+		qcom,vin-sel = <0>; /* CAF was 3*/	/* 1.8V (L11) */
 		qcom,src-sel = <0>;	/* QPNP_PIN_SEL_FUNC_CONSTANT */
-		qcom,pull = <2>;	/* PULL UP 10KOHM */
+		qcom,pull = <1>;	/*CAF was 2*/ /* PULL UP 10KOHM */
 		qcom,master-en = <1>;
+		status = "ok";
 	};
 };
 
@@ -106,7 +107,7 @@
 	gpio@c200 {
 		qcom,mode = <1>;		/* Digital output */
 		qcom,output-type = <0>;		/* CMOS logic */
-		qcom,invert = <1>;		/* Output high */
+		qcom,invert = <0>;		/* Output high - Do not enable PM_EN_WIFI */
 		qcom,vin-sel = <3>;		/* VPH_PWR */
 		qcom,src-sel = <0>;		/* Constant */
 		qcom,out-strength = <1>;	/* High drive strength */
@@ -135,23 +136,35 @@
 
 	pinctrl-names = "active", "sleep";
 	pinctrl-0 = <&pmx_sdc1_clk_on &pmx_sdc1_cmd_on &pmx_sdc1_data_on
-						&sdc1_wlan_gpio_active>;
+						/*&sdc1_wlan_gpio_active*/>;
 	pinctrl-1 = <&pmx_sdc1_clk_off &pmx_sdc1_cmd_off &pmx_sdc1_data_off
-						&sdc1_wlan_gpio_sleep>;
-	qcom,nonremovable;
+						/*&sdc1_wlan_gpio_sleep*/>;
+/*	qcom,nonremovable;*/ /* SDHC is removable */
 	qcom,core_3_0v_support;
 	status = "ok";
 };
 
-/* MPP pin 4 configs for SGMII */
-&pm8019_mpps {
-	mpp@a300 { /* MPP 4 */
+&pm8019_gpios {
+	gpio@c300 { /* GPIO 4 */
 		qcom,mode = <1>;		/* Digital output */
-		qcom,vin-sel = <2>;		/* 1.8V */
-		qcom,src-sel = <0>;		/* Constant */
+		qcom,output-type = <0>;		/* CMOS logic */
+		qcom,invert = <0>;		/* Output high */
+		qcom,vin-sel = <0>;		/* VPH_PWR */
+		qcom,src-sel = <0>;		/* GPIO */
+		qcom,out-strength = <1>;	/* Low drive strength */
 		qcom,master-en = <1>;		/* Enable GPIO */
-		status = "okay";
 	};
+};
+/* MPP pin 4 configs for SGMII */
+/* Disabled in Quectel Source */
+&pm8019_mpps {
+//	mpp@a300 { /* MPP 4 */
+//		qcom,mode = <1>;		/* Digital output */
+//		qcom,vin-sel = <2>;		/* 1.8V */
+//		qcom,src-sel = <0>;		/* Constant */
+//		qcom,master-en = <1>;		/* Enable GPIO */
+//		status = "okay";
+//	};
 };
 
 &i2c_4 {
@@ -171,12 +184,13 @@
 };
 
 &sdhc_2 {
-	vdd-supply = <&sdcard_ext_vreg>;
+	/* vdd-supply = <&sdcard_ext_vreg>; */
 	qcom,vdd-voltage-level = <2850000 2850000>;
 	qcom,vdd-current-level = <15000 400000>;
 
 	vdd-io-supply = <&mdm9607_l13>;
-	qcom,vdd-io-voltage-level = <1800000 2850000>;
+	qcom,vdd-io-always-on;  // Set this way in quectel source
+	qcom,vdd-io-voltage-level = <1800000 1800000>; // Was 2.85v, set to 1.8
 	qcom,vdd-io-current-level = <200 50000>;
 
 	#address-cells = <0>;
@@ -188,12 +202,13 @@
 			1 &intc 0 221 0
 			2 &tlmm_pinmux 26 0>;
 	interrupt-names = "hc_irq", "pwr_irq", "status_irq";
-	cd-gpios = <&tlmm_pinmux 26 0x1>;
-
+	/* cd-gpios = <&tlmm_pinmux 26 0x1>;*/
+	qcom,nonhotplug;
 	pinctrl-names = "active", "sleep";
 	pinctrl-0 = <&sdc2_clk_on &sdc2_cmd_on &sdc2_data_on &sdc2_cd_on>;
 	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off>;
-
+	/* Leaving the code as with QC sources, but disabled since we're not using it */
+	/* If anyone wants to solder a SDCard here let them turn it on */
 	status = "disabled";
 };
 
