@@ -47,13 +47,13 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart_console_sleep>;
 };
-
+/* We dont use it anyway */
 &i2c_4 {
-	status = "ok";
+	status = "disabled";
 };
-
+/* We dont use this either */
 &spi_1 {
-	status = "ok";
+	status = "disabled";
 
 	can-controller@0 {
 		compatible = "fsl,k61";
@@ -141,7 +141,7 @@
 						/*&sdc1_wlan_gpio_sleep*/>;
 /*	qcom,nonremovable;*/ /* SDHC is removable */
 	qcom,core_3_0v_support;
-	status = "ok";
+	status = "disabled";
 };
 
 &pm8019_gpios {
