@@ -37,8 +37,7 @@
 			compatible = "removed-dma-pool";
 			no-map-fixup;
 			/* will.shao, add modem memory */
-			/* reg = <0x82a00000 0x5000000>; */
-			reg = <0x82700000 0x5300000>;
+			 reg = <0x82a00000 0x5000000>; 
 		};
 
 		cnss_debug_mem: cnss_debug_region@0 {
