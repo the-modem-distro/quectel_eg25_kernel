@@ -149,8 +149,9 @@ static int quec_enbale_mclk = 0;
 #endif
 
 //2014-11-24 add by scott.hu
-#ifdef CONFIG_QUECTEL_AUDIO_DRIVER
-static char quec_codec_name[32]  = "quec-stub-codec.2-0001";//{'a'};
+#ifdef CONFIG_QUECTEL_AUDIO_DRIVER 
+// Nothing like changing a 2 for a 4 to make stuff work
+static char quec_codec_name[32]  = "quec-stub-codec.4-0001";//{'a'};
 static char quec_rx_dai_name[32] = "quec-stub-rx";//{'a'};
 static char quec_tx_dai_name[32] = "quec-stub-tx";//{'a'};
 #endif
