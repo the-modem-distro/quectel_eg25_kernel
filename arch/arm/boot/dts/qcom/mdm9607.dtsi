@@ -440,6 +440,10 @@
 			<&dma_blsp1 15 64 0x20000020 0x20>;
 		dma-names = "tx", "rx";
 		status = "disabled";
+		quec_stub_codec@1{
+			compatible = "quec,quec-stub-i2c";
+			reg = <0x01>;
+		};
 	};
 
 	i2c_4: i2c@78b8000 { /* BLSP1 QUP4 */
@@ -489,10 +493,7 @@
 			compatible = "maxim,quec_max9867_tlv";
 			reg = <0x19>;//<0x18>;
 		};
-		quec_stub_codec@1{
-			compatible = "quec,quec-stub-i2c";
-			reg = <0x01>;
-		};
+
 		// achang-20180607, for update codec driver. (end)
 
 		/* 2016-02-26, comment out by jun.wu, for sound card
