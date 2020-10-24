@@ -13,8 +13,6 @@
 
 #include "mdm9607.dtsi"
 #include "mdm9607-pinctrl.dtsi"
-#include "mdm9607-display.dtsi"
-#include "qpic-panel-ili-hvga.dtsi"
 
 / {
 	bluetooth: bt_qca6174 {
@@ -47,13 +45,6 @@
 	pinctrl-1 = <&blsp1_uart2_sleep>;
 };
 
-/*
-&blsp1_uart5 {
-	status = "disabled";	//disabled uart5, if need, user can enable it, by gale
-	pinctrl-names ="sleep", "default";
-	pinctrl-0 = <&uart_console_sleep>;
-	pinctrl-1 = <&uart_console_active>;
-};*/
 
 /* larryzhang-20190225:The default is high speed for BLSP1_UART5(gpio8,9,10,11)*/
  &blsp1_uart5 {
@@ -81,33 +72,6 @@
 	status = "ok";
 };
 
-/* will.shao, remove spi1 
-&spi_1 {
-	status = "ok";
-
-	can-controller@0 {
-		compatible = "fsl,k61";
-		spi-max-frequency = <4800000>;
-		reg = <0>;
-		interrupt-parent = <&tlmm_pinmux>;
-		interrupts = <25 0>;
-		reset-gpio = <&tlmm_pinmux 11 0x1>;
-		pinctrl-names = "active", "sleep";
-		pinctrl-0 = <&can_rst_on>;
-		pinctrl-1 = <&can_rst_off>;
-	};
-};
-*/
-
-/* Add spi3 node ---> gpio0,1,2,3, gale 2018-3-14 */
-&spi_3 {
-	status = "disabled";
-};
-
-/* Add spi5 node ---> gpio8,9,10,11, gale 2018-3-14 */
-&spi_5 {
-        status = "disabled";
-};
 
 //add by cullen
 &spi_6 {
@@ -216,21 +180,6 @@
 	//};
 };
 
-&i2c_4 {
-	/* SMB358 charger configuration */
-	smb358_otg_vreg: smb358-charger@57 {
-		compatible = "qcom,smb358-charger";
-		regulator-name = "smb358_otg_vreg";
-		reg = <0x57>;
-		interrupt-parent = <&spmi_bus>;
-		interrupts = <0x0 0xa1 0x0>;	/* PMIC MPP 2 */
-		qcom,float-voltage-mv = <4200>;
-		qcom,irq-gpio = <&pm8019_mpps 2 0>;
-		qcom,chg-vadc = <&pm8019_vadc>;
-		qcom,batt-id-vref-uv = <1800000>;
-		qcom,batt-id-rpullup-kohm = <220>;
-	};
-};
 
 &sdhc_2 {
 	/*vdd-supply = <&sdcard_ext_vreg>;*/
@@ -258,14 +207,4 @@
 	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off>;
 
 	status = "ok";
-};
-
-/* Display */
-&mdss_qpic {
-	pinctrl-names= "mdss_default", "mdss_sleep";
-	pinctrl-0 = <&mdss_ldo_active &mdss_cs_active &mdss_te_active
-		&mdss_rs_active &mdss_ad_active &mdss_bl_active>;
-	pinctrl-1 = <&mdss_ldo_sleep &mdss_cs_sleep &mdss_te_sleep
-		&mdss_rs_sleep &mdss_ad_sleep &mdss_bl_sleep>;
-	status = "disabled";
 };

@@ -72,7 +72,7 @@
 		/* smdtty devices */
 		smd7 = &smdtty_data1;
 		smd8 = &smdtty_data4;
-		smd9 = &smdtty_data2;   /** add by tyler.kuang@20180511 for mcm atcop */
+		smd9 = &smdtty_data2;
 		/*smd11 = &smdtty_data11;*/ /*modified by max.tang@20160118. del Data11 from APP to be used by second USB AT port*/
 		smd21 = &smdtty_data21;
 		smd36 = &smdtty_loopback;
@@ -84,9 +84,6 @@
  		uart0 = &blsp1_uart3;	//main uart
  		uart1 = &blsp1_uart5;
 
-		spi3 = &spi_3;
-		spi5 = &spi_5;
-		//add by cullen
 		spi6  = &spi_6;
 		i2c2 = &i2c_2;
 		i2c4 = &i2c_4;
@@ -130,16 +127,6 @@
 		compatible = "qcom,mpm2-sleep-counter";
 		reg = <0x4a3000 0x1000>;
 		clock-frequency = <32768>;
-	};
-
-	//net_status: use linux kernel leds-gpio method, gale 2017-11-11
-	leds_gpio {
-		compatible = "gpio-leds";
-		net_status{
-			gpios = <&pm8019_gpios 1 0>;
-			default-state = "off";
-			status = "disabled";
-		};
 	};
 
 	timer@b020000 {
@@ -436,10 +423,12 @@
 		qcom,noise-rjct-scl = <0>;
 		qcom,noise-rjct-sda = <0>;
 		qcom,master-id = <86>;
-		dmas = <&dma_blsp1 14 32 0x20000020 0x20>,
-			<&dma_blsp1 15 64 0x20000020 0x20>;
+		dmas = <&dma_blsp1 14 64 0x20000020 0x20>,
+			<&dma_blsp1 15 32 0x20000020 0x20>;
 		dma-names = "tx", "rx";
 		status = "disabled";
+
+
 		quec_stub_codec@1{
 			compatible = "quec,quec-stub-i2c";
 			reg = <0x01>;
@@ -471,31 +460,6 @@
 		dma-names = "tx", "rx";
 		status = "disabled";
 	
-		// achang-20180607, for update codec driver. (start)
-		rt5616_codec@1b{
-			compatible = "realtek,rt5616";
-			reg = <0x1b>;
-		};
-
-		nau8810_codec@1a{
-			compatible = "nuvoton,nau8810";
-			reg = <0x1a>;
-		};
-
-		tlv320aic3x_codec@18{
-			compatible = "ti,tlv320aic3104";
-			reg = <0x18>;
-			ai3x-ocmv = <0>;
-			ai3x-micbias-vg = <2>;
-		};
-
-		max9867_tlv_codec@18{
-			compatible = "maxim,quec_max9867_tlv";
-			reg = <0x19>;//<0x18>;
-		};
-
-		// achang-20180607, for update codec driver. (end)
-
 		/* 2016-02-26, comment out by jun.wu, for sound card
 		wcd9xxx_tomtom_codec@0d{
 			compatible = "qcom,wcd9xxx-i2c";
@@ -630,17 +594,6 @@
 			reg = <0x55>;
 		};
 
-		bmi160@68{
-			compatible = "bosch-sensortec,bmi160";
-			reg = <0x68>;
-			pinctrl-names = "default";
-			pinctrl-0 = <&bmi160_int1_default &bmi160_int2_default>;
-			interrupt-parent = <&tlmm_pinmux>;
-			interrupts = <78 0x2002>;
-			bmi,init-interval = <200>;
-			bmi,place = <1>;
-			bmi,gpio_irq = <&tlmm_pinmux 78 0x2002>;
-		};
 		*/
 		//end jun.wu
 	};
@@ -1257,7 +1210,7 @@
 		compatible = "qcom,msm-auxpcm-dev";
 		qcom,msm-cpudai-auxpcm-mode = <0>, <0>;
 		qcom,msm-cpudai-auxpcm-sync = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-frame = <5>, <5>;
+		qcom,msm-cpudai-auxpcm-frame = <5>, <4>;
 		qcom,msm-cpudai-auxpcm-quant = <2>, <2>;
 		qcom,msm-cpudai-auxpcm-num-slots = <1>, <1>;
 		qcom,msm-cpudai-auxpcm-slot-mapping = <1>, <1>;
@@ -1607,65 +1560,6 @@
 		cell-index = <0>;
 	};
 
-	/*Start:Add spi3, spi5 node, gale 2018-3-14
-	* according to AG35 Hardware Design, support three spi, spi_6 is actived,
-	* and spi_3, spi_5 is inactived by default, user could enable it.
-	*/
-	/*BLSP1 QUP3--->gpio0,1,2,3, gale 2018-3-14 */
-	spi_3: spi@78b7000 {
-		compatible = "qcom,spi-qup-v2";
-		#address-cells = <1>;
-		#size-cells = <0>;
-		reg-names = "spi_physical", "spi_bam_physical";
-		reg = <0x78b7000 0x600>,
-		      <0x7884000 0x2b000>;
-		interrupt-names = "spi_irq", "spi_bam_irq";
-		interrupts = <0 97 0>, <0 238 0>;
-		spi-max-frequency = <19200000>;
-		pinctrl-names = "spi_default", "spi_sleep";
-		pinctrl-0 = <&spi3_default &spi3_cs0_active>;
-		pinctrl-1 = <&spi3_sleep &spi3_cs0_sleep>;
-		clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
-			 <&clock_gcc clk_gcc_blsp1_qup3_spi_apps_clk>;
-		clock-names = "iface_clk", "core_clk";
-		qcom,infinite-mode = <0>;
-		qcom,use-bam;
-		qcom,use-pinctrl;
-		qcom,ver-reg-exists;
-		qcom,bam-consumer-pipe-index = <16>;
-		qcom,bam-producer-pipe-index = <17>;
-		qcom,master-id = <86>;
-		status = "disabled";
-	}; 
-
-	/*BLSP1 QUP5--->gpio8,9,10,11, gale 2018-3-14*/
-	spi_5: spi@78b9000 { 
-		compatible = "qcom,spi-qup-v2";
-		#address-cells = <1>;
-		#size-cells = <0>;
-		reg-names = "spi_physical", "spi_bam_physical";
-		reg = <0x78b9000 0x600>,
-		      <0x7884000 0x2b000>;
-		interrupt-names = "spi_irq", "spi_bam_irq";
-		interrupts = <0 99 0>, <0 238 0>;
-		spi-max-frequency = <19200000>;
-		pinctrl-names = "spi_default", "spi_sleep";
-		pinctrl-0 = <&spi5_default &spi5_cs0_active>;
-		pinctrl-1 = <&spi5_sleep &spi5_cs0_sleep>;
-		clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
-			 <&clock_gcc clk_gcc_blsp1_qup5_spi_apps_clk>;
-		clock-names = "iface_clk", "core_clk";
-		qcom,infinite-mode = <0>;
-		qcom,use-bam;
-		qcom,use-pinctrl;
-		qcom,ver-reg-exists;
-		qcom,bam-consumer-pipe-index = <20>;
-		qcom,bam-producer-pipe-index = <21>;
-		qcom,master-id = <86>;
-		status = "disabled";
-	};
-	/*End:Add spi3, spi5 node, gale 2018-3-14*/ 
-	 
 		/*BLSP QUP6*/
 	spi_6: spi@78ba000 { 
 		compatible = "qcom,spi-qup-v2";
