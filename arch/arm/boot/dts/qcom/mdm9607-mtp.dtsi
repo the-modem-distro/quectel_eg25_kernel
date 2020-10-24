@@ -154,7 +154,7 @@
 						/*&sdc1_wlan_gpio_sleep*/>;
 	/* qcom,nonremovable; */
 	qcom,core_3_0v_support;
-	status = "ok";
+	status = "disabled";
 };
 
 &pm8019_gpios {
@@ -206,5 +206,5 @@
 	pinctrl-0 = <&sdc2_clk_on &sdc2_cmd_on &sdc2_data_on &sdc2_cd_on>;
 	pinctrl-1 = <&sdc2_clk_off &sdc2_cmd_off &sdc2_data_off>;
 
-	status = "ok";
+	status = "disabled";
 };
