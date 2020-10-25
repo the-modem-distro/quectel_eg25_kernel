@@ -24,7 +24,31 @@
 	interrupt-parent = <&intc>;
 
 	aliases {
+		/* SMDTTY */
+		smd7 = &smdtty_data1;
+		smd8 = &smdtty_data4;
+		smd9 = &smdtty_data2;
+		// SMD11 removed to be used by USB AT port */
+		/*smd11 = &smdtty_data11;*/ 
+		smd21 = &smdtty_data21;
+		smd36 = &smdtty_loopback;
+		
+        /* UART */
+ 		uart0 = &blsp1_uart3; // /dev/ttyHS0
+ 		uart1 = &blsp1_uart5; // /dev/ttyHSL0
+		
+		/* SPI */
+		spi6  = &spi_6;
+		
+		/* i2c */
+		i2c2 = &i2c_2; // Quectel stub driver here
+		i2c4 = &i2c_4;
+
+		/* SDIO */
 		sdhc1 = &sdhc_1;/* SDC1 for SDIO slot */
+		sdhc2 = &sdhc_2; /* SDC2 SD card slot */
+
+		/* NAND */
 		qpic_nand1 = &qnand_1;
 	};
 
@@ -37,19 +61,21 @@
 			compatible = "removed-dma-pool";
 			no-map-fixup;
 			/* will.shao, add modem memory */
-			 reg = <0x82a00000 0x5000000>; 
+			reg = <0x82a00000 0x5300000>;
 		};
 
+		/* I'll keep the reserved memory for a while,
+	   but if it's not needed by anything this must go */
 		cnss_debug_mem: cnss_debug_region@0 {
 			compatible = "removed-dma-pool";
 			no-map;
-			reg = <0x87a00000 0x200000>;
+			reg = <0x87d00000 0x200000>;
 		};
 
 		external_image_mem: external_image_region@0 {
 			compatible = "removed-dma-pool";
 			no-map;
-			reg = <0x87c00000 0x400000>;
+			reg = <0x87f00000 0x400000>;
 		};
 
 		audio_mem: audio_region@0 {
@@ -66,28 +92,6 @@
 			size = <0x0400000>;
 			status = "disabled";
 		};
-	};
-
-	aliases {
-		/* smdtty devices */
-		smd7 = &smdtty_data1;
-		smd8 = &smdtty_data4;
-		smd9 = &smdtty_data2;
-		/*smd11 = &smdtty_data11;*/ /*modified by max.tang@20160118. del Data11 from APP to be used by second USB AT port*/
-		smd21 = &smdtty_data21;
-		smd36 = &smdtty_loopback;
-		/*Add spi3, spi5 node, gale 2018-3-14
-		* according to AG35 Hardware Design, support three spi, spi_6 is actived,
-		* and spi_3, spi_5 is inactived by default, user could enable it.
-		*/
-        /* uart device */
- 		uart0 = &blsp1_uart3;	//main uart
- 		uart1 = &blsp1_uart5;
-
-		spi6  = &spi_6;
-		i2c2 = &i2c_2;
-		i2c4 = &i2c_4;
-		sdhc2 = &sdhc_2; /* SDC2 SD card slot */
 	};
 
 	cpus {
@@ -674,9 +678,11 @@
 		status = "disabled";
 	};
 
+	/* I'll keep the reserved memory for a while,
+	   but if it's not needed by anything this must go */
 	qcom,cnss-sdio {
 		compatible = "qcom,cnss_sdio";
-		reg = <0x87a00000 0x200000>;
+		reg = <0x87d00000 0x200000>;
 		reg-names = "ramdump";
 		subsys-name = "AR6320";
 		/* To enable PIN PM_ENABLE_WIFI dynamicly in dbgfs /sys/kernel/debug/regulator/rome_vreg, gale 2018-04-01 */
@@ -685,6 +691,7 @@
 		/*vdd-wlan-dsrc-supply = <&sdcard_ext_vreg>;*/
 		vdd-wlan-io-supply = <&mdm9607_l11>;
 		vdd-wlan-xtal-supply = <&mdm9607_l2>;
+		status = "disabled";
 	};
 
 	usb_otg: usb@78d9000 {
@@ -1810,7 +1817,7 @@
 		pinctrl-3 = <&emac0_ephy_sleep>;
 		qcom,emac-tstamp-en;
 		qcom,emac-ptp-frac-ns-adj = <125000000 1>;
-		status = "disable";
+		status = "disabled";
 
 		phy0: ethernet-phy@0 {
 			reg = <0>;

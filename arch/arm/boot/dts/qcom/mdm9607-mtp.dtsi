@@ -88,7 +88,7 @@
 };
 
 &emac0 {
-	status = "ok";
+	status = "disabled";
 };
 
 //maxcodeflag20160329
