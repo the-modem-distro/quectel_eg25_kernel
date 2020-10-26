@@ -73,3 +73,6 @@ obj-$(CONFIG_MEMORY_STATE_TIME) += memory_state_time.o
 obj-$(CONFIG_APDS9930)		+= apds993x.o
 obj-$(CONFIG_UID_SYS_STATS) += uid_sys_stats.o
 obj-$(CONFIG_MEMORY_STATE_TIME) += memory_state_time.o
+#2016-01-29,add by jun.wu, for power manager
+obj-$(CONFIG_QUECTEL_POWER_MANAGER)	+= quectel_power_manager.o
+#end jun.wu

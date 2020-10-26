@@ -1842,25 +1842,10 @@
 //2016-01-29,add by jun.wu, for quectel power manager
 	quec,quectel-power-manager{
 		compatible = "quec,quectel-power-manager";	
-
-		//gpios = <&tlmm_pinmux 74  0>,		/* DTR */	
-		//		<&tlmm_pinmux 42 0>,		/* WAKEUP-IN*/
-		//		<&tlmm_pinmux 25 0>;		/* SLEEP-IND*/
-		//quec,gpio-names = "dtr", "wakeup_in", "sleep_ind";	
-
-		/*pinctrl-names = "default";
-		pinctrl-0 = <&quectel_power_wakeup_in
-				&quectel_power_sleep_ind>;*/
-
-		/*
-		pinctrl-names = "default", "idle";
-		pinctrl-0 = <&quec_gpio_sleep_state_active
-					 &quec_gpio_wakeup_active
-					 &quec_gpio_dtr_active>
-		pinctrl-1 = <&quec_gpio_sleep_state_idle
-					 &quec_gpio_wakeup_idle
-					 &quec_gpio_dtr_idle>
-		*/
+		gpios = <&tlmm_pinmux 74  0>,		/* DTR */	
+				<&tlmm_pinmux 42 0>,		/* WAKEUP-IN*/
+				<&tlmm_pinmux 25 0>;		/* SLEEP-IND*/
+		quec,gpio-names = "dtr", "wakeup_in", "sleep_ind";	
 	};
 
 	//2017-10-10,add by gale, for quectel low consume, legacy(Not REcommend)
@@ -1878,11 +1863,6 @@
 		status = "disabled";			/* disable by default */
 	};
 
-	//2018-5-12,add by gale, for quectel low consume v2(Not Recommend)
-	quec,quectel-low-consume-v2{
-			compatible = "quec,quectel-low-consume-v2";
-			status = "ok";
-	};
 
 	quec,ql_lpm{
 		compatible = "quec,ql_lpm";
