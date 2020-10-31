@@ -60,8 +60,7 @@
 		modem_adsp_mem: modem_adsp_region@0 {
 			compatible = "removed-dma-pool";
 			no-map-fixup;
-			/* will.shao, add modem memory */
-			reg = <0x82a00000 0x5300000>;
+			reg = <0x82a00000 0x5000000>;
 		};
 
 		/* I'll keep the reserved memory for a while,
@@ -69,13 +68,13 @@
 		cnss_debug_mem: cnss_debug_region@0 {
 			compatible = "removed-dma-pool";
 			no-map;
-			reg = <0x87d00000 0x200000>;
+			reg = <0x87a00000 0x200000>;
 		};
 
 		external_image_mem: external_image_region@0 {
 			compatible = "removed-dma-pool";
 			no-map;
-			reg = <0x87f00000 0x400000>;
+			reg = <0x87c00000 0x400000>;
 		};
 
 		audio_mem: audio_region@0 {
@@ -682,7 +681,7 @@
 	   but if it's not needed by anything this must go */
 	qcom,cnss-sdio {
 		compatible = "qcom,cnss_sdio";
-		reg = <0x87d00000 0x200000>;
+		reg = <0x87a00000 0x200000>;
 		reg-names = "ramdump";
 		subsys-name = "AR6320";
 		/* To enable PIN PM_ENABLE_WIFI dynamicly in dbgfs /sys/kernel/debug/regulator/rome_vreg, gale 2018-04-01 */
@@ -1840,12 +1839,20 @@
 		status = "okay";
 	};
 //2016-01-29,add by jun.wu, for quectel power manager
+/* Pinout doesn't match what production kernel does.
+ * Reality seems to be:
+	- Pin 5: DTR
+	- Pin 25: Wakeup_in
+	- Pin 74: Sleep_ind
+ * So let's assume their kernel is what is right.
+ */
 	quec,quectel-power-manager{
 		compatible = "quec,quectel-power-manager";	
-		gpios = <&tlmm_pinmux 74  0>,		/* DTR */	
-				<&tlmm_pinmux 42 0>,		/* WAKEUP-IN*/
-				<&tlmm_pinmux 25 0>;		/* SLEEP-IND*/
+		gpios = <&tlmm_pinmux 5  0>,		/* DTR */	
+				<&tlmm_pinmux 25 0>,		/* WAKEUP-IN*/
+				<&tlmm_pinmux 74 0>;		/* SLEEP-IND*/
 		quec,gpio-names = "dtr", "wakeup_in", "sleep_ind";	
+		pinctrl-names = "default", "idle";
 	};
 
 	//2017-10-10,add by gale, for quectel low consume, legacy(Not REcommend)
