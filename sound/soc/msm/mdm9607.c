@@ -2696,8 +2696,8 @@ static int mdm_asoc_machine_probe(struct platform_device *pdev)
 					__func__, q6_state);
 		return -EPROBE_DEFER;
 	}
-
-	if (!pdev->dev.of_node) {
+	printk("%s: Ready for machine probe \n");
+	if (!pdev->dev.of_node) { 
 		dev_err(&pdev->dev,
 			"%s No platform supplied from device tree\n", __func__);
 
