@@ -48,6 +48,7 @@ struct quectel_power_manager {
 	char wakeup_source[32];
 	struct platform_device *pdev;
 	struct delayed_work sysfs_notify_work;
+	struct delayed_work sysfs_dtr_notify_work;
 	atomic_t notify_wakeup_in;
 	atomic_t notify_dtr_in;
 	atomic_t notify_dtr_state;
