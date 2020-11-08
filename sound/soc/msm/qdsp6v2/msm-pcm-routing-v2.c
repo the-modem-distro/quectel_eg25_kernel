@@ -45,8 +45,6 @@
 #include "q6voice.h"
 #include "sound/q6lsm.h"
 
-#define QUECTEL_UAC_FEATURE
-
 static int get_cal_path(int path_type);
 
 static struct mutex routing_lock;
@@ -1805,28 +1803,6 @@ static int msm_routing_get_voice_mixer(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-#ifdef QUECTEL_UAC_FEATURE
-static void disable_mixer(struct snd_soc_dapm_context *dapm, char* name) {
-	struct snd_ctl_elem_id id = {0};
-	struct snd_kcontrol* kctl;
-	struct snd_card *card = dapm->card->snd_card;
-	
-	id.iface = SNDRV_CTL_ELEM_IFACE_MIXER;
-	strncpy(id.name,name, sizeof(id.name));
-	
-	kctl = snd_ctl_find_id(card, &id);
-
-	if (kctl) {
-		struct soc_mixer_control *mc =
-			(struct soc_mixer_control *)kctl->private_value;
-
-		if (test_bit(mc->shift, &msm_bedais[mc->reg].fe_sessions)) {
-			msm_pcm_routing_process_voice(mc->reg, mc->shift, 0);
-			snd_soc_dapm_mixer_update_power(dapm, kctl, 0, NULL);
-		}
-	}
-}
-#endif
 static int msm_routing_put_voice_mixer(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
@@ -1836,22 +1812,7 @@ static int msm_routing_put_voice_mixer(struct snd_kcontrol *kcontrol,
 	struct soc_mixer_control *mc =
 		(struct soc_mixer_control *)kcontrol->private_value;
 	struct snd_soc_dapm_update *update = NULL;
-#ifdef QUECTEL_UAC_FEATURE
-	if (ucontrol->value.integer.value[0] 
-			&& (mc->shift == MSM_FRONTEND_DAI_CS_VOICE || mc->shift == MSM_FRONTEND_DAI_VOLTE)) {
-		if (mc->reg == MSM_BACKEND_DAI_SEC_AUXPCM_RX || mc->reg == MSM_BACKEND_DAI_SEC_AUXPCM_TX) {
-			disable_mixer(widget->dapm, "AFE_PCM_RX_Voice Mixer CSVoice");
-			disable_mixer(widget->dapm, "Voice_Tx Mixer AFE_PCM_TX_Voice");
-			disable_mixer(widget->dapm, "AFE_PCM_RX_Voice Mixer VoLTE");
-			disable_mixer(widget->dapm, "VoLTE_Tx Mixer AFE_PCM_TX_VoLTE");
-		} else if (mc->reg == MSM_BACKEND_DAI_AFE_PCM_RX || mc->reg == MSM_BACKEND_DAI_AFE_PCM_TX) {
-			disable_mixer(widget->dapm, "SEC_AUX_PCM_RX_Voice Mixer CSVoice");
-			disable_mixer(widget->dapm, "Voice_Tx Mixer SEC_AUX_PCM_TX_Voice");
-			disable_mixer(widget->dapm, "SEC_AUX_PCM_RX_Voice Mixer VoLTE");
-			disable_mixer(widget->dapm, "VoLTE_Tx Mixer SEC_AUX_PCM_TX_VoLTE");
-		}
-	}
-#endif
+
 	if (ucontrol->value.integer.value[0]) {
 		msm_pcm_routing_process_voice(mc->reg, mc->shift, 1);
 		snd_soc_dapm_mixer_update_power(widget->dapm, kcontrol, 1, update);
@@ -10912,6 +10873,7 @@ static const struct snd_soc_dapm_widget msm_qdsp6_widgets[] = {
 				&hfp_aux_switch_mixer_controls),
 	SND_SOC_DAPM_SWITCH("HFP_INT_UL_HL", SND_SOC_NOPM, 0, 0,
 				&hfp_int_switch_mixer_controls),
+
 	SND_SOC_DAPM_MUX("SLIM_0_RX AANC MUX", SND_SOC_NOPM, 0, 0,
 			aanc_slim_0_rx_mux),
 	/* Mixer definitions */
@@ -13972,7 +13934,6 @@ static struct snd_pcm_ops msm_routing_pcm_ops = {
 /* Not used but frame seems to require it */
 static int msm_routing_probe(struct snd_soc_platform *platform)
 {
-	printk("%s: begin \n", __func__);
 	snd_soc_dapm_new_controls(&platform->component.dapm, msm_qdsp6_widgets,
 			   ARRAY_SIZE(msm_qdsp6_widgets));
 	snd_soc_dapm_add_routes(&platform->component.dapm, intercon,
@@ -14025,9 +13986,6 @@ static int msm_routing_probe(struct snd_soc_platform *platform)
 
 	snd_soc_add_platform_controls(platform, aptx_dec_license_controls,
 					ARRAY_SIZE(aptx_dec_license_controls));
-	
-	printk("%s: finish and get out \n", __func__);
-
 	return 0;
 }
 
