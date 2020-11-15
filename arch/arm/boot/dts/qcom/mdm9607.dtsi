@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -15,8 +15,6 @@
 #include <dt-bindings/clock/mdm-clocks-9607.h>
 #include <dt-bindings/clock/msm-clocks-a7.h>
 #include <dt-bindings/regulator/qcom,rpm-smd-regulator.h>
-#include <dt-bindings/interrupt-controller/irq.h>
-
 
 / {
 	model = "Qualcomm Technologies, Inc. MDM 9607";
@@ -376,18 +374,6 @@
 		status = "disabled";
 	};
 
-/*
-	blsp1_uart5: serial@78b3000 {  // BLSP1 UART5
-		compatible = "qcom,msm-lsuart-v14";
-		reg = <0x78b3000 0x200>;
-		interrupts = <0 121 0>;
-		clocks = <&clock_gcc clk_gcc_blsp1_uart5_apps_clk>,
-			 <&clock_gcc clk_gcc_blsp1_ahb_clk>;
-		clock-names = "core_clk", "iface_clk";
-		status = "disabled";
-	};
-*/
-
 	/* UART6: add gpio20,21 uart6 by gale */  
 	blsp1_uart6: serial@78b4000 { /* BLSP1 UART6 */
 		compatible = "qcom,msm-lsuart-v14";
@@ -432,8 +418,10 @@
 			<&dma_blsp1 15 32 0x20000020 0x20>;
 		dma-names = "tx", "rx";
 		status = "disabled";
-		i2sraw_codec@1{
-			compatible = "qcom,i2sraw-codec";
+
+
+		quec_stub_codec@1{
+			compatible = "quec,quec-stub-i2c";
 			reg = <0x01>;
 		};
 	};
@@ -462,9 +450,9 @@
 			<&dma_blsp1 19 32 0x20000020 0x20>;
 		dma-names = "tx", "rx";
 		status = "disabled";
-
-/*		wcd9xxx_tomtom_codec@0d{
-			status = "disabled";
+	
+		/* 2016-02-26, comment out by jun.wu, for sound card
+		wcd9xxx_tomtom_codec@0d{
 			compatible = "qcom,wcd9xxx-i2c";
 			reg = <0x0d>;
 
@@ -595,9 +583,10 @@
 		wcd9xxx_codec@55{
 			compatible = "qcom,wcd9xxx-i2c";
 			reg = <0x55>;
-		};*/
+		};
 
-	
+		*/
+		//end jun.wu
 	};
 
 	blsp1_uart3: uart@78b1000 {
@@ -605,17 +594,17 @@
 		reg = <0x78b1000 0x200>,
 			<0x7884000 0x2b000>;
 		reg-names = "core_mem", "bam_mem";
-		//interrupt-names = "core_irq", "bam_irq", "wakeup_irq"; //disable uart rx wakeup source
-		interrupt-names = "core_irq", "bam_irq";
+		interrupt-names = "core_irq", "bam_irq", "wakeup_irq"; //disable uart rx wakeup source
+		//interrupt-names = "core_irq", "bam_irq";
 		#address-cells = <0>;
 		interrupt-parent = <&blsp1_uart3>;
-		//interrupts = <0 1 2>;
-		interrupts = <0 1>; 			//disable uart rx wakeup source
+		interrupts = <0 1 2>;
+		//interrupts = <0 1>; 			//disable uart rx wakeup source
 		#interrupt-cells = <1>;
 		interrupt-map-mask = <0xffffffff>;
 		interrupt-map = <0 &intc 0 119 0
-				1 &intc 0 238 0>;
-				//2 &tlmm_pinmux 1 0>; 	//disable uart rx wakeup source
+				1 &intc 0 238 0
+				2 &tlmm_pinmux 1 0>; 	//disable uart rx wakeup source
 
 		//qcom,inject-rx-on-wakeup;		//disable uart rx wakeup source
 		//qcom,rx-char-to-inject = <0xFD>;	//disable uart rx wakeup source
@@ -635,7 +624,7 @@
 		qcom,msm-bus,vectors-KBps =
 				<86 512 0 0>,
 				<86 512 500 800>;
-		status = "disabled";
+		status = "ok";
 	};
 
    /* larryzhang-20190225:The default is high speed for BLSP1_UART5(gpio8,9,10,11)*/
@@ -713,7 +702,7 @@
 
 		qcom,hsusb-otg-phy-type = <3>; /* SNPS Femto PHY */
 		qcom,hsusb-otg-mode = <1>; /* peripheral mode ivan 20160104 change 3-->1 solved the USB not working problem*/
-        qcom,hsusb-otg-default-mode=<1>; /* peripheral mode ivan 20160104 add  solved the USB not working problem*/
+                qcom,hsusb-otg-default-mode=<1>; /* peripheral mode ivan 20160104 add  solved the USB not working problem*/
 		qcom,hsusb-otg-otg-control = <3>; /* USR control ivan 20160104 change 2-->3 solved the USB not working problem*/
 		qcom,usbid-gpio = <&pm8019_mpps 1 0>;
 		qcom,hsusb-log2-itc = <4>;
@@ -945,20 +934,22 @@
 		qcom,temp2-offset = <1 (-2) 8 (-5) (-4)>;
 	};
 
-	/* 2016-02-26, comment out by jun.wu, for sound card */
-/*	wcd9xxx_intc: wcd9xxx-irq {
+	/* 2016-02-26, comment out by jun.wu, for sound card
+	wcd9xxx_intc: wcd9xxx-irq {
 		compatible = "qcom,wcd9xxx-irq";
 		interrupt-controller;
 		#interrupt-cells = <1>;
 		interrupt-parent = <&tlmm_pinmux>;
 		qcom,gpio-connect = <&tlmm_pinmux 75 0>;
 		interrupt-names = "cdc-int";
-	}; */
+	};
+	*/
 
-	sound {
+	sound{
 		compatible = "qcom,mdm9607-audio-tomtom";
 		qcom,model = "mdm9607-tomtom-i2s-snd-card";
-
+	
+		/*2016-03-28, comment out by jun.wu,this codec is use to config WCD codec which we don't use
 		qcom,audio-routing =
 			"RX_BIAS", "MCLK",
 			"LDO_H", "MCLK",
@@ -976,21 +967,20 @@
 			"MIC BIAS1 External", "Digital Mic1",
 			"DMIC3", "MIC BIAS3 External",
 			"MIC BIAS3 External", "Digital Mic3";
+		*/
 
 		qcom,codec-mclk-clk-freq = <12288000>;
-		qcom,prim_mi2s_aux_master = <&prim_master>;
-		qcom,prim_mi2s_aux_slave = <&prim_slave>;
-		qcom,sec_mi2s_aux_master = <&sec_master>;
-		qcom,sec_mi2s_aux_slave = <&sec_slave>;
+		qcom,mi2s-interface-mode = "pri_mi2s_master", "sec_mi2s_master";
+		qcom,auxpcm-interface-mode = "pri_pcm_master", "sec_pcm_master";
 		asoc-platform = <&pcm0>, <&pcm1>, <&voip>, <&voice>,
 				<&loopback>, <&hostless>, <&afe>, <&routing>,
-				<&pcm_dtmf>, <&host_pcm>, <&compress>;
+				<&pcm_dtmf>, <&pcm_dsp_dtmf>, <&host_pcm>;
 		asoc-platform-names = "msm-pcm-dsp.0", "msm-pcm-dsp.1",
 				"msm-voip-dsp", "msm-pcm-voice",
 				"msm-pcm-loopback", "msm-pcm-hostless",
 				"msm-pcm-afe", "msm-pcm-routing",
-				"msm-pcm-dtmf", "msm-voice-host-pcm",
-				"msm-compress-dsp";
+				"msm-pcm-dtmf", "msm-pcm-dsp-dtmf",
+				"msm-voice-host-pcm";
 		asoc-cpu = <&dai_pri_auxpcm>, <&dai_sec_auxpcm>,
 				<&mi2s_prim>, <&mi2s_sec>, <&dtmf_tx>,
 				<&rx_capture_tx>, <&rx_playback_rx>,
@@ -1009,6 +999,7 @@
 		asoc-codec = <&stub_codec>;
 		asoc-codec-names = "msm-stub-codec.1";
 	};
+
 	sound-9306 {
 		compatible = "qcom,mdm9607-audio-tapan";
 		qcom,model = "mdm9607-tapan-i2s-snd-card";
@@ -1036,19 +1027,17 @@
 			"MIC BIAS3 External", "Digital Mic4";
 
 		qcom,codec-mclk-clk-freq = <12288000>;
-		qcom,prim_mi2s_aux_master = <&prim_master>;
-		qcom,prim_mi2s_aux_slave = <&prim_slave>;
-		qcom,sec_mi2s_aux_master = <&sec_master>;
-		qcom,sec_mi2s_aux_slave = <&sec_slave>;
+		qcom,mi2s-interface-mode = "pri_mi2s_master", "sec_mi2s_master";
+		qcom,auxpcm-interface-mode = "pri_pcm_master", "sec_pcm_master";
 		asoc-platform = <&pcm0>, <&pcm1>, <&voip>, <&voice>,
 				<&loopback>, <&hostless>, <&afe>, <&routing>,
-				<&pcm_dtmf>, <&host_pcm>, <&compress>;
+				<&pcm_dtmf>, <&pcm_dsp_dtmf>, <&host_pcm>;
 		asoc-platform-names = "msm-pcm-dsp.0", "msm-pcm-dsp.1",
 				"msm-voip-dsp", "msm-pcm-voice",
 				"msm-pcm-loopback", "msm-pcm-hostless",
 				"msm-pcm-afe", "msm-pcm-routing",
-				"msm-pcm-dtmf", "msm-voice-host-pcm",
-				"msm-compress-dsp";
+				"msm-pcm-dtmf", "msm-pcm-dsp-dtmf",
+				"msm-voice-host-pcm";
 		asoc-cpu = <&dai_pri_auxpcm>, <&dai_sec_auxpcm>,
 				<&mi2s_prim>, <&mi2s_sec>, <&dtmf_tx>,
 				<&rx_capture_tx>, <&rx_playback_rx>,
@@ -1133,11 +1122,6 @@
 		compatible = "qcom,msm-pcm-loopback";
 	};
 
-	compress: qcom,msm-compress-dsp {
-		compatible = "qcom,msm-compress-dsp";
-		qcom,adsp-version = "MDSP 2.8";
-	};
-
 	 qcom,msm-dai-stub {
 		compatible = "qcom,msm-dai-stub";
 		dtmf_tx: qcom,msm-dai-stub-dtmf-tx {
@@ -1208,20 +1192,37 @@
 		compatible = "qcom,msm-pcm-dtmf";
 	};
 
+	pcm_dsp_dtmf: qcom,msm-pcm-dsp-dtmf {
+		compatible = "qcom,msm-pcm-dsp-dtmf";
+	};
+
+	pcm_dtmf_detect: qcom,msm-dtmf-detect {
+		compatible = "qcom,msm-dtmf-detect";
+	};
+
 	dai_pri_auxpcm: qcom,msm-pri-auxpcm {
 		compatible = "qcom,msm-auxpcm-dev";
 		qcom,msm-cpudai-auxpcm-mode = <0>, <0>;
 		qcom,msm-cpudai-auxpcm-sync = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-frame = <5>, <5>;
+		qcom,msm-cpudai-auxpcm-frame = <5>, <4>;
 		qcom,msm-cpudai-auxpcm-quant = <2>, <2>;
 		qcom,msm-cpudai-auxpcm-num-slots = <1>, <1>;
 		qcom,msm-cpudai-auxpcm-slot-mapping = <1>, <1>;
 		qcom,msm-cpudai-auxpcm-data = <0>, <0>;
-		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <4096000>;
+		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <4096000>;	//for pcm 16k, clock rate nede 4096000
 		qcom,msm-auxpcm-interface = "primary";
-		qcom,msm-cpudai-afe-clk-ver = <2>;
+		/*pinctrl-names = "default", "idle";
+			pinctrl-0 = <&pri_auxpcm_ws_active
+					&pri_auxpcm_sck_active
+					&pri_auxpcm_dout_active
+					&pri_auxpcm_din_active>;
+			pinctrl-1 = <&pri_auxpcm_ws_sleep
+					&pri_auxpcm_sck_sleep
+					&pri_auxpcm_dout_sleep
+					&sec_auxpcm_din_sleep>;*/
 	};
 
+	//2016-03-07, add by ju.wu
 	dai_sec_auxpcm: qcom,msm-sec-auxpcm {
 		compatible = "qcom,msm-auxpcm-dev";
 		qcom,msm-cpudai-auxpcm-mode = <0>, <0>;
@@ -1232,18 +1233,19 @@
 		qcom,msm-cpudai-auxpcm-slot-mapping = <1>, <1>;
 		qcom,msm-cpudai-auxpcm-data = <0>, <0>;
 		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <4096000>;
-		qcom,msm-auxpcm-interface = "secondary";
 		qcom,msm-cpudai-afe-clk-ver = <2>;
-	/*	pinctrl-names = "default", "idle";
-		pinctrl-0 = <&sec_ws_active_master
-				&sec_sck_active_master
-				&sec_dout_active
-				&sec_din_active>;
-		pinctrl-1 = <&sec_ws_sleep
-				&sec_sck_sleep
-				&sec_dout_sleep
-				&sec_din_sleep>;*/
+		qcom,msm-auxpcm-interface = "secondary";
+		pinctrl-names = "default", "idle";
+			pinctrl-0 = <&sec_auxpcm_ws_active
+					&sec_auxpcm_sck_active
+					&sec_auxpcm_dout_active
+					&sec_auxpcm_din_active>;
+			pinctrl-1 = <&sec_auxpcm_ws_sleep
+					&sec_auxpcm_sck_sleep
+					&sec_auxpcm_dout_sleep
+					&sec_auxpcm_din_sleep>;
 	};
+	//end jun.wu
 
 	qcom,msm-dai-mi2s {
 		compatible = "qcom,msm-dai-mi2s";
@@ -1253,72 +1255,39 @@
 			qcom,msm-mi2s-rx-lines = <2>;
 			qcom,msm-mi2s-tx-lines = <1>;
 			pinctrl-names = "default", "idle";
-
+			//comment out by cullen
+			/*pinctrl-0 = <&pri_mi2s_ws_active
+					&pri_mi2s_sck_active
+					&pri_mi2s_dout_active
+					&pri_mi2s_din_active>;
+			pinctrl-1 = <&pri_mi2s_ws_sleep
+					&pri_mi2s_sck_sleep
+					&pri_mi2s_dout_sleep
+					&pri_mi2s_din_sleep>;
+		   */	
 		};
+		// 2017-09-11, eddy.qin
 		mi2s_sec: qcom,msm-dai-q6-mi2s-sec {
 			compatible = "qcom,msm-dai-q6-mi2s";
 			qcom,msm-dai-q6-mi2s-dev-id = <1>;
 			qcom,msm-mi2s-rx-lines = <2>;
 			qcom,msm-mi2s-tx-lines = <1>;
+			/*
+			pinctrl-names = "default", "idle";
+			pinctrl-0 = <&sec_mi2s_ws_active
+					&sec_mi2s_sck_active
+					&sec_mi2s_dout_active
+					&sec_mi2s_din_active>;
+			pinctrl-1 = <&sec_mi2s_ws_sleep
+					&sec_mi2s_sck_sleep
+					&sec_mi2s_dout_sleep
+					&sec_mi2s_din_sleep>;
+		 */	
+			
 		};
+		// end eddy.qin
 	};
 
-	prim_master: prim_master_pinctrl {
-		compatible = "qcom,wcd-gpio-ctrl";
-		pinctrl-names = "aud_active", "aud_sleep";
-		pinctrl-0 = <&pri_ws_active_master
-				&pri_sck_active_master
-				&pri_dout_active
-				&pri_din_active>;
-		pinctrl-1 = <&pri_ws_sleep
-				&pri_sck_sleep
-				&pri_dout_sleep
-				&pri_din_sleep>;
-		qcom,mi2s-auxpcm-cdc-gpios;
-	};
-
-	prim_slave: prim_slave_pinctrl {
-		compatible = "qcom,wcd-gpio-ctrl";
-		pinctrl-names = "aud_active", "aud_sleep";
-		pinctrl-0 = <&pri_ws_active_slave
-				&pri_sck_active_slave
-				&pri_dout_active
-				&pri_din_active>;
-		pinctrl-1 = <&pri_ws_sleep
-				&pri_sck_sleep
-				&pri_dout_sleep
-				&pri_din_sleep>;
-		qcom,mi2s-auxpcm-cdc-gpios;
-	};
-
-	sec_master: sec_master_pinctrl {
-		compatible = "qcom,wcd-gpio-ctrl";
-		pinctrl-names = "aud_active", "aud_sleep";
-		pinctrl-0 = <&sec_ws_active_master
-				&sec_sck_active_master
-				&sec_dout_active
-				&sec_din_active>;
-		pinctrl-1 = <&sec_ws_sleep
-				&sec_sck_sleep
-				&sec_dout_sleep
-				&sec_din_sleep>;
-		qcom,mi2s-auxpcm-cdc-gpios;
-	};
-
-	sec_slave: sec_slave_pinctrl {
-		compatible = "qcom,wcd-gpio-ctrl";
-		pinctrl-names = "aud_active", "aud_sleep";
-		pinctrl-0 = <&sec_ws_active_slave
-				&sec_sck_active_slave
-				&sec_dout_active
-				&sec_din_active>;
-		pinctrl-1 = <&sec_ws_sleep
-				&sec_sck_sleep
-				&sec_dout_sleep
-				&sec_din_sleep>;
-		qcom,mi2s-auxpcm-cdc-gpios;
-	};
-	
 	qcom,msm-thermal {
 		compatible = "qcom,msm-thermal";
 		qcom,sensor-id = <4>;
@@ -1857,8 +1826,6 @@
 		gpios = <&tlmm_pinmux 53 0>;
 		status = "okay";
 	};
-
-	
 //2016-01-29,add by jun.wu, for quectel power manager
 /* Pinout doesn't match what production kernel does.
  * Reality seems to be:
