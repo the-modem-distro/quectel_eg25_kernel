@@ -45,13 +45,15 @@ struct quectel_power_manager {
 	int wakeup_flag;
 	int irq_dtr;
 	int dtr_flag;
+	int sleep_polarity;
+	int wakeup_in_polarity;
+	int wakeup_enable;
 	char wakeup_source[32];
 	struct platform_device *pdev;
 	struct delayed_work sysfs_notify_work;
 	struct delayed_work sysfs_dtr_notify_work;
 	atomic_t notify_wakeup_in;
 	atomic_t notify_dtr_in;
-	atomic_t notify_dtr_state;
 	struct wake_lock wlock_dtr;
 	struct wake_lock wlock_wakeup;
 	struct quectel_power_manager_pdata *pdata;
