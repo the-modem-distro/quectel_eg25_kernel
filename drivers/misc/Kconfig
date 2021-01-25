@@ -613,13 +613,6 @@ config MEMORY_STATE_TIME
 	help
 	  Memory time statistics exported to /sys/kernel/memory_state_time
 
-#2016-01-29, add by jun.wu, for power manager
-config QUECTEL_POWER_MANAGER
-	bool "add quectel_power_manager"
-	default y
-#end jun.wu
-
-
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
