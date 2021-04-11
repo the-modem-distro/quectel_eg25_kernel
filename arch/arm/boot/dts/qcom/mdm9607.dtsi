@@ -360,9 +360,7 @@
 				<  800000 >,
 				<  998400 >,
 				< 1094400 >,
-				< 1190400 >,
-				< 1248000 >,
-				< 1305600 >;
+				< 1190400 >;
 	};
 
 	qcom,sps {
@@ -1291,6 +1289,11 @@
 		compatible = "qcom,msm-thermal";
 		qcom,sensor-id = <4>;
 		qcom,poll-ms = <250>;
+		qcom,core-limit-temp = <60>; // Limit at 60C
+		qcom,core-temp-hysteresis = <10>;
+
+		qcom,core-reset-temp = <78>; // Reset at 78C
+		qcom,therm-reset-temp = <78>; // Reset at 78C
 		qcom,limit-temp = <60>;
 		qcom,temp-hysteresis = <10>;
 		qcom,freq-step = <2>;
