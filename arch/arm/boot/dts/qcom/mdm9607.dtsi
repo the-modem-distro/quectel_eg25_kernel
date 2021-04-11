@@ -28,6 +28,7 @@
 		smd7 = &smdtty_data1;
 		smd8 = &smdtty_data4;
 		smd9 = &smdtty_data2;
+		smd10 = &smdtty_data3; // this works?
 		// SMD11 removed to be used by USB AT port */
 		smd11 = &smdtty_data11; 
 		smd21 = &smdtty_data21;
@@ -41,7 +42,7 @@
 		spi6  = &spi_6;
 		
 		/* i2c */
-		i2c2 = &i2c_2; // Quectel stub driver here
+		i2c2 = &i2c_2;
 		i2c4 = &i2c_4;
 
 		/* SDIO */
@@ -665,8 +666,6 @@
 		status = "disabled";
 	};
 
-	/* I'll keep the reserved memory for a while,
-	   but if it's not needed by anything this must go */
 	qcom,cnss-sdio {
 		compatible = "qcom,cnss_sdio";
 		reg = <0x87a00000 0x200000>;
@@ -1441,23 +1440,22 @@
 		smdtty_data1: qcom,smdtty-data1 {
 			qcom,smdtty-remote = "modem";
 			qcom,smdtty-port-name = "DATA1";
-			quectel,smdtty-writeable = "0";
+		};
+
+		smdtty_data2: qcom,smdtty-data2 {
+ 			qcom,smdtty-remote = "modem";
+			qcom,smdtty-port-name = "DATA2";
+		};
+
+		smdtty_data3: qcom,smdtty-data3 {
+			qcom,smdtty-remote = "modem";
+			qcom,smdtty-port-name = "DATA3";
 		};
 
 		smdtty_data4: qcom,smdtty-data4 {
 			qcom,smdtty-remote = "modem";
 			qcom,smdtty-port-name = "DATA4";
 		};
-
-		/** add by tyler.kuang@20180511 start : for mcm atcop */
-		smdtty_data2: qcom,smdtty-data2 {
- 			qcom,smdtty-remote = "modem";
-			qcom,smdtty-port-name = "DATA2";
-		};
-		/** add by tyler.kuang@20180511 end */
-
-
-/*modified by max.tang@20160118. del Data11 from APP to be used by second USB AT port*/
 
 		smdtty_data11: qcom,smdtty-data11 {
 			qcom,smdtty-remote = "modem";
@@ -1826,45 +1824,7 @@
 		gpios = <&tlmm_pinmux 53 0>;
 		status = "okay";
 	};
-//2016-01-29,add by jun.wu, for quectel power manager
-/* Pinout doesn't match what production kernel does.
- * Reality seems to be:
-	- Pin 5: DTR
-	- Pin 25: Wakeup_in
-	- Pin 74: Sleep_ind
- * So let's assume their kernel is what is right.
- */
-	quec,quectel-power-manager{
-		compatible = "quec,quectel-power-manager";	
-		gpios = <&tlmm_pinmux 5  0>,		/* DTR */	
-				<&tlmm_pinmux 25 0>,		/* WAKEUP-IN*/
-				<&tlmm_pinmux 74 0>;		/* SLEEP-IND*/
-		quec,gpio-names = "dtr", "wakeup_in", "sleep_ind";	
-		pinctrl-names = "default", "idle";
-	};
 
-	//2017-10-10,add by gale, for quectel low consume, legacy(Not REcommend)
-	quec,quectel-low-consume{
-		compatible = "quec,quectel-low-consume";
-
-		notify_gpio = <&tlmm_pinmux 75 0>;      /* which gpio can be controlled by ioctl to notify mcu */
-
-		wakeup_gpio = <&tlmm_pinmux 25 0>;      /* wakeup pin */
-
-		pinctrl-names = "default", "sleep", "wakeup_default";     /* status pin: module sleep indication gpio42 */
-		pinctrl-0 = <&sleep_ind_active>;
-		pinctrl-1 = <&sleep_ind_sleep>;
-		pinctrl-2 = <&wakeup_in_default>;	/* wakeup pin default state */
-		status = "disabled";			/* disable by default */
-	};
-
-
-	quec,ql_lpm{
-		compatible = "quec,ql_lpm";
-		status = "ok";
-	};
-
-	//end jun.wu
 	//add by max.tang for VBUS detect  //maxcodeflag20160329
 	usb_detect {
 		compatible = "qcom,gpio-usbdetect";
