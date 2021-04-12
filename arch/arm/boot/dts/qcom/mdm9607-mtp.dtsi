@@ -37,31 +37,24 @@
 	};
 
 };
-/* will.shao, add uart2 for debug uart*/
-&blsp1_uart2 {
-	status = "ok";
-	pinctrl-names = "default","sleep";
-	pinctrl-0 = <&blsp1_uart2_active>;
-	pinctrl-1 = <&blsp1_uart2_sleep>;
-};
+
+ &blsp1_uart2 {
+ 	status = "ok";
+ };
+
+ &blsp1_uart3 {
+ 	status = "ok";
+ };
 
 
-/* larryzhang-20190225:The default is high speed for BLSP1_UART5(gpio8,9,10,11)*/
  &blsp1_uart5 {
  	status = "ok";
  };
 
-/* UART6: enable gpio20, 21 uart6 by gale */
-&blsp1_uart6 {
-	status = "disabled";
-	pinctrl-names = "default","sleep";
-	pinctrl-0 = <&blsp1_uart6_active>;
-	pinctrl-1 = <&blsp1_uart6_sleep>;
-};
 
 /* disable mi2s_pri gpio20,21,22,23 for enable uart6 by gale */
 &mi2s_prim {
-	status = "disabled";
+	status = "ok";
 };
 
 &i2c_4 {
@@ -72,15 +65,8 @@
 	status = "ok";
 };
 
-
-//add by cullen
 &spi_6 {
-        status = "ok";
-};
-
-//Darren open uart3
-&blsp1_uart3 {
-	status = "ok";
+        status = "disabled";
 };
 
 &qnand_1 {

@@ -57,8 +57,6 @@
 			};
 		};
 
-
-		/* will.shao, uart2 for debug uart */
 		blsp1_uart2_active: blsp1_uart2_active {
 			mux {
 				pins = "gpio4", "gpio5";
@@ -78,83 +76,6 @@
 			};
 			config {
 				pins = "gpio4", "gpio5";
-				drive-strength = <2>;
-				bias-pull-down;
-			};
-		};
-
-		uart_console_sleep: uart_console_sleep {
-			mux {
-				pins = "gpio8", "gpio9";
-				function = "gpio";
-			};
-			config {
-				pins = "gpio8", "gpio9";
-				drive-strength = <2>;
-				bias-pull-down;
-			};
-		};
-		
-		uart_console_active: uart_console_active {
-			mux {
-				pins = "gpio8", "gpio9";
-				function = "blsp_uart5";
-			};
-			config {
-				pins = "gpio8", "gpio9";
-				drive-strength = <2>;
-				bias-disable;
-			};
-		};
-
-		/* larryzhang-20190225:The default is high speed for BLSP1_UART5(gpio8,9,10,11)*/
-		blsp1_uart5_active: blsp1_uart5_active {
-			mux {
-				pins = "gpio8", "gpio9", "gpio10", "gpio11";
-				function = "blsp_uart5";
-			};
-
-			config {
-				pins = "gpio8", "gpio9", "gpio10", "gpio11";
-				drive-strength = <2>;
-				bias-disable;
-			};
-		};
-
-		blsp1_uart5_sleep: blsp1_uart5_sleep {
-			mux {
-				pins = "gpio8", "gpio9", "gpio10", "gpio11";
-				function = "gpio";
-			};
-
-			config {
-				pins = "gpio8", "gpio9", "gpio10", "gpio11";
-				drive-strength = <2>;
-				bias-pull-down;
-			};
-		};
-
-		/* UART6: add gpio20,21 uart6 by gale */
-		blsp1_uart6_active: blsp1_uart6_active {
-			mux {
-				pins = "gpio20", "gpio21", "gpio22", "gpio23";
-				function = "blsp_uart6";
-			};
-
-			config {
-				pins = "gpio20", "gpio21", "gpio22", "gpio23";
-				drive-strength = <2>;
-				bias-disable;
-			};
-		};
-
-		blsp1_uart6_sleep: blsp1_uart6_sleep {
-			mux {
-				pins = "gpio20", "gpio21", "gpio22", "gpio23";
-				function = "gpio";
-			};
-			config {
-				pins = "gpio20", "gpio21", "gpio22", "gpio23";
 				drive-strength = <2>;
 				bias-pull-down;
 			};
@@ -185,8 +106,35 @@
 				drive-strength = <2>;
 				bias-pull-down;
 			};
+		};		
+
+
+		blsp1_uart5_active: blsp1_uart5_active {
+			mux {
+				pins = "gpio8", "gpio9", "gpio10", "gpio11";
+				function = "blsp_uart5";
+			};
+
+			config {
+				pins = "gpio8", "gpio9", "gpio10", "gpio11";
+				drive-strength = <2>;
+				bias-disable;
+			};
 		};
-	
+
+		blsp1_uart5_sleep: blsp1_uart5_sleep {
+			mux {
+				pins = "gpio8", "gpio9", "gpio10", "gpio11";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio8", "gpio9", "gpio10", "gpio11";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+
 		spi6 {
 			spi6_default: spi6_default {
 				/* active state */

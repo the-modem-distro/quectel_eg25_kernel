@@ -25,7 +25,7 @@
 &blsp1_uart5 {
 	status = "ok";
 	pinctrl-names = "default";
-	pinctrl-0 = <&uart_console_sleep>;
+	pinctrl-0 = <&blsp1_uart5_sleep>;
 };
 
 &qnand_1 {
