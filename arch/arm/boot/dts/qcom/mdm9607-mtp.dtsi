@@ -39,11 +39,11 @@
 };
 
  &blsp1_uart2 {
- 	status = "ok";
+ 	status = "disabled";
  };
 
  &blsp1_uart3 {
- 	status = "ok";
+ 	status = "disabled";
  };
 
 
@@ -71,10 +71,6 @@
 
 &qnand_1 {
 	status = "ok";
-};
-
-&emac0 {
-	status = "disabled";
 };
 
 //maxcodeflag20160329

@@ -70,10 +70,6 @@
 	status = "ok";
 };
 
-&emac0 {
-	status = "ok";
-};
-
 //maxcodeflag20160329
 /* MPP pin 2 configs for SMB358 interrupt line */
 &pm8019_mpps {

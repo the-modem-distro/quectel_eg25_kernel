@@ -402,12 +402,12 @@
 		enable-active-high;
 		gpio = <&pm8019_gpios 3 0>;
 	};
-
+/*
 	emac_lan_vreg: emac_lan_vreg {
 		compatible = "regulator-fixed";
 		regulator-name = "emac_lan_vreg";
 		startup-delay-us = <250>;
 		enable-active-high;
 		gpio = <&pm8019_mpps 1 0>;	////modified by gale 2016-08-22, mpp4 for adc function
-	};
+	};*/
 };

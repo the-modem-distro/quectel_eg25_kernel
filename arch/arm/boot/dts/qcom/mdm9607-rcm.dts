@@ -21,6 +21,4 @@
 	qcom,board-id = <21 0>;
 };
 
-&emac0 {
-	status = "disabled";
-};
+
