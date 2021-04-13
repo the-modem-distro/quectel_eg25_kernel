@@ -13972,7 +13972,6 @@ static struct snd_pcm_ops msm_routing_pcm_ops = {
 /* Not used but frame seems to require it */
 static int msm_routing_probe(struct snd_soc_platform *platform)
 {
-	printk("%s: begin \n", __func__);
 	snd_soc_dapm_new_controls(&platform->component.dapm, msm_qdsp6_widgets,
 			   ARRAY_SIZE(msm_qdsp6_widgets));
 	snd_soc_dapm_add_routes(&platform->component.dapm, intercon,
@@ -14026,8 +14025,6 @@ static int msm_routing_probe(struct snd_soc_platform *platform)
 	snd_soc_add_platform_controls(platform, aptx_dec_license_controls,
 					ARRAY_SIZE(aptx_dec_license_controls));
 	
-	printk("%s: finish and get out \n", __func__);
-
 	return 0;
 }
 
