@@ -488,7 +488,7 @@ static void android_work(struct work_struct *data)
 					   uevent_envp);
 			last_uevent = next_state;
 		}
-		pr_info("%s: sent uevent %s\n", __func__, uevent_envp[0]);
+		pr_debug("%s: sent uevent %s\n", __func__, uevent_envp[0]);
 	} else {
 		pr_info("%s: did not send uevent (%d %d %pK)\n", __func__,
 			 dev->connected, dev->sw_connected, cdev->config);
