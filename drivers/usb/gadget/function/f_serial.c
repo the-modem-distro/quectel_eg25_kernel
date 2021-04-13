@@ -635,7 +635,7 @@ static void gser_suspend(struct usb_function *f)
 		gsmd_suspend(&gser->port, port_num);
 		break;
 	default:
-		pr_err("%s: Un-supported transport: %s\n", __func__,
+		pr_debug("%s: Un-supported transport: %s\n", __func__,
 			xport_to_str(gser->transport));
 	}
 }
@@ -664,7 +664,7 @@ static void gser_resume(struct usb_function *f)
 		gsmd_resume(&gser->port, port_num);
 		break;
 	default:
-		pr_err("%s: Un-supported transport: %s\n", __func__,
+		pr_debug("%s: Un-supported transport: %s\n", __func__,
 			xport_to_str(gser->transport));
 	}
 }
