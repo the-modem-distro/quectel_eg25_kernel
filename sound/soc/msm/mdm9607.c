@@ -2084,7 +2084,7 @@ static ssize_t quec_pcm_mode_select_store
 
     sscanf(buff, "%d", &mode);
 
-    pr_err("%s, mode: %d\n",__func__, mode);
+    pr_err("%s: PCM mode: %d\n",__func__, mode);
     if(mode == I2S_PCM_SLAVE_MODE || mode == I2S_PCM_MASTER_MODE)
     {
         pdata->sec_auxpcm_mode = (u16)mode;
@@ -2116,7 +2116,7 @@ static ssize_t quec_quec_auxpcm_rate_store
 )
 {
     sscanf(buff, "%d", &mdm_auxpcm_rate);
-    pr_err("\n%s,%d ----------- %d----------------\n", __FUNCTION__, __LINE__, mdm_auxpcm_rate);
+    pr_err("%s: PCM Rate set: %d\n", __FUNCTION__, mdm_auxpcm_rate);
     return size;
 }
 #endif
