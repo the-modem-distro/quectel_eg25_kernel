@@ -35,17 +35,13 @@
 		smd36 = &smdtty_loopback;
 		
         /* UART */
- 		 uart0 = &blsp1_uart2; // /dev/ttyHLS0
- 		 uart1 = &blsp1_uart3; // /dev/ttyHS1
- 		 uart2 = &blsp1_uart5; // /dev/ttyHLS0
- 		 uart3 = &blsp1_uart6; // /dev/ttyHLS0
-		
-		/* SPI */
-		spi6  = &spi_6;
+ 		 uart0 = &blsp1_uart2; // HLS
+ 		 uart1 = &blsp1_uart3; // HS - Goes through bam
+ 		 uart2 = &blsp1_uart5; // HLS - Debug uart pins
+ 		 uart3 = &blsp1_uart6; // HLS
 		
 		/* i2c */
 		i2c2 = &i2c_2;
-		i2c4 = &i2c_4;
 
 		/* SDIO */
 		sdhc1 = &sdhc_1;/* SDC1 for SDIO slot */
@@ -240,6 +236,18 @@
 			compatible = "qcom,msm-imem-pil";
 			reg = <0x94c 200>;
 		};
+		download_mode@0 {
+			compatible = "qcom,msm-imem-download_mode";
+			reg = <0x00 8>;
+		};
+		emergency_download_mode@fe0 {
+			compatible = "qcom,msm-imem-emergency_download_mode";
+			reg = <0xfe0 12>;
+		};
+		dload_type@18 {
+			compatible = "qcom,msm-imem-dload-type";
+			reg = <0x18 4>;
+		};
 	};
 
 	restart@4ab000 {
@@ -403,32 +411,6 @@
 		status = "disabled";
 	};
 
-	i2c_4: i2c@78b8000 { /* BLSP1 QUP4 */
-		compatible = "qcom,i2c-msm-v2";
-		#address-cells = <1>;
-		#size-cells = <0>;
-		reg-names = "qup_phys_addr";
-		reg = <0x78b8000 0x600>;
-		interrupt-names = "qup_irq";
-		interrupts = <0 98 0>;
-		qcom,clk-freq-out = <400000>;
-		qcom,clk-freq-in  = <19200000>;
-		clock-names = "iface_clk", "core_clk";
-		clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
-			<&clock_gcc clk_gcc_blsp1_qup4_i2c_apps_clk>;
-
-		pinctrl-names = "i2c_active", "i2c_sleep";
-		pinctrl-0 = <&i2c_4_active>;
-		pinctrl-1 = <&i2c_4_sleep>;
-		qcom,noise-rjct-scl = <0>;
-		qcom,noise-rjct-sda = <0>;
-		qcom,master-id = <86>;
-		dmas = <&dma_blsp1 18 64 0x20000020 0x20>,
-			<&dma_blsp1 19 32 0x20000020 0x20>;
-		dma-names = "tx", "rx";
-		status = "disabled";
-	};
-
 	blsp1_uart2: serial@78b0000 { /* BLSP1 UART2 */
 		compatible = "qcom,msm-lsuart-v14";
 		reg = <0x78b0000 0x200>;
@@ -442,25 +424,23 @@
 		status = "disabled";
 	};
 
-	blsp1_uart3: uart@78b1000 {
+	blsp1_uart3: uart@78b1000 { /* BLSP1 UART3, throguh BAM */
 		compatible = "qcom,msm-hsuart-v14";
 		reg = <0x78b1000 0x200>,
 			<0x7884000 0x2b000>;
 		reg-names = "core_mem", "bam_mem";
-		//interrupt-names = "core_irq", "bam_irq", "wakeup_irq"; //disable uart rx wakeup source
-		interrupt-names = "core_irq", "bam_irq";
+		interrupt-names = "core_irq", "bam_irq", "wakeup_irq"; //disable uart rx wakeup source
 		#address-cells = <0>;
 		interrupt-parent = <&blsp1_uart3>;
-		//interrupts = <0 1 2>;
-		interrupts = <0 1>; 			//disable uart rx wakeup source
+		interrupts = <0 1 2>;
 		#interrupt-cells = <1>;
 		interrupt-map-mask = <0xffffffff>;
 		interrupt-map = <0 &intc 0 119 0
-				1 &intc 0 238 0>;
-		//		2 &tlmm_pinmux 1 0>; 	//disable uart rx wakeup source
+				1 &intc 0 238 0
+				2 &tlmm_pinmux 1 0>; 	//disable uart rx wakeup source
 
-		//qcom,inject-rx-on-wakeup;		//disable uart rx wakeup source
-		//qcom,rx-char-to-inject = <0xFD>;	//disable uart rx wakeup source
+		qcom,inject-rx-on-wakeup;		//disable uart rx wakeup source
+		qcom,rx-char-to-inject = <0xFD>;	//disable uart rx wakeup source
 
 		qcom,bam-tx-ep-pipe-index = <4>;
 		qcom,bam-rx-ep-pipe-index = <5>;
@@ -480,7 +460,7 @@
 		status = "disabled";
 	};
 
-	blsp1_uart5: uart@78b3000 {
+	blsp1_uart5: uart@78b3000 { /* Debug UART */
 		compatible = "qcom,msm-lsuart-v14";
 		reg = <0x78b3000 0x200>,
 			<0x7884000 0x23000>;
@@ -562,7 +542,7 @@
 
 		qcom,hsusb-otg-phy-type = <3>; /* SNPS Femto PHY */
 		qcom,hsusb-otg-mode = <1>; /* peripheral mode ivan 20160104 change 3-->1 solved the USB not working problem*/
-                qcom,hsusb-otg-default-mode=<1>; /* peripheral mode ivan 20160104 add  solved the USB not working problem*/
+        qcom,hsusb-otg-default-mode=<1>; /* peripheral mode ivan 20160104 add  solved the USB not working problem*/
 		qcom,hsusb-otg-otg-control = <3>; /* USR control ivan 20160104 change 2-->3 solved the USB not working problem*/
 		qcom,usbid-gpio = <&pm8019_mpps 1 0>;
 		qcom,hsusb-log2-itc = <4>;
@@ -794,41 +774,10 @@
 		qcom,temp2-offset = <1 (-2) 8 (-5) (-4)>;
 	};
 
-	/* 2016-02-26, comment out by jun.wu, for sound card
-	wcd9xxx_intc: wcd9xxx-irq {
-		compatible = "qcom,wcd9xxx-irq";
-		interrupt-controller;
-		#interrupt-cells = <1>;
-		interrupt-parent = <&tlmm_pinmux>;
-		qcom,gpio-connect = <&tlmm_pinmux 75 0>;
-		interrupt-names = "cdc-int";
-	};
-	*/
-
 	sound{
 		compatible = "qcom,mdm9607-audio-tomtom";
 		qcom,model = "mdm9607-tomtom-i2s-snd-card";
 	
-		/*2016-03-28, comment out by jun.wu,this codec is use to config WCD codec which we don't use
-		qcom,audio-routing =
-			"RX_BIAS", "MCLK",
-			"LDO_H", "MCLK",
-			"AMIC2", "MIC BIAS2 External",
-			"MIC BIAS2 External", "Headset Mic",
-			"AMIC3", "MIC BIAS2 External",
-			"MIC BIAS2 External", "ANCRight Headset Mic",
-			"AMIC4", "MIC BIAS2 External",
-			"MIC BIAS2 External", "ANCLeft Headset Mic",
-			"AMIC5", "MIC BIAS1 External",
-			"MIC BIAS1 External", "Handset Mic",
-			"AMIC6", "MIC BIAS1 External",
-			"MIC BIAS1 External", "Handset Mic",
-			"DMIC1", "MIC BIAS1 External",
-			"MIC BIAS1 External", "Digital Mic1",
-			"DMIC3", "MIC BIAS3 External",
-			"MIC BIAS3 External", "Digital Mic3";
-		*/
-
 		qcom,codec-mclk-clk-freq = <12288000>;
 		qcom,mi2s-interface-mode = "pri_mi2s_master", "sec_mi2s_master";
 		qcom,auxpcm-interface-mode = "pri_pcm_master", "sec_pcm_master";
@@ -1419,34 +1368,6 @@
 		#size-cells = <0>;
 		cell-index = <0>;
 	};
-
-		/*BLSP QUP6*/
-	spi_6: spi@78ba000 { 
-		compatible = "qcom,spi-qup-v2";
-		#address-cells = <1>;
-		#size-cells = <0>;
-		reg-names = "spi_physical", "spi_bam_physical";
-		reg = <0x78ba000 0x600>,
-		      <0x7884000 0x2b000>;
-		interrupt-names = "spi_irq", "spi_bam_irq";
-		interrupts = <0 100 0>, <0 238 0>;
-		spi-max-frequency = <19200000>;
-		pinctrl-names = "spi_default", "spi_sleep";
-		pinctrl-0 = <&spi6_default &spi6_cs0_active>;
-		pinctrl-1 = <&spi6_sleep &spi6_cs0_sleep>;
-		clocks = <&clock_gcc clk_gcc_blsp1_ahb_clk>,
-			 <&clock_gcc clk_gcc_blsp1_qup6_spi_apps_clk>;
-		clock-names = "iface_clk", "core_clk";
-		qcom,infinite-mode = <0>;
-		qcom,use-bam;
-		qcom,use-pinctrl;
-		qcom,ver-reg-exists;
-		qcom,bam-consumer-pipe-index = <22>;
-		qcom,bam-producer-pipe-index = <23>;
-		qcom,master-id = <86>;
-		status = "disabled";
-	};
-	 /*end cullen.wang*/ 
 	 
 	qcom,mss@4080000 {
 		compatible = "qcom,pil-q6v55-mss";

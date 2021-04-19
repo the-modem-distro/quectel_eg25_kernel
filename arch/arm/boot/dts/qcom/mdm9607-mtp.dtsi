@@ -57,16 +57,8 @@
 	status = "ok";
 };
 
-&i2c_4 {
-	status = "ok";
-};
-
 &i2c_2 {
 	status = "ok";
-};
-
-&spi_6 {
-        status = "disabled";
 };
 
 &qnand_1 {
@@ -83,7 +75,7 @@
 		/*qcom,pull = <2>; modified by max.tang for VBUS detect*/	/* PULL UP 10KOHM */
         qcom,pull = <1>;
 		qcom,master-en = <1>;
-        status = "ok";
+        status = "disabled";
 	};
 };
 
@@ -95,7 +87,7 @@
 		qcom,src-sel = <0>;      /* GPIO */
 		qcom,invert = <0>;       /* Invert */
 		qcom,master-en = <1>;    /* Enable GPIO */
-		status = "ok";
+		status = "disabled";
 	};
 
 	/* PMIC gpio for wlan power supply */
@@ -107,7 +99,7 @@
 		qcom,src-sel = <0>;		/* Constant */
 		qcom,out-strength = <1>;	/* High drive strength */
 		qcom,master-en = <1>;		/* Enable GPIO */
-		status = "okay";
+		status = "disabled";
 	};
 
 	/* ROME 32k Sleep Clock */
