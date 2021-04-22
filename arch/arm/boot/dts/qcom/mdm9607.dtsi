@@ -540,7 +540,7 @@
 		qcom,hsusb-otg-phy-init-seq =
 			<0x44 0x80 0x38 0x81 0x24 0x82 0x13 0x83 0xffffffff>;
 
-		qcom,hsusb-otg-phy-type = <3>; /* SNPS Femto PHY */
+		qcom,hsusb-otg-phy-type = <2>; /* SNPS Femto PHY */
 		qcom,hsusb-otg-mode = <1>; /* peripheral mode ivan 20160104 change 3-->1 solved the USB not working problem*/
         qcom,hsusb-otg-default-mode=<1>; /* peripheral mode ivan 20160104 add  solved the USB not working problem*/
 		qcom,hsusb-otg-otg-control = <3>; /* USR control ivan 20160104 change 2-->3 solved the USB not working problem*/
@@ -1011,14 +1011,14 @@
 
 	dai_pri_auxpcm: qcom,msm-pri-auxpcm {
 		compatible = "qcom,msm-auxpcm-dev";
-		qcom,msm-cpudai-auxpcm-mode = <0>, <0>;
-		qcom,msm-cpudai-auxpcm-sync = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-frame = <5>, <4>;
-		qcom,msm-cpudai-auxpcm-quant = <2>, <2>;
-		qcom,msm-cpudai-auxpcm-num-slots = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-slot-mapping = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-data = <0>, <0>;
-		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <4096000>;	//for pcm 16k, clock rate nede 4096000
+		qcom,msm-cpudai-auxpcm-mode = <0>, <0>, <0>;
+		qcom,msm-cpudai-auxpcm-sync = <1>, <1>, <1>;
+		qcom,msm-cpudai-auxpcm-frame = <5>, <4>, <4>;
+		qcom,msm-cpudai-auxpcm-quant = <2>, <2>, <2>;
+		qcom,msm-cpudai-auxpcm-num-slots = <1>, <1>, <1>;
+		qcom,msm-cpudai-auxpcm-slot-mapping = <1>, <1>, <1>;
+		qcom,msm-cpudai-auxpcm-data = <0>, <0>, <0>; // One per each sampling rate
+		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <4096000>, <4096000>;	//for pcm 16k, clock rate nede 4096000
 		qcom,msm-auxpcm-interface = "primary";
 		/*pinctrl-names = "default", "idle";
 			pinctrl-0 = <&pri_auxpcm_ws_active
@@ -1034,14 +1034,14 @@
 	//2016-03-07, add by ju.wu
 	dai_sec_auxpcm: qcom,msm-sec-auxpcm {
 		compatible = "qcom,msm-auxpcm-dev";
-		qcom,msm-cpudai-auxpcm-mode = <0>, <0>;
-		qcom,msm-cpudai-auxpcm-sync = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-frame = <5>, <5>;
-		qcom,msm-cpudai-auxpcm-quant = <2>, <2>;
-		qcom,msm-cpudai-auxpcm-num-slots = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-slot-mapping = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-data = <0>, <0>;
-		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <4096000>;
+		qcom,msm-cpudai-auxpcm-mode = <0>, <0>, <0>;
+		qcom,msm-cpudai-auxpcm-sync = <1>, <1>, <1>;
+		qcom,msm-cpudai-auxpcm-frame = <5>, <5>, <5>;
+		qcom,msm-cpudai-auxpcm-quant = <2>, <2>, <2>;
+		qcom,msm-cpudai-auxpcm-num-slots = <1>, <1>, <1>;
+		qcom,msm-cpudai-auxpcm-slot-mapping = <1>, <1>, <1>;
+		qcom,msm-cpudai-auxpcm-data = <0>, <0>, <0>;
+		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <4096000>, <4096000>;
 		qcom,msm-cpudai-afe-clk-ver = <2>;
 		qcom,msm-auxpcm-interface = "secondary";
 		pinctrl-names = "default", "idle";

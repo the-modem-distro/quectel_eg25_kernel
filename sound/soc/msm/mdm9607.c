@@ -1074,6 +1074,9 @@ static int mdm_auxpcm_rate_put(struct snd_kcontrol *kcontrol,
 	case 1:
 		mdm_auxpcm_rate = SAMPLE_RATE_16KHZ;
 		break;
+	case 2:
+		mdm_auxpcm_rate = SAMPLE_RATE_48KHZ;
+		break;
 	default:
 		mdm_auxpcm_rate = SAMPLE_RATE_8KHZ;
 		break;

@@ -45,6 +45,7 @@ struct msm_dai_auxpcm_config {
 struct msm_dai_auxpcm_pdata {
 	struct msm_dai_auxpcm_config mode_8k;
 	struct msm_dai_auxpcm_config mode_16k;
+	struct msm_dai_auxpcm_config mode_48k;
 };
 
 struct msm_mi2s_pdata {
