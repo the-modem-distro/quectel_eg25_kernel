@@ -1146,7 +1146,7 @@ static int voice_unmap_cal_block(struct voice_data *v, int cal_index)
 	struct cal_block_data *cal_block;
 
 	if (common.cal_data[cal_index] == NULL) {
-		pr_err("%s: Cal type is NULL, index %d!\n",
+		pr_debug("%s: Cal type is NULL, index %d!\n",
 			__func__, cal_index);
 
 		goto done;
@@ -1156,7 +1156,7 @@ static int voice_unmap_cal_block(struct voice_data *v, int cal_index)
 	cal_block = cal_utils_get_only_cal_block(
 		common.cal_data[cal_index]);
 	if (cal_block == NULL) {
-		pr_err("%s: Cal block is NULL, index %d!\n",
+		pr_debug("%s: Cal block is NULL, index %d!\n",
 			__func__, cal_index);
 
 		result = -EINVAL;
@@ -1320,16 +1320,16 @@ static int voice_destroy_mvm_cvs_session(struct voice_data *v)
 		/* Unmap physical memory for all calibration buffers */
 		if (!is_other_session_active(v->session_id)) {
 			if (voice_unmap_cal_block(v, CVP_VOCPROC_CAL))
-				pr_err("%s: Unmap VOCPROC cal failed\n",
+				pr_debug("%s: Unmap VOCPROC cal failed\n",
 					__func__);
 			if (voice_unmap_cal_block(v, CVP_VOCVOL_CAL))
-				pr_err("%s: Unmap VOCVOL cal failed\n",
+				pr_debug("%s: Unmap VOCVOL cal failed\n",
 					__func__);
 			if (voice_unmap_cal_block(v, CVP_VOCDEV_CFG_CAL))
-				pr_err("%s: Unmap VOCDEV_CFG cal failed\n",
+				pr_debug("%s: Unmap VOCDEV_CFG cal failed\n",
 					__func__);
 			if (voice_unmap_cal_block(v, CVS_VOCSTRM_CAL))
-				pr_err("%s: Unmap VOCSTRM cal failed\n",
+				pr_debug("%s: Unmap VOCSTRM cal failed\n",
 					__func__);
 		}
 
@@ -2503,7 +2503,7 @@ static int voice_get_cal(struct cal_block_data **cal_block,
 	*cal_block = cal_utils_get_only_cal_block(
 		common.cal_data[cal_block_idx]);
 	if (*cal_block == NULL) {
-		pr_err("%s: No cal data for cal %d!\n",
+		pr_debug("%s: No cal data for cal %d!\n",
 			__func__, cal_block_idx);
 
 		ret = -ENODEV;
@@ -2562,7 +2562,7 @@ static int voice_send_cvs_register_cal_cmd(struct voice_data *v)
 	ret = voice_get_cal(&cal_block, CVS_VOCSTRM_CAL, &col_data,
 		CVS_VOCSTRM_COL_CAL, v->session_id);
 	if (ret < 0) {
-		pr_err("%s: Voice_get_cal failed for cal %d!\n",
+		pr_debug("%s: Voice_get_cal failed for cal %d!\n",
 			__func__, CVS_VOCSTRM_CAL);
 
 		goto unlock;
@@ -2680,7 +2680,7 @@ static int voice_send_cvs_deregister_cal_cmd(struct voice_data *v)
 		goto done;
 	}
 	if (v->async_err > 0) {
-		pr_err("%s: DSP returned error[%s]\n",
+		pr_debug("%s: DSP returned error[%s]\n",
 				__func__, adsp_err_get_err_str(
 				v->async_err));
 		ret = adsp_err_get_lnx_err_code(
@@ -2932,7 +2932,7 @@ static int voice_send_cvp_deregister_dev_cfg_cmd(struct voice_data *v)
 		goto done;
 	}
 	if (v->async_err > 0) {
-		pr_err("%s: DSP returned error[%s]\n",
+		pr_debug("%s: DSP returned error[%s]\n",
 				__func__, adsp_err_get_err_str(
 				v->async_err));
 		ret = adsp_err_get_lnx_err_code(
@@ -2972,7 +2972,7 @@ static int voice_send_cvp_register_cal_cmd(struct voice_data *v)
 	ret = voice_get_cal(&cal_block, CVP_VOCPROC_CAL, &col_data,
 		CVP_VOCPROC_COL_CAL, v->session_id);
 	if (ret < 0) {
-		pr_err("%s: Voice_get_cal failed for cal %d!\n",
+		pr_debug("%s: Voice_get_cal failed for cal %d!\n",
 			__func__, CVP_VOCPROC_CAL);
 
 		goto unlock;
@@ -3098,7 +3098,7 @@ static int voice_send_cvp_deregister_cal_cmd(struct voice_data *v)
 		goto done;
 	}
 	if (v->async_err > 0) {
-		pr_err("%s: DSP returned error[%s]\n",
+		pr_debug("%s: DSP returned error[%s]\n",
 				__func__, adsp_err_get_err_str(
 				v->async_err));
 		ret = adsp_err_get_lnx_err_code(
@@ -3138,7 +3138,7 @@ static int voice_send_cvp_register_vol_cal_cmd(struct voice_data *v)
 	ret = voice_get_cal(&cal_block, CVP_VOCVOL_CAL, &col_data,
 		CVP_VOCVOL_COL_CAL, v->session_id);
 	if (ret < 0) {
-		pr_err("%s: Voice_get_cal failed for cal %d!\n",
+		pr_debug("%s: Voice_get_cal failed for cal %d!\n",
 			__func__, CVP_VOCVOL_CAL);
 
 		goto unlock;
@@ -3260,7 +3260,7 @@ static int voice_send_cvp_deregister_vol_cal_cmd(struct voice_data *v)
 		goto done;
 	}
 	if (v->async_err > 0) {
-		pr_err("%s: DSP returned error[%s]\n",
+		pr_debug("%s: DSP returned error[%s]\n",
 				__func__, adsp_err_get_err_str(
 				v->async_err));
 		ret = adsp_err_get_lnx_err_code(
@@ -4897,7 +4897,7 @@ static int voice_send_vol_step_cmd(struct voice_data *v)
 		return -EINVAL;
 	}
 	if (v->async_err > 0) {
-		pr_err("%s: DSP returned error[%s]\n",
+		pr_debug("%s: DSP returned error[%s]\n",
 				__func__, adsp_err_get_err_str(
 				v->async_err));
 		ret = adsp_err_get_lnx_err_code(
@@ -6146,7 +6146,7 @@ int voc_start_voice_call(uint32_t session_id)
 
 		ret = voice_send_vol_step_cmd(v);
 		if (ret < 0)
-			pr_err("voice volume failed\n");
+			pr_debug("voice volume failed\n");
 
 		ret = voice_send_stream_mute_cmd(v,
 				VSS_IVOLUME_DIRECTION_TX,
@@ -6801,7 +6801,7 @@ static int32_t qdsp_cvp_callback(struct apr_client_data *data, void *priv)
 
 			pr_debug("%x %x\n", ptr[0], ptr[1]);
 			if (ptr[1] != 0) {
-				pr_err("%s: cmd = 0x%x returned error = 0x%x\n",
+				pr_debug("%s: cmd = 0x%x returned error = 0x%x\n",
 					__func__, ptr[0], ptr[1]);
 			}
 			switch (ptr[0]) {
