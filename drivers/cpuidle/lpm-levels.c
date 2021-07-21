@@ -122,10 +122,6 @@ module_param_named(
 	print_parsed_dt, print_parsed_dt, bool, S_IRUGO | S_IWUSR | S_IWGRP
 );
 
-static bool sleep_disabled;
-module_param_named(sleep_disabled,
-	sleep_disabled, bool, S_IRUGO | S_IWUSR | S_IWGRP);
-
 s32 msm_cpuidle_get_deep_idle_latency(void)
 {
 	return 10;
@@ -463,9 +459,6 @@ static int cpu_power_select(struct cpuidle_device *dev,
 
 	if (!cpu)
 		return -EINVAL;
-
-	if (sleep_disabled || sleep_us  < 0)
-		return 0;
 
 	next_event_us = (uint32_t)(ktime_to_us(get_next_event_time(dev->cpu)));
 
