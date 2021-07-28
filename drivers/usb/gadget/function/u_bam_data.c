@@ -1788,7 +1788,7 @@ static int bam_data_wake_cb(void *param)
 	if ((ret == -EBUSY) || (ret == -EAGAIN))
 		pr_debug("Remote wakeup is delayed due to LPM exit.\n");
 	else if (ret)
-		pr_err("Failed to wake up the USB core. ret=%d.\n", ret);
+		pr_err("BAM_DATA: Failed to wake up the USB core. ret=%d.\n", ret);
 
 	return ret;
 }

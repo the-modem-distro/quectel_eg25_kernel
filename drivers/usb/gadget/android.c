@@ -470,18 +470,18 @@ static void android_work(struct work_struct *data)
 		      (last_uevent != USB_DISCONNECTED)) ||
 		    ((uevent_envp == configured) &&
 		      (last_uevent == USB_CONFIGURED))) {
-			pr_info("%s: sent missed DISCONNECT event\n", __func__);
-			kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE,
+			pr_info("%s: BIK: sent missed DISCONNECT event bypassed\n", __func__);
+		/*	kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE,
 								disconnected);
-			msleep(20);
+			msleep(20);*/
 		}
 		/*
 		 * Before sending out CONFIGURED uevent give function drivers
 		 * a chance to wakeup userspace threads and notify disconnect
 		 */
-		if (uevent_envp == configured)
+	/*	if (uevent_envp == configured)
 			msleep(50);
-
+*/
 		/* Do not notify on suspend / resume */
 		if (next_state != USB_SUSPENDED && next_state != USB_RESUMED) {
 			kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE,
