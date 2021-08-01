@@ -77,6 +77,21 @@ config MTD_UBI_FASTMAP
 
 	   If in doubt, say "N".
 
+config MTD_UBI_FASTMAP_AUTOCONVERT
+	int "enable UBI Fastmap autoconvert"
+	depends on MTD_UBI_FASTMAP
+	default 0
+	help
+	   Set this parameter to enable fastmap automatically on images
+	   without a fastmap.
+
+config MTD_UBI_FM_DEBUG
+	int "Enable UBI fastmap debug"
+	depends on MTD_UBI_FASTMAP
+	default 0
+	help
+	   Enable UBI fastmap debug
+
 config MTD_UBI_GLUEBI
 	tristate "MTD devices emulation driver (gluebi)"
 	help
