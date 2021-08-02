@@ -398,9 +398,9 @@ static int check_mapping(struct ubi_device *ubi, struct ubi_volume *vol, int lnu
 		if (err == UBI_IO_BAD_HDR_EBADMSG || err == UBI_IO_FF_BITFLIPS)
 			torture = 1;
 
-		down_read(&ubi->fm_sem);
+		down_read(&ubi->fm_eba_sem);
 		vol->eba_tbl[lnum] = UBI_LEB_UNMAPPED;
-		up_read(&ubi->fm_sem);
+		up_read(&ubi->fm_eba_sem);
 		ubi_wl_put_peb(ubi, vol->vol_id, lnum, *pnum, torture);
 
 		*pnum = UBI_LEB_UNMAPPED;
