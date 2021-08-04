@@ -369,7 +369,7 @@ out_unlock:
  * Returns 0 on success, negative error code in case of failure.
  */
 static int check_mapping(struct ubi_device *ubi, struct ubi_volume *vol, int lnum,
-			 int *pnum)
+			 int pnum)
 {
 	int err;
 	struct ubi_vid_hdr *vid_hdr;
@@ -381,7 +381,7 @@ static int check_mapping(struct ubi_device *ubi, struct ubi_volume *vol, int lnu
 	if (!vid_hdr)
 		return -ENOMEM;
 
-	err = ubi_io_read_vid_hdr(ubi, *pnum, vid_hdr, 0);
+	err = ubi_io_read_vid_hdr(ubi, pnum, vid_hdr, 0);
 	if (err > 0 && err != UBI_IO_BITFLIPS) {
 		int torture = 0;
 
@@ -398,15 +398,15 @@ static int check_mapping(struct ubi_device *ubi, struct ubi_volume *vol, int lnu
 		if (err == UBI_IO_BAD_HDR_EBADMSG || err == UBI_IO_FF_BITFLIPS)
 			torture = 1;
 
-		down_read(&ubi->fm_sem);
+		down_read(&ubi->fm_eba_sem);
 		vol->eba_tbl[lnum] = UBI_LEB_UNMAPPED;
-		up_read(&ubi->fm_sem);
-		ubi_wl_put_peb(ubi, vol->vol_id, lnum, *pnum, torture);
+		up_read(&ubi->fm_eba_sem);
+		ubi_wl_put_peb(ubi, vol->vol_id, lnum, pnum, torture);
 
-		*pnum = UBI_LEB_UNMAPPED;
+		pnum = UBI_LEB_UNMAPPED;
 	} else if (err < 0) {
-		ubi_err("unable to read VID header back from PEB %i: %i",
-			*pnum, err);
+		ubi_err(ubi, "unable to read VID header back from PEB %i: %i",
+			pnum, err);
 
 		goto out_free;
 	}
@@ -420,7 +420,7 @@ out_free:
 }
 #else
 static int check_mapping(struct ubi_device *ubi, struct ubi_volume *vol, int lnum,
-		  int *pnum)
+		  int pnum)
 {
 	return 0;
 }
