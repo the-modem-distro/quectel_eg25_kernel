@@ -864,6 +864,11 @@ static int msm_otg_set_suspend(struct usb_phy *phy, int suspend)
 	if (!(motg->caps & ALLOW_LPM_ON_DEV_SUSPEND))
 		return 0;
 
+ 
+	if (suspend && phy->state == OTG_STATE_B_SUSPEND) {
+		pr_err("%s: Trying to suspend when not finished waking up, We're going to get a missed disconnect \n ", __func__);
+		return -EBUSY;
+	}
 	if (suspend) {
 		/* called in suspend interrupt context */
 		pr_debug("peripheral bus suspend\n");
@@ -1511,7 +1516,7 @@ phcd_retry:
 	enable_irq(motg->irq);
 	wake_unlock(&motg->wlock);
 
-	dev_dbg(phy->dev, "LPM caps = %lu flags = %lu\n",
+	dev_info(phy->dev, "LPM caps = %lu flags = %lu\n",
 			motg->caps, motg->lpm_flags);
 	dev_info(phy->dev, "USB in low power mode\n");
 	msm_otg_dbg_log_event(phy, "LPM ENTER DONE",
@@ -5230,6 +5235,9 @@ static int msm_otg_runtime_idle(struct device *dev)
 	dev_dbg(dev, "OTG runtime idle\n");
 	msm_otg_dbg_log_event(phy, "RUNTIME IDLE",
 			phy->state, motg->ext_chg_active);
+
+	dev_err(dev, "OTG runtime idle: Not allowing it to suspend\n");
+	return -EAGAIN;
 
 	if (phy->state == OTG_STATE_UNDEFINED)
 		return -EAGAIN;
