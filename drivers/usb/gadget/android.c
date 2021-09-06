@@ -473,14 +473,14 @@ static void android_work(struct work_struct *data)
 			pr_info("%s: sent missed DISCONNECT event\n", __func__);
 			kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE,
 								disconnected);
-			msleep(20);
+	//		msleep(20);
 		}
 		/*
 		 * Before sending out CONFIGURED uevent give function drivers
 		 * a chance to wakeup userspace threads and notify disconnect
 		 */
-		if (uevent_envp == configured)
-			msleep(50);
+	//	if (uevent_envp == configured)
+	//		msleep(50);
 
 		/* Do not notify on suspend / resume */
 		if (next_state != USB_SUSPENDED && next_state != USB_RESUMED) {
@@ -495,7 +495,7 @@ static void android_work(struct work_struct *data)
 	}
 }
 
-#define MIN_DISCONNECT_DELAY_MS	30
+#define MIN_DISCONNECT_DELAY_MS	0//30
 
 static int android_enable(struct android_dev *dev)
 {
