@@ -304,7 +304,7 @@ static inline bool gsmd_remote_wakeup_allowed(struct usb_function *f)
 	else
 		remote_wakeup_allowed = f->config->cdev->gadget->remote_wakeup;
 
-	pr_info("%s: remote_wakeup_allowed:%s", __func__,
+	pr_debug("%s: remote_wakeup_allowed:%s", __func__,
 			remote_wakeup_allowed ? "true" : "false");
 
 	return remote_wakeup_allowed;
@@ -343,7 +343,6 @@ static void gsmd_tx_pull(struct work_struct *w)
 	}
 
 	if (port->is_suspended) {
-		pr_err("%s: Port is suspended, dont try to wakeup.\n", __func__);
 		goto tx_pull_end;
 
 		spin_unlock_irq(&port->port_lock);
