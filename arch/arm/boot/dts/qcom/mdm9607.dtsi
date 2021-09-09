@@ -26,12 +26,12 @@
 	aliases {
 		/* SMDTTY */
 		smd7 = &smdtty_data1;
-		smd8 = &smdtty_data4;
+		smd8 = &smdtty_data3; // From Quectel: DATA3 --> AT Port
 		smd9 = &smdtty_data2;
-		smd10 = &smdtty_data3; // this works?
+		smd10 = &smdtty_data21; // Responds No such device
 		// SMD11 removed to be used by USB AT port */
 		/* smd11 = &smdtty_data11; */
-		smd21 = &smdtty_data21;
+		smd21 = &smdtty_data4; // From Quectel: DATA4 --> Remote EFS
 		smd36 = &smdtty_loopback;
 		
         /* UART */
