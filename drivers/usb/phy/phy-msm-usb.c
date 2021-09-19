@@ -1495,7 +1495,6 @@ static int msm_otg_resume(struct msm_otg *motg)
 	unsigned temp;
 	unsigned ret;
 	u32 func_ctrl;
-	pr_info("%s: begin \n", __func__);
 
 	if (!atomic_read(&motg->in_lpm)) {
 
@@ -2696,7 +2695,6 @@ static void msm_otg_sm_work(struct work_struct *w)
 
 	/* Just resume h/w if reqd, pm_count is handled based on state/inputs */
 	if (motg->resume_pending) {
-		dev_dbg(dev, "%s: --> Resume pending!\n", __func__);
 
 		pm_runtime_get_sync(otg->phy->dev);
 		if (atomic_read(&motg->in_lpm)) {
@@ -2893,7 +2891,7 @@ static irqreturn_t msm_otg_irq(int irq, void *data)
 	bool work = 0;
 
 	if (atomic_read(&motg->in_lpm)) {
-		pr_info("OTG IRQ: %d in LPM\n", irq);
+		pr_debug("OTG IRQ: %d in LPM\n", irq);
 		/*Ignore interrupt if one interrupt already seen in LPM*/
 		if (motg->async_int)
 			return IRQ_HANDLED;
