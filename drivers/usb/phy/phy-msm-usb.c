@@ -1464,9 +1464,9 @@ phcd_retry:
 	enable_irq(motg->irq);
 	wake_unlock(&motg->wlock);
 
-	dev_info(phy->dev, "LPM caps = %lu flags = %lu\n",
+	dev_dbg(phy->dev, "LPM caps = %lu flags = %lu\n",
 			motg->caps, motg->lpm_flags);
-	dev_info(phy->dev, "USB in low power mode\n");
+	dev_dbg(phy->dev, "USB in low power mode\n");
 
 	if (motg->err_event_seen) {
 		motg->err_event_seen = false;
@@ -1649,7 +1649,7 @@ skip_phy_resume:
 			msecs_to_jiffies(1000 * PM_QOS_SAMPLE_SEC));
 	}
 
-	dev_info(phy->dev, "USB exited from low power mode\n");
+	dev_dbg(phy->dev, "USB exited from low power mode\n");
 
 	return 0;
 }
@@ -4962,7 +4962,7 @@ static int msm_otg_runtime_idle(struct device *dev)
 	struct msm_otg *motg = dev_get_drvdata(dev);
 	struct usb_otg *otg = motg->phy.otg;
 
-	dev_info(dev, "OTG runtime idle\n");
+	dev_dbg(dev, "OTG runtime idle\n");
 
 	/*
 	 * It is observed some times that a spurious interrupt
@@ -4971,13 +4971,11 @@ static int msm_otg_runtime_idle(struct device *dev)
 	 * after asynchronous interrupt.
 	 */
 	if (otg->phy->state != OTG_STATE_UNDEFINED) {
-		dev_info(dev, "OTG State not undef, suspending in 1000...\n");
 		pm_schedule_suspend(dev, 1000);
 	} else {
 		dev_err(dev, "OTG STATE IS UNDEFINED\n");
 	}
 
-	dev_err(dev, "OTG runtime idle: EOFunc\n");
 	return -EAGAIN;
 }
 
@@ -4985,7 +4983,7 @@ static int msm_otg_runtime_suspend(struct device *dev)
 {
 	struct msm_otg *motg = dev_get_drvdata(dev);
 
-	dev_info(dev, "OTG runtime suspend\n");
+	dev_dbg(dev, "OTG runtime suspend\n");
 	return msm_otg_suspend(motg);
 }
 
@@ -4993,7 +4991,7 @@ static int msm_otg_runtime_resume(struct device *dev)
 {
 	struct msm_otg *motg = dev_get_drvdata(dev);
 
-	dev_info(dev, "OTG runtime resume\n");
+	dev_dbg(dev, "OTG runtime resume\n");
 	return msm_otg_resume(motg);
 }
 #endif
