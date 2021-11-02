@@ -343,7 +343,8 @@ static void gsmd_tx_pull(struct work_struct *w)
 	}
 
 	if (port->is_suspended) {
-		goto tx_pull_end;
+		// Let's break this again
+		// goto tx_pull_end;
 
 		spin_unlock_irq(&port->port_lock);
 		if ((gadget->speed == USB_SPEED_SUPER) &&
@@ -353,7 +354,7 @@ static void gsmd_tx_pull(struct work_struct *w)
 			ret = usb_gadget_wakeup(gadget);
 
 		if ((ret == -EBUSY) || (ret == -EAGAIN))
-			pr_debug("Remote wakeup is delayed due to LPM exit\n");
+			pr_err("Remote wakeup is delayed due to LPM exit\n");
 		else if (ret)
 			pr_err("SMD: Failed to wake up the USB core. ret=%d\n", ret);
 
