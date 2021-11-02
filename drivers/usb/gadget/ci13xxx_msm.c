@@ -229,6 +229,10 @@ static void ci13xxx_msm_notify_event(struct ci13xxx *udc, unsigned event)
 			 "CI13XXX_CONTROLLER_UDC_STARTED_EVENT received\n");
 		udc->gadget.interrupt_num = _udc_ctxt.irq;
 		break;
+	case CI13XXX_CONTROLLER_REMOTE_WAKEUP_EVENT:
+		dev_info(dev,
+			 "CI13XXX_CONTROLLER_REMOTE_WAKEUP_EVENT received\n");
+		break;
 	default:
 		dev_dbg(dev, "unknown ci13xxx_udc event\n");
 		break;
@@ -381,7 +385,7 @@ static int ci13xxx_msm_probe(struct platform_device *pdev)
 			ci13xxx_msm_udc_driver.flags &=
 						~CI13XXX_DISABLE_STREAMING;
 	}
-
+	dev_err(&pdev->dev, "ITC is configured to %i \n", ci13xxx_msm_udc_driver.nz_itc);
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
 		dev_err(&pdev->dev, "failed to get platform resource mem\n");
