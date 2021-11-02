@@ -25,20 +25,14 @@
 
 	aliases {
 		/* SMDTTY */
-		smd7 = &smdtty_data1; // GPS
+		smd7 = &smdtty_data1; /* GPS */
 		smd8 = &smdtty_data4;
 		smd9 = &smdtty_data2;
 		smd10 = &smdtty_data3; 
-		// SMD11 removed to be used by USB AT port */
+		/* SMD11 removed to be used by USB AT port */
 		/* smd11 = &smdtty_data11; */
 		smd21 = &smdtty_data21; 
 		smd36 = &smdtty_loopback;
-		
-        /* UART */
- 		 uart0 = &blsp1_uart2; // HLS
- 		 uart1 = &blsp1_uart3; // HS - Goes through bam
- 		 uart2 = &blsp1_uart5; // HLS - Debug uart pins
- 		 uart3 = &blsp1_uart6; // HLS
 		
 		/* i2c */
 		i2c2 = &i2c_2;
@@ -306,14 +300,13 @@
 		clock-names = "clk-1", "clk-5";
 		qcom,speed4-bin-v0 =
 				<          0 0>,
-				<  100000000 1>,
+				<  110000000 1>,
 				<  200000000 1>,
-				<  400000000 1>,
-				<  800000000 2>,
-				<  998400000 3>,
-				< 1094400000 4>,
-				< 1190400000 5>,
-				< 1248000000 6>,
+				<  400000000 2>,
+				<  800000000 3>,
+				<  998400000 4>,
+				< 1094400000 5>,
+				< 1190400000 6>,
 				< 1305600000 7>;
 		qcom,a7ssmux-opp-store-vcorner = <&CPU0>;
 		#clock-cells = <1>;
@@ -327,6 +320,7 @@
 		qcom,bw-tbl =
 			<  188 /*  24   MHz */>,
 			<  366 /*  48   MHz */>,
+			<  420 /* ~55   MHz */>, // align to usb?
 			<  732 /*  96   MHz */>,
 			<  915 /* 120   MHz */>,
 			< 1145 /* 150.15 MHz */>,
@@ -338,8 +332,8 @@
 		cpubw-cpufreq {
 			target-dev = <&cpubw>;
 			cpu-to-dev-map =
-				 <  100000   183>,
-				 <  200000   366>,
+				 <  110000   420>,
+				 <  200000   420>,
 				 <  400000   732>,
 				 <  800000   915>,
 				 <  998400  1145>,
@@ -363,13 +357,14 @@
 		clocks = <&clock_cpu  clk_a7ssmux>;
 		clock-names = "cpu0_clk";
 		qcom,cpufreq-table =
-				<  100000 >,
+				<  110000 >,
 				<  200000 >,
 				<  400000 >,
 				<  800000 >,
 				<  998400 >,
 				< 1094400 >,
 				< 1190400 >,
+				< 1248000 >,
 				< 1305600 >;
 	};
 
@@ -378,6 +373,15 @@
 		qcom,pipe-attr-ee;
 	};
 
+	blsp1_uart5: serial@78b3000 { /* BLSP1 UART5 */
+		compatible = "qcom,msm-lsuart-v14";
+		reg = <0x78b3000 0x200>;
+		interrupts = <0 121 0>;
+		clocks = <&clock_gcc clk_gcc_blsp1_uart5_apps_clk>,
+			 <&clock_gcc clk_gcc_blsp1_ahb_clk>;
+		clock-names = "core_clk", "iface_clk";
+		status = "disabled";
+	};
 	dma_blsp1: qcom,sps-dma@7884000 { /* BLSP1 */
 		#dma-cells = <4>;
 		compatible = "qcom,sps-dma";
@@ -431,18 +435,18 @@
 		reg = <0x78b1000 0x200>,
 			<0x7884000 0x2b000>;
 		reg-names = "core_mem", "bam_mem";
-		interrupt-names = "core_irq", "bam_irq", "wakeup_irq"; //disable uart rx wakeup source
+		interrupt-names = "core_irq", "bam_irq";
 		#address-cells = <0>;
 		interrupt-parent = <&blsp1_uart3>;
-		interrupts = <0 1 2>;
+		interrupts = <0 1>;
 		#interrupt-cells = <1>;
 		interrupt-map-mask = <0xffffffff>;
 		interrupt-map = <0 &intc 0 119 0
 				1 &intc 0 238 0
-				2 &tlmm_pinmux 1 0>; 	//disable uart rx wakeup source
+				2 &tlmm_pinmux 1 0>;
 
-		qcom,inject-rx-on-wakeup;		//disable uart rx wakeup source
-		qcom,rx-char-to-inject = <0xFD>;	//disable uart rx wakeup source
+		qcom,inject-rx-on-wakeup;
+		qcom,rx-char-to-inject = <0xFD>;
 
 		qcom,bam-tx-ep-pipe-index = <4>;
 		qcom,bam-rx-ep-pipe-index = <5>;
@@ -461,23 +465,23 @@
 				<86 512 500 800>;
 		status = "disabled";
 	};
-
-	blsp1_uart5: uart@78b3000 { /* Debug UART */
-		compatible = "qcom,msm-lsuart-v14";
+	
+	blsp1_uart5_hs: uart@78b3000 { /* BLSP1 UART5 */
+		compatible = "qcom,msm-hsuart-v14";
 		reg = <0x78b3000 0x200>,
 			<0x7884000 0x23000>;
 		reg-names = "core_mem", "bam_mem";
 		interrupt-names = "core_irq", "bam_irq", "wakeup_irq";
 		#address-cells = <0>;
-		interrupt-parent = <&blsp1_uart5>;
-		interrupts = <0 121 2>;
+		interrupt-parent = <&blsp1_uart5_hs>;
+		interrupts = <0 1 2>;
 		#interrupt-cells = <1>;
 		interrupt-map-mask = <0xffffffff>;
 		interrupt-map = <0 &intc 0 121 0
 				1 &intc 0 238 0
-		  	2 &tlmm_pinmux 9 0>;
+				2 &tlmm_pinmux 9 0>;
 
-        qcom,inject-rx-on-wakeup;
+		qcom,inject-rx-on-wakeup;
 		qcom,rx-char-to-inject = <0xFD>;
 
 		qcom,bam-tx-ep-pipe-index = <8>;
@@ -496,19 +500,41 @@
 		qcom,msm-bus,vectors-KBps =
 				<86 512 0 0>,
 				<86 512 500 800>;
-		status = "ok";
-	};
-
-	/* UART6: add gpio20,21 uart6 by gale */  
-	blsp1_uart6: serial@78b4000 { /* BLSP1 UART6 */
-		compatible = "qcom,msm-lsuart-v14";
-		reg = <0x78b4000 0x200>;
-		interrupts = <0 122 0>;
-		clocks = <&clock_gcc clk_gcc_blsp1_uart6_apps_clk>,
-	              <&clock_gcc clk_gcc_blsp1_ahb_clk>;
-		clock-names = "core_clk", "iface_clk";
 		status = "disabled";
 	};
+
+	blsp1_uart6: uart6@78b4000 {
+		compatible = "qcom,msm-hsuart-v14";
+		reg = <0x78b4000 0x200>,
+			<0x7884000 0x2b000>;                                                                                                        
+		reg-names = "core_mem", "bam_mem";
+		interrupt-names = "core_irq", "bam_irq";
+		#address-cells = <0>;
+		interrupt-parent = <&blsp1_uart6>;
+		interrupts = <0 1>;
+		#interrupt-cells = <1>;
+		interrupt-map-mask = <0xffffffff>;
+		interrupt-map = <0 &intc 0 122 0
+				1 &intc 0 238 0>;
+
+		qcom,bam-tx-ep-pipe-index = <10>;
+		qcom,bam-rx-ep-pipe-index = <11>;
+		qcom,master-id = <86>;
+		clock-names = "core_clk", "iface_clk";
+		clocks = <&clock_gcc clk_gcc_blsp1_uart6_apps_clk>,
+				<&clock_gcc clk_gcc_blsp1_ahb_clk>;
+		pinctrl-names = "sleep", "default";
+		pinctrl-0 = <&blsp1_uart6_sleep>;
+		pinctrl-1 = <&blsp1_uart6_active>;
+		qcom,msm-bus,name = "blsp1_uart6";
+		qcom,msm-bus,num-cases = <2>;
+		qcom,msm-bus,num-paths = <1>;
+		qcom,msm-bus,vectors-KBps =
+				<86 512 0 0>,
+				<86 512 500 800>;
+		status = "disabled";
+	};
+	
 	qcom,cnss-sdio {
 		compatible = "qcom,cnss_sdio";
 		reg = <0x87a00000 0x200000>;
@@ -542,22 +568,26 @@
 		qcom,hsusb-otg-phy-init-seq =
 			<0x44 0x80 0x38 0x81 0x24 0x82 0x13 0x83 0xffffffff>;
 
-		qcom,hsusb-otg-phy-type = <2>; /* SNPS Femto PHY */
+		qcom,hsusb-otg-phy-type = <3>; /* SNPS Femto PHY */
 		qcom,hsusb-otg-mode = <1>; /* peripheral mode ivan 20160104 change 3-->1 solved the USB not working problem*/
         qcom,hsusb-otg-default-mode=<1>; /* peripheral mode ivan 20160104 add  solved the USB not working problem*/
 		qcom,hsusb-otg-otg-control = <3>; /* USR control ivan 20160104 change 2-->3 solved the USB not working problem*/
 		qcom,usbid-gpio = <&pm8019_mpps 1 0>;
-		qcom,hsusb-log2-itc = <4>;
+		qcom,hsusb-log2-itc = <1>;
 		qcom,dp-manual-pullup;
 		qcom,boost-sysclk-with-streaming;
 		qcom,phy-dvdd-always-on;
 		qcom,hsusb-otg-lpm-on-dev-suspend;
 		qcom,axi-prefetch-enable;
+		/*
 		qcom,hsusb-otg-mpm-dpsehv-int = <49>;
 		qcom,hsusb-otg-mpm-dmsehv-int = <58>;
+		*/
 		qcom,hsusb-otg-delay-lpm;
 		qcom,enable-phy-id-pullup;
-
+		/* Bik test: */
+		qcom,hsusb-otg-disable-reset;
+		/* End bik test */
 		qcom,msm-bus,name = "usb2";
 		qcom,msm-bus,num-cases = <3>;
 		qcom,msm-bus,num-paths = <1>;
@@ -785,13 +815,13 @@
 		qcom,auxpcm-interface-mode = "pri_pcm_master", "sec_pcm_master";
 		asoc-platform = <&pcm0>, <&pcm1>, <&voip>, <&voice>,
 				<&loopback>, <&hostless>, <&afe>, <&routing>,
-				<&pcm_dtmf>, <&pcm_dsp_dtmf>, <&host_pcm>;
+				<&pcm_dtmf>, <&pcm_dsp_dtmf>, <&host_pcm>, <&compress>;
 		asoc-platform-names = "msm-pcm-dsp.0", "msm-pcm-dsp.1",
 				"msm-voip-dsp", "msm-pcm-voice",
 				"msm-pcm-loopback", "msm-pcm-hostless",
 				"msm-pcm-afe", "msm-pcm-routing",
 				"msm-pcm-dtmf", "msm-pcm-dsp-dtmf",
-				"msm-voice-host-pcm";
+				"msm-voice-host-pcm", "msm-compress-dsp";
 		asoc-cpu = <&dai_pri_auxpcm>, <&dai_sec_auxpcm>,
 				<&mi2s_prim>, <&mi2s_sec>, <&dtmf_tx>,
 				<&rx_capture_tx>, <&rx_playback_rx>,
@@ -842,13 +872,13 @@
 		qcom,auxpcm-interface-mode = "pri_pcm_master", "sec_pcm_master";
 		asoc-platform = <&pcm0>, <&pcm1>, <&voip>, <&voice>,
 				<&loopback>, <&hostless>, <&afe>, <&routing>,
-				<&pcm_dtmf>, <&pcm_dsp_dtmf>, <&host_pcm>;
+				<&pcm_dtmf>, <&pcm_dsp_dtmf>, <&host_pcm>, <&compress>;
 		asoc-platform-names = "msm-pcm-dsp.0", "msm-pcm-dsp.1",
 				"msm-voip-dsp", "msm-pcm-voice",
 				"msm-pcm-loopback", "msm-pcm-hostless",
 				"msm-pcm-afe", "msm-pcm-routing",
 				"msm-pcm-dtmf", "msm-pcm-dsp-dtmf",
-				"msm-voice-host-pcm";
+				"msm-voice-host-pcm", "msm-compress-dsp";
 		asoc-cpu = <&dai_pri_auxpcm>, <&dai_sec_auxpcm>,
 				<&mi2s_prim>, <&mi2s_sec>, <&dtmf_tx>,
 				<&rx_capture_tx>, <&rx_playback_rx>,
@@ -933,6 +963,10 @@
 		compatible = "qcom,msm-pcm-loopback";
 	};
 
+	compress: qcom,msm-compress-dsp {
+		compatible = "qcom,msm-compress-dsp";
+		qcom,adsp-version = "MDSP 2.8";
+	};
 	 qcom,msm-dai-stub {
 		compatible = "qcom,msm-dai-stub";
 		dtmf_tx: qcom,msm-dai-stub-dtmf-tx {
@@ -1033,7 +1067,6 @@
 					&sec_auxpcm_din_sleep>;*/
 	};
 
-	//2016-03-07, add by ju.wu
 	dai_sec_auxpcm: qcom,msm-sec-auxpcm {
 		compatible = "qcom,msm-auxpcm-dev";
 		qcom,msm-cpudai-auxpcm-mode = <0>, <0>, <0>;
@@ -1056,7 +1089,6 @@
 					&sec_auxpcm_dout_sleep
 					&sec_auxpcm_din_sleep>;
 	};
-	//end jun.wu
 
 	qcom,msm-dai-mi2s {
 		compatible = "qcom,msm-dai-mi2s";
@@ -1066,37 +1098,14 @@
 			qcom,msm-mi2s-rx-lines = <2>;
 			qcom,msm-mi2s-tx-lines = <1>;
 			pinctrl-names = "default", "idle";
-			//comment out by cullen
-			/*pinctrl-0 = <&pri_mi2s_ws_active
-					&pri_mi2s_sck_active
-					&pri_mi2s_dout_active
-					&pri_mi2s_din_active>;
-			pinctrl-1 = <&pri_mi2s_ws_sleep
-					&pri_mi2s_sck_sleep
-					&pri_mi2s_dout_sleep
-					&pri_mi2s_din_sleep>;
-		   */	
 		};
-		// 2017-09-11, eddy.qin
+
 		mi2s_sec: qcom,msm-dai-q6-mi2s-sec {
 			compatible = "qcom,msm-dai-q6-mi2s";
 			qcom,msm-dai-q6-mi2s-dev-id = <1>;
 			qcom,msm-mi2s-rx-lines = <2>;
 			qcom,msm-mi2s-tx-lines = <1>;
-			/*
-			pinctrl-names = "default", "idle";
-			pinctrl-0 = <&sec_mi2s_ws_active
-					&sec_mi2s_sck_active
-					&sec_mi2s_dout_active
-					&sec_mi2s_din_active>;
-			pinctrl-1 = <&sec_mi2s_ws_sleep
-					&sec_mi2s_sck_sleep
-					&sec_mi2s_dout_sleep
-					&sec_mi2s_din_sleep>;
-		 */	
-			
 		};
-		// end eddy.qin
 	};
 
 	qcom,msm-thermal {
@@ -1556,7 +1565,6 @@
 		status = "okay";
 	};
 
-	//add by max.tang for VBUS detect  //maxcodeflag20160329
 	usb_detect {
 		compatible = "qcom,gpio-usbdetect";
 		interrupt-parent = <&spmi_bus>;
