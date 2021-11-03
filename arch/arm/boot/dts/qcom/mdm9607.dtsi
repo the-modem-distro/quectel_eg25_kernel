@@ -230,18 +230,6 @@
 			compatible = "qcom,msm-imem-pil";
 			reg = <0x94c 200>;
 		};
-		download_mode@0 {
-			compatible = "qcom,msm-imem-download_mode";
-			reg = <0x00 8>;
-		};
-		emergency_download_mode@fe0 {
-			compatible = "qcom,msm-imem-emergency_download_mode";
-			reg = <0xfe0 12>;
-		};
-		dload_type@18 {
-			compatible = "qcom,msm-imem-dload-type";
-			reg = <0x18 4>;
-		};
 	};
 
 	restart@4ab000 {
@@ -332,8 +320,8 @@
 		cpubw-cpufreq {
 			target-dev = <&cpubw>;
 			cpu-to-dev-map =
-				 <  110000   420>,
-				 <  200000   420>,
+				 <  110000   732>,
+				 <  200000   732>,
 				 <  400000   732>,
 				 <  800000   915>,
 				 <  998400  1145>,
@@ -382,6 +370,7 @@
 		clock-names = "core_clk", "iface_clk";
 		status = "disabled";
 	};
+
 	dma_blsp1: qcom,sps-dma@7884000 { /* BLSP1 */
 		#dma-cells = <4>;
 		compatible = "qcom,sps-dma";
@@ -569,11 +558,11 @@
 			<0x44 0x80 0x38 0x81 0x24 0x82 0x13 0x83 0xffffffff>;
 
 		qcom,hsusb-otg-phy-type = <3>; /* SNPS Femto PHY */
-		qcom,hsusb-otg-mode = <1>; /* peripheral mode ivan 20160104 change 3-->1 solved the USB not working problem*/
-        qcom,hsusb-otg-default-mode=<1>; /* peripheral mode ivan 20160104 add  solved the USB not working problem*/
-		qcom,hsusb-otg-otg-control = <3>; /* USR control ivan 20160104 change 2-->3 solved the USB not working problem*/
+		qcom,hsusb-otg-mode = <1>; /* OTG mode peripheral*/
+        qcom,hsusb-otg-default-mode=<1>; /* Start in peripheral mode by default */
+		qcom,hsusb-otg-otg-control = <3>; /* User Control */
 		qcom,usbid-gpio = <&pm8019_mpps 1 0>;
-		qcom,hsusb-log2-itc = <1>;
+		qcom,hsusb-log2-itc = <0>; /* Interrupt firing frequency 0->Max, 7->min */
 		qcom,dp-manual-pullup;
 		qcom,boost-sysclk-with-streaming;
 		qcom,phy-dvdd-always-on;
@@ -585,9 +574,7 @@
 		*/
 		qcom,hsusb-otg-delay-lpm;
 		qcom,enable-phy-id-pullup;
-		/* Bik test: */
-		qcom,hsusb-otg-disable-reset;
-		/* End bik test */
+
 		qcom,msm-bus,name = "usb2";
 		qcom,msm-bus,num-cases = <3>;
 		qcom,msm-bus,num-paths = <1>;
@@ -967,6 +954,7 @@
 		compatible = "qcom,msm-compress-dsp";
 		qcom,adsp-version = "MDSP 2.8";
 	};
+
 	 qcom,msm-dai-stub {
 		compatible = "qcom,msm-dai-stub";
 		dtmf_tx: qcom,msm-dai-stub-dtmf-tx {
@@ -1137,9 +1125,7 @@
 		qcom,vdd-restriction-temp = <5>;
 		qcom,vdd-restriction-temp-hysteresis = <10>;
 		vdd-dig-supply = <&mdm9607_s3_floor_level>;
-		//add by [asa.wang] 20180207 for add qualcomm CR 2050812 Power [LE925A4-KR] modem crash at the 85'c high temperature start
 		qcom,therm-ddr-lm-info = <2 78 70>;
-		//add by [asa.wang] 20180207 end
 
 		qcom,vdd-dig-rstr{
 			qcom,vdd-rstr-reg = "vdd-dig";
@@ -1568,7 +1554,7 @@
 	usb_detect {
 		compatible = "qcom,gpio-usbdetect";
 		interrupt-parent = <&spmi_bus>;
-		interrupts = <0x0 0xA1 0x0>; /* PMD9607 MPP 2 */
+		interrupts = <0x0 0xA1 0x0>; /* PMD9607 MPP 2 */ 
 		interrupt-names = "vbus_det_irq";
 	};
 };
@@ -1610,30 +1596,6 @@
 		qcom,scale-function = <0>;
 		qcom,hw-settle-time = <0>;
 		qcom,fast-avg-setup = <0>;
-	};
-
-	/* Add by gale 2017-08-22, for adc0 function */
-	chan@23 {
-		label = "mpp4_vadc";
-		reg = <0x23>; 				// channe0 for MPP4
-		qcom,decimation = <0>;
-		qcom,pre-div-channel-scaling = <1>; 	//Use 1:3 scaling to keep input
-		qcom,calibration-type = "absolute";
-		qcom,scale-function = <0>;
-		qcom,hw-settle-time = <1>;
-		qcom,fast-avg-setup = <2>;
-	};
-	
-	/* Add by gale 2017-08-22, for adc1 function */
-	chan@25 {
-		label = "mpp6_vadc";
-		reg = <0x25>;				// channe1 for MPP6
-		qcom,decimation = <0>;
-		qcom,pre-div-channel-scaling = <1>;	//Use 1:3 scaling to keep input
-		qcom,calibration-type = "absolute";
-		qcom,scale-function = <0>;
-		qcom,hw-settle-time = <1>;
-		qcom,fast-avg-setup = <2>;
 	};
 
 	chan@31 {
