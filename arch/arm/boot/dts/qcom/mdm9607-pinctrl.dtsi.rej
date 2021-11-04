@@ -1,0 +1,32 @@
+--- arch/arm/boot/dts/qcom/mdm9607-pinctrl.dtsi
++++ arch/arm/boot/dts/qcom/mdm9607-pinctrl.dtsi
+@@ -134,7 +134,28 @@
+ 				bias-pull-down;
+ 			};
+ 		};
+-
++		blsp1_uart6_sleep: blsp1_uart6_sleep {
++	             mux {
++	                 pins = "gpio20", "gpio21","gpio22","gpio23";
++	                 function = "blsp_uart6";
++	             };
++	             config {
++	                 pins = "gpio20", "gpio21","gpio22","gpio23";
++	                 drive-strength = <2>;
++	                 bias-pull-down;
++	             };
++	         };
++	        blsp1_uart6_active: blsp1_uart6_active {
++	             mux {
++	                 pins = "gpio20", "gpio21","gpio22","gpio23";
++	                 function = "blsp_uart6";
++	             };
++	             config {                                                                                                                    
++	                pins = "gpio20", "gpio21","gpio22","gpio23";
++	                 drive-strength = <2>;
++	                 bias-pull-down;
++	             };
++	         };
+ 		spi6 {
+ 			spi6_default: spi6_default {
+ 				/* active state */

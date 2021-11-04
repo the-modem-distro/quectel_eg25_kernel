@@ -326,7 +326,7 @@ static void gsmd_tx_pull(struct work_struct *w)
 	spin_lock_irq(&port->port_lock);
 
 	if (!port->port_usb) {
-		pr_debug("%s: usb is disconnected\n", __func__);
+		pr_err("%s: usb is disconnected\n", __func__);
 		spin_unlock_irq(&port->port_lock);
 		gsmd_read_pending(port);
 		return;
@@ -338,12 +338,13 @@ static void gsmd_tx_pull(struct work_struct *w)
 
 	/* Bail-out is suspended without remote-wakeup enable */
 	if (port->is_suspended && !gsmd_remote_wakeup_allowed(func)) {
+		pr_err("%s: Remote wakeup is not allowed! \n");
 		spin_unlock_irq(&port->port_lock);
 		return;
 	}
 
 	if (port->is_suspended) {
-		// Let's break this again
+		pr_err("%s: Port is suspended, skipping wake up bypassed\n", __func__);
 		// goto tx_pull_end;
 
 		spin_unlock_irq(&port->port_lock);
@@ -360,7 +361,7 @@ static void gsmd_tx_pull(struct work_struct *w)
 
 		spin_lock_irq(&port->port_lock);
 		if (!port->port_usb) {
-			pr_debug("%s: USB disconnected\n", __func__);
+			pr_err("%s: USB disconnected\n", __func__);
 			spin_unlock_irq(&port->port_lock);
 			gsmd_read_pending(port);
 			return;

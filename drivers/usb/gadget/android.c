@@ -466,6 +466,13 @@ static void android_work(struct work_struct *data)
 		 * Check if we missed sending out a DISCONNECT uevent. This can
 		 * happen if host PC resets and configures device really quick.
 		 */
+		if ((uevent_envp == connected) && (last_uevent != USB_DISCONNECTED)) {
+			pr_info("%s: We received a connected when prev state was not disconnected\n", __func__);
+		}
+		if (((uevent_envp == configured) && (last_uevent == USB_CONFIGURED))) {
+			pr_info("%s: We received a configured when prev state was already configured\n", __func__);
+		}
+
 		if (((uevent_envp == connected) &&
 		      (last_uevent != USB_DISCONNECTED)) ||
 		    ((uevent_envp == configured) &&

@@ -720,7 +720,7 @@ static int msm_otg_reset(struct usb_phy *phy)
 	if (ret) {
 		dev_err(phy->dev, "phy_reset failed\n");
 		if (motg->phy_irq) {
-			pr_err("%s: enable phy irq\n", __func__);
+				pr_err("%s: enable phy irq\n", __func__);
 			enable_irq(motg->phy_irq);
 
 		}
@@ -1592,8 +1592,33 @@ static int msm_otg_resume(struct msm_otg *motg)
 	if (!(readl_relaxed(USB_PORTSC) & PORTSC_PHCD))
 		goto skip_phy_resume;
 
-	writel_relaxed(readl_relaxed(USB_PORTSC) & ~PORTSC_PHCD, USB_PORTSC);
+	in_device_mode =
+		phy->otg->gadget &&
+		test_bit(ID, &motg->inputs);
 
+	bus_is_suspended =
+		readl_relaxed(USB_PORTSC) & PORTSC_SUSP_MASK;
+
+	is_remote_wakeup = in_device_mode && bus_is_suspended;
+
+	if (is_remote_wakeup &&
+	    (atomic_read(&(motg->set_fpr_with_lpm_exit)) ||
+	     pdata->rw_during_lpm_workaround)) {
+		/* In some targets there is a HW issue with remote wakeup
+		 * during low-power mode. As a workaround, the FPR bit
+		 * is written simultaneously with the clearing of the
+		 * PHCD bit.
+		 */
+		writel_relaxed(
+			(readl_relaxed(USB_PORTSC) & ~PORTSC_PHCD) |
+			PORTSC_FPR_MASK,
+			USB_PORTSC);
+
+		atomic_set(&(motg->set_fpr_with_lpm_exit), 0);
+	} else {
+		writel_relaxed(readl_relaxed(USB_PORTSC) & ~PORTSC_PHCD,
+			USB_PORTSC);
+	}
 	while (cnt < PHY_RESUME_TIMEOUT_USEC) {
 		if (!(readl_relaxed(USB_PORTSC) & PORTSC_PHCD))
 			break;
@@ -4339,7 +4364,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 	mb();
 
 	motg->id_state = USB_ID_FLOAT;
-	set_bit(ID, &motg->inputs);
+//	set_bit(ID, &motg->inputs);
 	wake_lock_init(&motg->wlock, WAKE_LOCK_SUSPEND, "msm_otg");
 	INIT_WORK(&motg->sm_work, msm_otg_sm_work);
 	INIT_DELAYED_WORK(&motg->chg_work, msm_chg_detect_work);
@@ -4387,6 +4412,10 @@ static int msm_otg_probe(struct platform_device *pdev)
 		}
 	}
 
+	/*ret = request_irq(motg->async_irq, msm_otg_irq,
+				IRQF_TRIGGER_RISING, "msm_otg", motg);*/
+	
+	dev_err(&pdev->dev, "Bik: IRQF_FORCE_RESUME\n");
 	ret = request_irq(motg->async_irq, msm_otg_irq,
 				IRQF_TRIGGER_RISING | IRQF_FORCE_RESUME, "msm_otg", motg);
 	if (ret) {
@@ -4533,9 +4562,11 @@ static int msm_otg_probe(struct platform_device *pdev)
 		pm_runtime_set_autosuspend_delay(&pdev->dev,
 			lpm_disconnect_thresh);
 		pm_runtime_use_autosuspend(&pdev->dev);
-	}
-	*/
+	}*/
+	
+	dev_info(&pdev->dev, "Bik: Dont use autosuspend\n");
 	pm_runtime_dont_use_autosuspend(&pdev->dev);
+
 
 	motg->usb_psy.name = "usb";
 	motg->usb_psy.type = POWER_SUPPLY_TYPE_USB;
@@ -4787,21 +4818,21 @@ static void msm_otg_shutdown(struct platform_device *pdev)
 static int msm_otg_runtime_idle(struct device *dev)
 {
 	struct msm_otg *motg = dev_get_drvdata(dev);
-	struct usb_phy *phy = &motg->phy;
-
+	struct usb_otg *otg = motg->phy.otg;
 	dev_info(dev, "OTG runtime idle\n");
 
 
-	if (phy->state == OTG_STATE_UNDEFINED) {
+	if (otg->phy->state == OTG_STATE_UNDEFINED) {
 		dev_err(dev, "OTG STATE IS UNDEFINED\n");
 		return -EAGAIN;
 	}
-	if (!atomic_read(&motg->in_lpm) && (phy->state == OTG_STATE_B_SUSPEND)) {
+
+	if (!atomic_read(&motg->in_lpm) && (otg->phy->state == OTG_STATE_B_SUSPEND)) {
 		/* It can be in the middle of resume. msm_otg_irq()is called but the
 		 * core_irq is not yet received. Return non-zero so that PM core
 		 * will not call msm_otg_runtime_suspend() to suspend the device.
 		*/
-		dev_err(dev, "Bik: Prevent PM core to suspend this device.\n");
+		dev_err(dev, "Bik: You're in the middle of a resume. You cannot go to sleep now\n");
 		return -EPERM;
 	}
 	return 0;
@@ -4810,17 +4841,8 @@ static int msm_otg_runtime_idle(struct device *dev)
 static int msm_otg_runtime_suspend(struct device *dev)
 {
 	struct msm_otg *motg = dev_get_drvdata(dev);
-	struct usb_phy *phy = &motg->phy;
 
 	dev_info(dev, "OTG runtime suspend\n");
-	if (!atomic_read(&motg->in_lpm) && (phy->state == OTG_STATE_B_SUSPEND)) {
-		/* It can be in the middle of resume. msm_otg_irq()is called but the
-		 * core_irq is not yet received. Return non-zero so that PM core
-		 * will not call msm_otg_runtime_suspend() to suspend the device.
-		*/
-		dev_err(dev, "Bik: Prevent PM core to suspend this device.\n");
-		return -EPERM;
-	}
 	return msm_otg_suspend(motg);
 }
 
