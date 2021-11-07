@@ -752,38 +752,42 @@ static int ci13xxx_wakeup(struct usb_gadget *_gadget)
 	unsigned long flags;
 	int ret = 0;
 	static int retry_count;
-
+	pr_info("%s: Remote wakeup called\n", __func__);
+	
 	spin_lock_irqsave(udc->lock, flags);
 	if (!udc->gadget.remote_wakeup) {
-		pr_err("%s: remote wakeup disabled\n", __func__);
-
-		ret = -EOPNOTSUPP;
-		goto out;
+		pr_err("%s: Remote wakeup disabled\n", __func__);
+		spin_unlock_irqrestore(udc->lock, flags);
+		return -EOPNOTSUPP;
 	}
+
 	spin_unlock_irqrestore(udc->lock, flags);
 
-	ret = pm_runtime_get_sync(&_gadget->dev);
-	if (ret) {
+	if (!udc->suspended) {
+		pr_err("%s: Was already awake, get out\n", __func__);
+		return 0;
+	}
 
-		/* pm_runtime_get_sync returns -EACCES error between
-		 * late_suspend and early_resume, wait for system resume to
-		 * finish and perform resume from work_queue again
-		 */
-		pr_debug("PM runtime get sync failed, ret %d\n", ret);
-		if (ret == -EACCES) {
-			pr_err("%s: PM runtime get sync failed, ret %d (%i retries)\n", __func__, ret, retry_count);
-			pm_runtime_put_noidle(&_gadget->dev);
-			if (retry_count == CI_PM_RESUME_RETRIES) {
-				pr_err("pm_runtime_get_sync timed out\n");
-				retry_count = 0;
-				return 0;
-			}
-			retry_count++;
-			schedule_delayed_work(&udc->rw_work,
-					      REMOTE_WAKEUP_DELAY);
+	ret = pm_runtime_get_sync(&_gadget->dev);
+	if (ret == -EACCES) {
+		pr_err("%s: PM runtime get sync failed, ret %d (%i retries)\n", __func__, ret, retry_count);
+		pm_runtime_put_noidle(&_gadget->dev);
+		if (retry_count == CI_PM_RESUME_RETRIES) {
+			pr_err("pm_runtime_get_sync timed out\n");
+			retry_count = 0;
 			return 0;
 		}
+		retry_count++;
+		schedule_delayed_work(&udc->rw_work, REMOTE_WAKEUP_DELAY);
+		return 0;
 	}
+	if (ret == 1) {
+		pr_err("%s: Already up\n", __func__);
+
+	} else if (ret == 0) {
+		pr_err("%s: Woke up\n", __func__);
+	}
+
 	retry_count = 0;
 	udc->udc_driver->notify_event(udc,
 		CI13XXX_CONTROLLER_REMOTE_WAKEUP_EVENT);
@@ -793,22 +797,19 @@ static int ci13xxx_wakeup(struct usb_gadget *_gadget)
 
 	spin_lock_irqsave(udc->lock, flags);
 	if (!hw_cread(CAP_PORTSC, PORTSC_SUSP)) {
-		ret = -EINVAL;
-		
-		printk("%s: CAP_PORTSC, PORTSC_SUSP is 0, we're gonna have a reset soon\n", __func__);
-
+		printk("%s: PORTSC_SUSP is 0, we're already up!\n", __func__);
 		pm_runtime_put(&_gadget->dev);
-		goto out;
+		spin_unlock_irqrestore(udc->lock, flags);
+		return 0;
 	}
-	printk("%s: Writing to port\n", __func__);
 
+	printk("%s: Writing to port\n", __func__);
 	hw_cwrite(CAP_PORTSC, PORTSC_FPR, PORTSC_FPR);
 
 	pm_runtime_mark_last_busy(&_gadget->dev);
 	pm_runtime_put_autosuspend(&_gadget->dev);
-	
-out:
-	printk("%s: get out\n", __func__);
+
+	printk("%s: Finished\n", __func__);
 	spin_unlock_irqrestore(udc->lock, flags);
 	return 0;
 }
