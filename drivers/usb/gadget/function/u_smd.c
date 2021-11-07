@@ -338,7 +338,7 @@ static void gsmd_tx_pull(struct work_struct *w)
 
 	/* Bail-out is suspended without remote-wakeup enable */
 	if (port->is_suspended && !gsmd_remote_wakeup_allowed(func)) {
-		pr_err("%s: Remote wakeup is not allowed! \n");
+		pr_err("%s: Remote wakeup is not allowed! \n", __func__);
 		spin_unlock_irq(&port->port_lock);
 		return;
 	}
@@ -354,9 +354,14 @@ static void gsmd_tx_pull(struct work_struct *w)
 		else
 			ret = usb_gadget_wakeup(gadget);
 
-		if ((ret == -EBUSY) || (ret == -EAGAIN))
-			pr_err("Remote wakeup is delayed due to LPM exit\n");
-		else if (ret)
+		if (!ret) {
+			pr_err("SMD: Requested wakeup succeeded\n");
+
+		}
+		if ((ret == -EBUSY) || (ret == -EAGAIN)) 
+			pr_err("SMD: Remote wakeup is delayed due to LPM exit\n");
+
+		else if (ret) 
 			pr_err("SMD: Failed to wake up the USB core. ret=%d\n", ret);
 
 		spin_lock_irq(&port->port_lock);
