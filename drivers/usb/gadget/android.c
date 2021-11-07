@@ -478,8 +478,8 @@ static void android_work(struct work_struct *data)
 		    ((uevent_envp == configured) &&
 		      (last_uevent == USB_CONFIGURED))) {
 			pr_info("%s: sent missed DISCONNECT event\n", __func__);
-			kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE,
-								disconnected);
+		/*	kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE,
+								disconnected);*/
 			msleep(20);
 		}
 		/*
