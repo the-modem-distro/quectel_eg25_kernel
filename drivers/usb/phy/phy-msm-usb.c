@@ -831,6 +831,16 @@ static int msm_otg_set_suspend(struct usb_phy *phy, int suspend)
 	if (!(motg->caps & ALLOW_LPM_ON_DEV_SUSPEND))
 		return 0;
 
+	if (suspend == 0 && phy->state == OTG_STATE_B_PERIPHERAL) {
+		pr_err("%s: Called to resume when already awake\n", __func__);
+		return 0;
+	}
+
+	if (suspend == 1 && phy->state == OTG_STATE_B_SUSPEND) {
+		pr_err("%s: Called to suspend when already sleeping\n", __func__);
+		return 0;
+	}
+
 	if (suspend) {
 		/* called in suspend interrupt context */
 		pr_err("%s: UDC called for peripheral suspend\n", __func__);
@@ -1724,7 +1734,7 @@ static int msm_otg_notify_chg_type(struct msm_otg *motg)
 		return -EINVAL;
 	}
 
-	pr_err("setting usb power supply type %d\n", charger_type);
+	pr_debug("setting usb power supply type %d\n", charger_type);
 
 	propval.intval = charger_type;
 	psy->set_property(psy, POWER_SUPPLY_PROP_REAL_TYPE, &propval);
@@ -1788,7 +1798,7 @@ static void msm_otg_notify_charger(struct msm_otg *motg, unsigned mA)
 	if (g && g->is_a_peripheral)
 		return;
 
-	dev_info(motg->phy.dev, "Requested curr from USB = %u, max-type-c:%u\n",
+	dev_dbg(motg->phy.dev, "Requested curr from USB = %u, max-type-c:%u\n",
 					mA, motg->typec_current_max);
 	/* Save bc1.2 max_curr if type-c charger later moves to diff mode */
 	motg->bc1p2_current_max = mA;
