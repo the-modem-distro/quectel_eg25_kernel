@@ -80,14 +80,8 @@ static int __initdata mtd_devs;
 static struct mtd_dev_param __initdata mtd_dev_param[UBI_MAX_DEVICES];
 #ifdef CONFIG_MTD_UBI_FASTMAP
 /* UBI module parameter to enable fastmap automatically on non-fastmap images */
-#if !defined(CONFIG_MTD_UBI_FASTMAP_AUTOCONVERT)
-#define CONFIG_MTD_UBI_FASTMAP_AUTOCONVERT 0
-#endif
-static bool fm_autoconvert = CONFIG_MTD_UBI_FASTMAP_AUTOCONVERT;
-#if !defined(CONFIG_MTD_UBI_FM_DEBUG)
-#define CONFIG_MTD_UBI_FM_DEBUG 0
-#endif
-static bool fm_debug = CONFIG_MTD_UBI_FM_DEBUG;
+static bool fm_autoconvert;
+static bool fm_debug;
 #endif
 
 /* Slab cache for wear-leveling entries */
