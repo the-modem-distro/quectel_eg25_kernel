@@ -1586,8 +1586,9 @@ static int gbam_wake_cb(void *param)
 	func = port->port_usb->f;
 	spin_unlock_irqrestore(&port->port_lock, flags);
 
-	pr_debug("%s: woken up by peer\n", __func__);
-
+	pr_err("%s: woken up by peer killed\n", __func__);
+	// FIXME: Kill it here too?
+	// return -ENODEV;
 	if ((gadget->speed == USB_SPEED_SUPER) &&
 	    (func->func_is_suspended))
 		ret = usb_func_wakeup(func);

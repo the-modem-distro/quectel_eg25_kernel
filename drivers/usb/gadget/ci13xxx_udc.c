@@ -1430,7 +1430,7 @@ __acquires(udc->lock)
 		return;
 	}
 
-//	spin_unlock(udc->lock);
+	spin_unlock(udc->lock);
 
 	if (udc->suspended) {
 		printk("%s: Bus reset while suspended\n", __func__);
@@ -1460,7 +1460,7 @@ __acquires(udc->lock)
 	if (retval)
 		goto done;
 
-//	spin_lock(udc->lock);
+	spin_lock(udc->lock);
 
  done:
 	if (retval)
@@ -1474,12 +1474,11 @@ __acquires(udc->lock)
  */
 static void isr_resume_handler(struct ci13xxx *udc)
 {
-	printk("%s: Resume begin... ", __func__);
 	udc->gadget.speed = hw_port_is_high_speed() ?
 		USB_SPEED_HIGH : USB_SPEED_FULL;
 	if (udc->suspended) {
-		printk(" ...Was suspended\n");
-//		spin_unlock(udc->lock);
+		printk("%s: Suspend->Resume\n", __func__);
+		spin_unlock(udc->lock);
 		if (udc->udc_driver->notify_event)
 			udc->udc_driver->notify_event(udc,
 			  CI13XXX_CONTROLLER_RESUME_EVENT);
@@ -1487,16 +1486,14 @@ static void isr_resume_handler(struct ci13xxx *udc)
 			usb_phy_set_suspend(udc->transceiver, 0);
 		udc->suspended = 0;
 		udc->driver->resume(&udc->gadget);
-//		spin_lock(udc->lock);
+		spin_lock(udc->lock);
 
 		if (udc->rw_pending)
 			purge_rw_queue(udc);
 
 	} else {
-		printk(" ...Was already resumed!\n");
+		printk("%s: Resume->Resume\n", __func__);
 	}
-	
-	printk("%s: Resume finished \n", __func__);
 }
 
 /**
@@ -1506,7 +1503,6 @@ static void isr_resume_handler(struct ci13xxx *udc)
  */
 static void isr_suspend_handler(struct ci13xxx *udc)
 {
-	printk("%s: Suspend begin ", __func__);
 	if(udc->vbus_active) {
 		if(udc->gadget.speed == USB_SPEED_UNKNOWN) {
 			udc->gadget.speed = hw_port_is_high_speed() ?
@@ -1514,21 +1510,20 @@ static void isr_suspend_handler(struct ci13xxx *udc)
 		}
 	}
 	if (udc->suspended == 0) {
-		printk(" ...Suspending now!\n");
+		printk("%s: Resume->Suspend\n", __func__);
 
-//		spin_unlock(udc->lock);
+		spin_unlock(udc->lock);
 		udc->driver->suspend(&udc->gadget);
 		if (udc->udc_driver->notify_event)
 			udc->udc_driver->notify_event(udc,
 			CI13XXX_CONTROLLER_SUSPEND_EVENT);
 		if (udc->transceiver)
 			usb_phy_set_suspend(udc->transceiver, 1);
-//		spin_lock(udc->lock);
+		spin_lock(udc->lock);
 		udc->suspended = 1;
 	} else if(udc->suspended == 1) {
-		printk("%s: Already suspended!\n", __func__);
+		printk("%s: Suspend->Suspend\n", __func__);
 	}
-	printk("%s: Suspend finished \n", __func__);
 }
 
 /**

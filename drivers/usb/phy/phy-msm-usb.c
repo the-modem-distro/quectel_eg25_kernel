@@ -809,7 +809,6 @@ static void msm_otg_kick_sm_work(struct msm_otg *motg)
 		pr_err("%s: PM Suspended but state is not\n", __func__);
 		motg->sm_work_pending = true;
 	} else if (!motg->sm_work_pending) {
-		pr_err("%s: We have pending work to do\n", __func__);
 		/* process event only if previous one is not pending */
 		queue_work(motg->otg_wq, &motg->sm_work);
 	}
@@ -825,7 +824,7 @@ static int msm_otg_set_suspend(struct usb_phy *phy, int suspend)
 {
 	struct msm_otg *motg = container_of(phy, struct msm_otg, phy);
 	/* int suspend: 0 -> resume, 1 -> suspend */
-	pr_err("%s(%d) in %s state\n", __func__, suspend,
+	pr_debug("%s(%d) in %s state\n", __func__, suspend,
 	usb_otg_state_string(phy->state));
 
 	if (!(motg->caps & ALLOW_LPM_ON_DEV_SUSPEND))
@@ -848,7 +847,7 @@ static int msm_otg_set_suspend(struct usb_phy *phy, int suspend)
 		set_bit(A_BUS_SUSPEND, &motg->inputs);
 	} else {
 		/* host resume or remote-wakeup */
-		pr_err("%s: UDC called for host resume or remote wakeup\n", __func__);
+		pr_err("%s: UDC called for host resume / remote wakeup\n", __func__);
 
 		clear_bit(A_BUS_SUSPEND, &motg->inputs);
 	}
@@ -2585,7 +2584,6 @@ static void msm_otg_sm_work(struct work_struct *w)
 	struct usb_otg *otg = motg->phy.otg;
 	struct device *dev = otg->phy->dev;
 	int ret;
-	pr_err("%s: Begin\n", __func__);
 
 	/* Just resume h/w if reqd, pm_count is handled based on state/inputs */
 	if (motg->resume_pending) {
@@ -2601,7 +2599,7 @@ static void msm_otg_sm_work(struct work_struct *w)
 
 	switch (otg->phy->state) {
 	case OTG_STATE_UNDEFINED:
-		dev_info(dev, "%s: OTG_STATE_UNDEFINED\n", __func__);
+		dev_dbg(dev, "%s: OTG_STATE_UNDEFINED\n", __func__);
 		pm_runtime_get_sync(otg->phy->dev);
 		msm_otg_reset(otg->phy);
 		/* Add child device only after block reset */
@@ -2620,7 +2618,7 @@ static void msm_otg_sm_work(struct work_struct *w)
 		pm_runtime_put(dev);
 		/* FALL THROUGH */
 	case OTG_STATE_B_IDLE:
-		dev_info(dev, "%s: OTG_STATE_B_IDLE\n", __func__);
+		dev_dbg(dev, "%s: OTG_STATE_B_IDLE\n", __func__);
 		if (!test_bit(ID, &motg->inputs) && otg->host) {
 			pr_err("!id\n");
 
@@ -2672,7 +2670,7 @@ static void msm_otg_sm_work(struct work_struct *w)
 		}
 		break;
 	case OTG_STATE_B_PERIPHERAL:
-		dev_info(dev, "%s: OTG_STATE_B_PERIPHERAL\n", __func__);
+		dev_dbg(dev, "%s: OTG_STATE_B_PERIPHERAL\n", __func__);
 		if (!test_bit(B_SESS_VLD, &motg->inputs)) {
 			pr_err("%s: Changing to IDLE\n", __func__);
 			msm_otg_start_peripheral(otg, 0);
@@ -2692,7 +2690,7 @@ static void msm_otg_sm_work(struct work_struct *w)
 		}
 		break;
 	case OTG_STATE_B_SUSPEND:
-		dev_info(dev, "%s: OTG_STATE_B_SUSPEND\n", __func__);
+		dev_dbg(dev, "%s: OTG_STATE_B_SUSPEND\n", __func__);
 
 		if (!test_bit(B_SESS_VLD, &motg->inputs)) {
 			pr_err("%s: Disconnect\n", __func__);
