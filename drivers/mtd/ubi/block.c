@@ -317,9 +317,8 @@ static void ubiblock_do_work(struct work_struct *work)
 }
 
 static int ubiblock_queue_rq(struct blk_mq_hw_ctx *hctx,
-			     const struct blk_mq_queue_data *bd)
+                             struct request *req, bool list_empty)
 {
-	struct request *req = bd->rq;
 	struct ubiblock *dev = hctx->queue->queuedata;
 	struct ubiblock_pdu *pdu = blk_mq_rq_to_pdu(req);
 
