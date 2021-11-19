@@ -344,7 +344,7 @@ static void gsmd_tx_pull(struct work_struct *w)
 
 	if (port->is_suspended) {
 		// Let's break this again
-		// goto tx_pull_end;
+		goto tx_pull_end;
 
 		spin_unlock_irq(&port->port_lock);
 		if ((gadget->speed == USB_SPEED_SUPER) &&
