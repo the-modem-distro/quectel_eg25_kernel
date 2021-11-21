@@ -1683,6 +1683,9 @@ static int ci13xxx_wakeup(struct usb_gadget *_gadget)
 	
 	if (ret == 1) {
 		pr_info("%s: Already awake\n", __func__);
+		retry_count = 0;
+		pm_runtime_mark_last_busy(&_gadget->dev);
+		pm_runtime_put_autosuspend(&_gadget->dev);
 		return 0;
 	}
 
