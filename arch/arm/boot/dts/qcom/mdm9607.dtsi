@@ -403,7 +403,14 @@
 			<&dma_blsp1 15 32 0x20000020 0x20>;
 		dma-names = "tx", "rx";
 		status = "disabled";
+
+		alc5616_codec@1b{
+			compatible = "realtek,rt5616";
+			reg = <0x1b>;
+		};
 	};
+
+
 
 	blsp1_uart2: serial@78b0000 { /* BLSP1 UART2 */
 		compatible = "qcom,msm-lsuart-v14";
