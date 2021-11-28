@@ -3816,9 +3816,9 @@ static irqreturn_t udc_irq(void)
 			isr_reset_handler(udc);
 		}
 		if (USBi_PCI & intr) {
-			pr_info("%s: Interrupt: Resume\n", __func__);
 			isr_statistics.pci++;
-			isr_resume_handler(udc);
+			if (udc->suspended)
+				isr_resume_handler(udc);
 		}
 		if (USBi_UEI & intr)
 			isr_statistics.uei++;
@@ -3828,8 +3828,8 @@ static irqreturn_t udc_irq(void)
 			isr_tr_complete_handler(udc);
 		}
 		if (USBi_SLI & intr) {
-			pr_info("%s: Interrupt: Suspend\n", __func__);
-			isr_suspend_handler(udc);
+			if (!udc->suspended)
+				isr_suspend_handler(udc);
 			isr_statistics.sli++;
 		}
 		retval = IRQ_HANDLED;
