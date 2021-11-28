@@ -1613,6 +1613,41 @@ done:
 }
 static DEVICE_ATTR(dtds, S_IWUSR, NULL, print_dtds);
 
+
+static ssize_t isr_suspend_state_show (struct device *pdev, 
+									   struct device_attribute *attr, 
+									   char *buf )
+{
+	struct ci13xxx *udc = _udc;
+    return sprintf(buf, "%d\n", udc->suspended);
+}
+
+static DEVICE_ATTR(isr_suspend_state,  S_IRUGO, isr_suspend_state_show, NULL);
+static struct device_attribute *isr_suspend_attributes[] = { &dev_attr_isr_suspend_state, NULL };
+
+static int create_dev_attr_file(struct device *dev)
+{
+    int err;
+    static bool created = 0;
+    struct device_attribute **attrs = isr_suspend_attributes;
+    struct device_attribute *attr;
+	pr_info("%s: Create attr file\n", __func__);
+    if(created) {
+        return 0;
+    }
+
+    while((attr = *attrs++)) {
+        err = device_create_file(dev, attr);
+        if (err) {
+            pr_err("%s: Error creating device attribute %d", __func__, err);
+            return err;
+        }
+    }
+
+    created = 1;
+    return 0;
+}
+
 #define CI_PM_RESUME_RETRIES	5    /* Max Number of retries */
 
 static int ci13xxx_wakeup(struct usb_gadget *_gadget)
@@ -1633,25 +1668,27 @@ static int ci13xxx_wakeup(struct usb_gadget *_gadget)
 	spin_unlock_irqrestore(udc->lock, flags);
 
 	ret = pm_runtime_get_sync(&_gadget->dev);
-	if (ret) {
-		/* pm_runtime_get_sync returns -EACCES error between
-		 * late_suspend and early_resume, wait for system resume to
-		 * finish and perform resume from work_queue again
-		 */
-		pr_debug("PM runtime get sync failed, ret %d\n", ret);
-		if (ret == -EACCES) {
-			pm_runtime_put_noidle(&_gadget->dev);
-			if (retry_count == CI_PM_RESUME_RETRIES) {
-				pr_err("pm_runtime_get_sync timed out\n");
-				retry_count = 0;
-				return 0;
-			}
-			retry_count++;
-			schedule_delayed_work(&udc->rw_work,
-					      REMOTE_WAKEUP_DELAY);
+	if (ret == -EACCES || ret == -EAGAIN) {
+		pr_err("%s: -EACCESS/EAGAIN while trying to get pm sync (%i)\n", __func__, ret);
+		pm_runtime_put_noidle(&_gadget->dev);
+		if (retry_count == CI_PM_RESUME_RETRIES) {
+			pr_err("pm_runtime_get_sync timed out\n");
+			retry_count = 0;
 			return 0;
 		}
+		retry_count++;
+		schedule_delayed_work(&udc->rw_work, REMOTE_WAKEUP_DELAY);
+		return 0;
 	}
+	
+	if (ret == 1) {
+		pr_info("%s: Already awake\n", __func__);
+		retry_count = 0;
+		pm_runtime_mark_last_busy(&_gadget->dev);
+		pm_runtime_put_autosuspend(&_gadget->dev);
+		return 0;
+	}
+
 	retry_count = 0;
 
 	udc->udc_driver->notify_event(udc,
@@ -2401,8 +2438,6 @@ __acquires(udc->lock)
 {
 	int retval;
 
-	trace("%pK", udc);
-
 	if (udc == NULL) {
 		err("EINVAL");
 		return;
@@ -2412,7 +2447,9 @@ __acquires(udc->lock)
 
 	spin_unlock(udc->lock);
 
+	pr_err("%s: Reset interrupt... ", __func__);
 	if (udc->suspended) {
+		pr_err(" ... while suspended \n");
 		if (udc->udc_driver->notify_event)
 			udc->udc_driver->notify_event(udc,
 			CI13XXX_CONTROLLER_RESUME_EVENT);
@@ -2420,6 +2457,8 @@ __acquires(udc->lock)
 			usb_phy_set_suspend(udc->transceiver, 0);
 		udc->driver->resume(&udc->gadget);
 		udc->suspended = 0;
+	} else {
+		pr_err(" ... while awake \n");
 	}
 
 	/*stop charging upon reset */
@@ -3527,7 +3566,7 @@ static int ci13xxx_pullup(struct usb_gadget *_gadget, int is_active)
 {
 	struct ci13xxx *udc = container_of(_gadget, struct ci13xxx, gadget);
 	unsigned long flags;
-
+	int ret;
 	spin_lock_irqsave(udc->lock, flags);
 	udc->softconnect = is_active;
 	if (((udc->udc_driver->flags & CI13XXX_PULLUP_ON_VBUS) &&
@@ -3537,8 +3576,12 @@ static int ci13xxx_pullup(struct usb_gadget *_gadget, int is_active)
 	}
 	spin_unlock_irqrestore(udc->lock, flags);
 
-	pm_runtime_get_sync(&_gadget->dev);
+	ret = pm_runtime_get_sync(&_gadget->dev);
+	if (ret < 0 ) {
+		pr_err("%s: Runtime get sync failed (%i)", __func__, ret);
+		pm_runtime_put_noidle(&_gadget->dev);
 
+	}
 	/* Enable BAM (if needed) before starting controller */
 	if (is_active) {
 		dbg_event(0xFF, "BAM EN1", _gadget->bam2bam_func_enabled);
@@ -3601,7 +3644,7 @@ static int ci13xxx_start(struct usb_gadget *gadget,
 	struct ci13xxx *udc = _udc;
 	unsigned long flags;
 	int retval = -ENOMEM;
-
+	int ret;
 	trace("%pK", driver);
 
 	if (driver             == NULL ||
@@ -3621,8 +3664,12 @@ static int ci13xxx_start(struct usb_gadget *gadget,
 
 	spin_unlock_irqrestore(udc->lock, flags);
 
-	pm_runtime_get_sync(&udc->gadget.dev);
+	ret = pm_runtime_get_sync(&udc->gadget.dev);
+	if (ret < 0 ) {
+		pr_err("%s: Runtime get sync failed (%i)", __func__, ret);
+		pm_runtime_put_noidle(&udc->gadget.dev);
 
+	}
 	udc->ep0out.ep.desc = &ctrl_endpt_out_desc;
 	retval = usb_ep_enable(&udc->ep0out.ep);
 	if (retval)
@@ -3761,6 +3808,7 @@ static irqreturn_t udc_irq(void)
 
 		/* order defines priority - do NOT change it */
 		if (USBi_URI & intr) {
+			pr_err("%s: Interrupt: Reset\n", __func__);
 			isr_statistics.uri++;
 			if (!hw_cread(CAP_PORTSC, PORTSC_PR))
 				pr_info("%s: USB reset interrupt is delayed\n",
@@ -3768,6 +3816,7 @@ static irqreturn_t udc_irq(void)
 			isr_reset_handler(udc);
 		}
 		if (USBi_PCI & intr) {
+			pr_info("%s: Interrupt: Resume\n", __func__);
 			isr_statistics.pci++;
 			isr_resume_handler(udc);
 		}
@@ -3779,6 +3828,7 @@ static irqreturn_t udc_irq(void)
 			isr_tr_complete_handler(udc);
 		}
 		if (USBi_SLI & intr) {
+			pr_info("%s: Interrupt: Suspend\n", __func__);
 			isr_suspend_handler(udc);
 			isr_statistics.sli++;
 		}
@@ -3862,6 +3912,8 @@ static int udc_probe(struct ci13xxx_udc_driver *driver, struct device *dev,
 	retval = hw_device_init(regs);
 	if (retval < 0)
 		goto free_qh_pool;
+
+	create_dev_attr_file(dev);
 
 	INIT_LIST_HEAD(&udc->gadget.ep_list);
 	for (i = 0; i < hw_ep_max; i++) {

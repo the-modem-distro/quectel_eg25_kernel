@@ -862,3 +862,9 @@ int ubi_unregister_volume_notifier(struct notifier_block *nb)
 	return blocking_notifier_chain_unregister(&ubi_notifiers, nb);
 }
 EXPORT_SYMBOL_GPL(ubi_unregister_volume_notifier);
+
+inline struct cdev *ubi_get_volume_cdev(struct ubi_volume_desc *desc)
+{
+	return &(desc->vol->cdev);
+}
+EXPORT_SYMBOL_GPL(ubi_get_volume_cdev);

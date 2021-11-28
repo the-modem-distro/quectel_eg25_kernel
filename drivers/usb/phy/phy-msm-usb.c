@@ -4555,7 +4555,7 @@ static int msm_otg_probe(struct platform_device *pdev)
 	}
 
 	ret = request_irq(motg->async_irq, msm_otg_irq,
-				IRQF_TRIGGER_RISING, "msm_otg", motg);
+				IRQF_TRIGGER_RISING | IRQF_FORCE_RESUME, "msm_otg", motg);
 	if (ret) {
 		dev_err(&pdev->dev, "request irq failed (ASYNC INT)\n");
 		goto free_phy_irq;

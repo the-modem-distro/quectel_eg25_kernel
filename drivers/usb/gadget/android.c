@@ -1064,32 +1064,6 @@ static struct android_usb_function rmnet_function = {
 	.attributes	= rmnet_function_attributes,
 };
 
-static char gps_transport[MAX_XPORT_STR_LEN];
-
-static ssize_t gps_transport_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "%s\n", gps_transport);
-}
-
-static ssize_t gps_transport_store(
-		struct device *device, struct device_attribute *attr,
-		const char *buff, size_t size)
-{
-	strlcpy(gps_transport, buff, sizeof(gps_transport));
-
-	return size;
-}
-
-static struct device_attribute dev_attr_gps_transport =
-					__ATTR(transport, S_IRUGO | S_IWUSR,
-							gps_transport_show,
-							gps_transport_store);
-
-static struct device_attribute *gps_function_attrbitutes[] = {
-					&dev_attr_gps_transport,
-					NULL };
-
 static void gps_function_cleanup(struct android_usb_function *f)
 {
 	gps_cleanup();
@@ -1100,13 +1074,10 @@ static int gps_function_bind_config(struct android_usb_function *f,
 {
 	int err;
 	static int gps_initialized;
-	char buf[MAX_XPORT_STR_LEN], *b;
 
 	if (!gps_initialized) {
-		strlcpy(buf, gps_transport, sizeof(buf));
-		b = strim(buf);
 		gps_initialized = 1;
-		err = gps_init_port(b);
+		err = gps_init_port();
 		if (err) {
 			pr_err("gps: Cannot init gps port");
 			return err;
@@ -1131,7 +1102,6 @@ static struct android_usb_function gps_function = {
 	.name		= "gps",
 	.cleanup	= gps_function_cleanup,
 	.bind_config	= gps_function_bind_config,
-	.attributes	= gps_function_attrbitutes,
 };
 
 /* ncm */
@@ -1971,7 +1941,6 @@ static struct android_usb_function qdss_function = {
 #define MAX_SERIAL_INSTANCES 4
 struct serial_function_config {
 	int instances_on;
-	bool serial_initialized;
 	struct usb_function *f_serial[MAX_SERIAL_INSTANCES];
 	struct usb_function_instance *f_serial_inst[MAX_SERIAL_INSTANCES];
 };
@@ -2098,9 +2067,8 @@ static int serial_function_bind_config(struct android_usb_function *f,
 	char *name, *xport_name = NULL;
 	char buf[32], *b, xport_name_buf[32], *tb;
 	int err = -1, i, ports = 0;
+	static int serial_initialized;
 	struct serial_function_config *config = f->config;
-	static bool transports_initialized;
-
 	strlcpy(buf, serial_transports, sizeof(buf));
 	b = strim(buf);
 
@@ -2113,7 +2081,7 @@ static int serial_function_bind_config(struct android_usb_function *f,
 		if (name) {
 			if (tb)
 				xport_name = strsep(&tb, ",");
-			if (!config->serial_initialized) {
+			if (!serial_initialized) {
 				err = gserial_init_port(ports, name,
 						xport_name);
 				if (err) {
@@ -2135,7 +2103,7 @@ static int serial_function_bind_config(struct android_usb_function *f,
 	 * switching composition from 1 serial function to 2 serial functions.
 	 * Mark 2nd port to use tty if user didn't specify transport.
 	 */
-	if ((config->instances_on == 1) && !config->serial_initialized) {
+	if ((config->instances_on == 1) && !serial_initialized) {
 		err = gserial_init_port(ports, "tty", "serial_tty");
 		if (err) {
 			pr_err("serial: Cannot open port '%s'", "tty");
@@ -2148,19 +2116,15 @@ static int serial_function_bind_config(struct android_usb_function *f,
 	if (ports > config->instances_on)
 		ports = config->instances_on;
 
-	if (config->serial_initialized)
+	if (serial_initialized)
 		goto bind_config;
 
-	if (!transports_initialized) {
 		err = gport_setup(c);
 		if (err) {
 			pr_err("serial: Cannot setup transports");
 			gserial_deinit_port();
 			goto out;
 		}
-		/* transports are initialized once and shared across configs */
-		transports_initialized = true;
-	}
 
 	for (i = 0; i < config->instances_on; i++) {
 		config->f_serial_inst[i] = usb_get_function_instance("gser");
@@ -2175,7 +2139,7 @@ static int serial_function_bind_config(struct android_usb_function *f,
 		}
 	}
 
-	config->serial_initialized = true;
+	serial_initialized = 1;
 
 bind_config:
 	for (i = 0; i < ports; i++) {
@@ -2210,13 +2174,6 @@ static struct android_usb_function serial_function = {
 	.cleanup	= serial_function_cleanup,
 	.bind_config	= serial_function_bind_config,
 	.attributes	= serial_function_attributes,
-};
-
-static struct android_usb_function serial_function_config2 = {
-	.name		= "serial_config2",
-	.init		= serial_function_init,
-	.cleanup	= serial_function_cleanup,
-	.bind_config	= serial_function_bind_config,
 };
 
 /* CCID */
@@ -3295,7 +3252,6 @@ static struct android_usb_function *supported_functions[] = {
 	[ANDROID_DIAG] = &diag_function,
 	[ANDROID_QDSS_BAM] = &qdss_function,
 	[ANDROID_SERIAL] = &serial_function,
-	[ANDROID_SERIAL_CONFIG2] = &serial_function_config2,
 	[ANDROID_CCID] = &ccid_function,
 	[ANDROID_ACM] = &acm_function,
 	[ANDROID_MTP] = &mtp_function,
@@ -3335,7 +3291,6 @@ static struct android_usb_function *default_functions[] = {
 	&diag_function,
 	&qdss_function,
 	&serial_function,
-	&serial_function_config2,
 	&ccid_function,
 	&acm_function,
 	&mtp_function,
@@ -3476,31 +3431,21 @@ static int
 android_bind_enabled_functions(struct android_dev *dev,
 			       struct usb_configuration *c)
 {
-	struct android_usb_function_holder *f_holder;
+	struct android_usb_function_holder *f_holder, *f_next;
 	struct android_configuration *conf =
 		container_of(c, struct android_configuration, usb_config);
 	int ret;
 
-	list_for_each_entry(f_holder, &conf->enabled_functions, enabled_list) {
+	list_for_each_entry_safe(f_holder, f_next, &conf->enabled_functions,
+				 enabled_list) {
 		ret = f_holder->f->bind_config(f_holder->f, c);
 		if (ret) {
 			pr_err("%s: %s failed\n", __func__, f_holder->f->name);
-			while (!list_empty(&c->functions)) {
-				struct usb_function		*f;
-
-				f = list_first_entry(&c->functions,
-					struct usb_function, list);
-				if (f->config) {
-					list_del(&f->list);
-					if (f->unbind)
-						f->unbind(c, f);
-				}
-			}
-			if (c->unbind)
-				c->unbind(c);
-			return ret;
+			list_del(&f_holder->enabled_list);
+			kfree(f_holder);
 		}
-		f_holder->f->bound = true;
+		else
+			f_holder->f->bound = true;
 	}
 	return 0;
 }
