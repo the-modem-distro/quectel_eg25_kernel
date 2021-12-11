@@ -79,9 +79,9 @@
 #define RT5616_EQ_CTRL1				0xb0
 #define RT5616_EQ_CTRL2				0xb1
 #define RT5616_WIND_FILTER			0xb2
-#define RT5616_ALC_1				0xb4
-#define RT5616_ALC_2				0xb5
-#define RT5616_ALC_3				0xb6
+#define RT5616_DRC_AGC_1			0xb4
+#define RT5616_DRC_AGC_2			0xb5
+#define RT5616_DRC_AGC_3			0xb6
 #define RT5616_SVOL_ZC				0xb7
 #define RT5616_JD_CTRL1				0xbb
 #define RT5616_JD_CTRL2				0xbc
@@ -828,48 +828,6 @@
 #define RT5616_M_TDM4_R				(0x1 << 4)
 #define RT5616_M_TDM4_R_SFT			4
 
-/* TDM Control 3 (0x79) */
-#define RT5616_CH2_L_SEL_MASK			(0x7 << 12)
-#define RT5616_CH2_L_SEL_SFT			12
-#define RT5616_CH2_L_SEL_SL0			(0x0 << 12)
-#define RT5616_CH2_L_SEL_SL1			(0x1 << 12)
-#define RT5616_CH2_L_SEL_SL2			(0x2 << 12)
-#define RT5616_CH2_L_SEL_SL3			(0x3 << 12)
-#define RT5616_CH2_L_SEL_SL4			(0x4 << 12)
-#define RT5616_CH2_L_SEL_SL5			(0x5 << 12)
-#define RT5616_CH2_L_SEL_SL6			(0x6 << 12)
-#define RT5616_CH2_L_SEL_SL7			(0x7 << 12)
-#define RT5616_CH2_R_SEL_MASK			(0x7 << 8)
-#define RT5616_CH2_R_SEL_SFT			8
-#define RT5616_CH2_R_SEL_SL0			(0x0 << 8)
-#define RT5616_CH2_R_SEL_SL1			(0x1 << 8)
-#define RT5616_CH2_R_SEL_SL2			(0x2 << 8)
-#define RT5616_CH2_R_SEL_SL3			(0x3 << 8)
-#define RT5616_CH2_R_SEL_SL4			(0x4 << 8)
-#define RT5616_CH2_R_SEL_SL5			(0x5 << 8)
-#define RT5616_CH2_R_SEL_SL6			(0x6 << 8)
-#define RT5616_CH2_R_SEL_SL7			(0x7 << 8)
-#define RT5616_CH4_L_SEL_MASK			(0x7 << 4)
-#define RT5616_CH4_L_SEL_SFT			4
-#define RT5616_CH4_L_SEL_SL0			(0x0 << 4)
-#define RT5616_CH4_L_SEL_SL1			(0x1 << 4)
-#define RT5616_CH4_L_SEL_SL2			(0x2 << 4)
-#define RT5616_CH4_L_SEL_SL3			(0x3 << 4)
-#define RT5616_CH4_L_SEL_SL4			(0x4 << 4)
-#define RT5616_CH4_L_SEL_SL5			(0x5 << 4)
-#define RT5616_CH4_L_SEL_SL6			(0x6 << 4)
-#define RT5616_CH4_L_SEL_SL7			(0x7 << 4)
-#define RT5616_CH4_R_SEL_MASK			(0x7)
-#define RT5616_CH4_R_SEL_SFT			0
-#define RT5616_CH4_R_SEL_SL0			(0x0)
-#define RT5616_CH4_R_SEL_SL1			(0x1)
-#define RT5616_CH4_R_SEL_SL2			(0x2)
-#define RT5616_CH4_R_SEL_SL3			(0x3)
-#define RT5616_CH4_R_SEL_SL4			(0x4)
-#define RT5616_CH4_R_SEL_SL5			(0x5)
-#define RT5616_CH4_R_SEL_SL6			(0x6)
-#define RT5616_CH4_R_SEL_SL7			(0x7)
-
 /* Global Clock Control (0x80) */
 #define RT5616_SCLK_SRC_MASK			(0x3 << 14)
 #define RT5616_SCLK_SRC_SFT			14
@@ -1246,61 +1204,61 @@
 #define RT5616_MT_DIS				(0x0 << 15)
 #define RT5616_MT_EN				(0x1 << 15)
 
-/* ALC Control 1 (0xb4) */
-#define RT5616_ALC_P_MASK			(0x1 << 15)
-#define RT5616_ALC_P_SFT			15
-#define RT5616_ALC_P_DAC			(0x0 << 15)
-#define RT5616_ALC_P_ADC			(0x1 << 15)
-#define RT5616_ALC_MASK				(0x1 << 14)
-#define RT5616_ALC_SFT				14
-#define RT5616_ALC_DIS				(0x0 << 14)
-#define RT5616_ALC_EN				(0x1 << 14)
-#define RT5616_ALC_UPD				(0x1 << 13)
-#define RT5616_ALC_UPD_BIT			13
-#define RT5616_ALC_AR_MASK			(0x1f << 8)
-#define RT5616_ALC_AR_SFT			8
-#define RT5616_ALC_R_MASK			(0x7 << 5)
-#define RT5616_ALC_R_SFT			5
-#define RT5616_ALC_R_48K			(0x1 << 5)
-#define RT5616_ALC_R_96K			(0x2 << 5)
-#define RT5616_ALC_R_192K			(0x3 << 5)
-#define RT5616_ALC_R_441K			(0x5 << 5)
-#define RT5616_ALC_R_882K			(0x6 << 5)
-#define RT5616_ALC_R_1764K			(0x7 << 5)
-#define RT5616_ALC_RC_MASK			(0x1f)
-#define RT5616_ALC_RC_SFT			0
+/* DRC/AGC Control 1 (0xb4) */
+#define RT5616_DRC_AGC_P_MASK			(0x1 << 15)
+#define RT5616_DRC_AGC_P_SFT			15
+#define RT5616_DRC_AGC_P_DAC			(0x0 << 15)
+#define RT5616_DRC_AGC_P_ADC			(0x1 << 15)
+#define RT5616_DRC_AGC_MASK			(0x1 << 14)
+#define RT5616_DRC_AGC_SFT			14
+#define RT5616_DRC_AGC_DIS			(0x0 << 14)
+#define RT5616_DRC_AGC_EN			(0x1 << 14)
+#define RT5616_DRC_AGC_UPD			(0x1 << 13)
+#define RT5616_DRC_AGC_UPD_BIT			13
+#define RT5616_DRC_AGC_AR_MASK			(0x1f << 8)
+#define RT5616_DRC_AGC_AR_SFT			8
+#define RT5616_DRC_AGC_R_MASK			(0x7 << 5)
+#define RT5616_DRC_AGC_R_SFT			5
+#define RT5616_DRC_AGC_R_48K			(0x1 << 5)
+#define RT5616_DRC_AGC_R_96K			(0x2 << 5)
+#define RT5616_DRC_AGC_R_192K			(0x3 << 5)
+#define RT5616_DRC_AGC_R_441K			(0x5 << 5)
+#define RT5616_DRC_AGC_R_882K			(0x6 << 5)
+#define RT5616_DRC_AGC_R_1764K			(0x7 << 5)
+#define RT5616_DRC_AGC_RC_MASK			(0x1f)
+#define RT5616_DRC_AGC_RC_SFT			0
 
-/* ALC Control 2 (0xb5) */
-#define RT5616_ALC_POB_MASK			(0x3f << 8)
-#define RT5616_ALC_POB_SFT			8
-#define RT5616_ALC_DRC_MASK			(0x1 << 7)
-#define RT5616_ALC_DRC_SFT			7
-#define RT5616_ALC_DRC_DIS			(0x0 << 7)
-#define RT5616_ALC_DRC_EN			(0x1 << 7)
-#define RT5616_ALC_CPR_MASK			(0x3 << 5)
-#define RT5616_ALC_CPR_SFT			5
-#define RT5616_ALC_CPR_1_1			(0x0 << 5)
-#define RT5616_ALC_CPR_1_2			(0x1 << 5)
-#define RT5616_ALC_CPR_1_4			(0x2 << 5)
-#define RT5616_ALC_CPR_1_8			(0x3 << 5)
-#define RT5616_ALC_PRB_MASK			(0x1f)
-#define RT5616_ALC_PRB_SFT			0
+/* DRC/AGC Control 2 (0xb5) */
+#define RT5616_DRC_AGC_POB_MASK			(0x3f << 8)
+#define RT5616_DRC_AGC_POB_SFT			8
+#define RT5616_DRC_AGC_CP_MASK			(0x1 << 7)
+#define RT5616_DRC_AGC_CP_SFT			7
+#define RT5616_DRC_AGC_CP_DIS			(0x0 << 7)
+#define RT5616_DRC_AGC_CP_EN			(0x1 << 7)
+#define RT5616_DRC_AGC_CPR_MASK			(0x3 << 5)
+#define RT5616_DRC_AGC_CPR_SFT			5
+#define RT5616_DRC_AGC_CPR_1_1			(0x0 << 5)
+#define RT5616_DRC_AGC_CPR_1_2			(0x1 << 5)
+#define RT5616_DRC_AGC_CPR_1_3			(0x2 << 5)
+#define RT5616_DRC_AGC_CPR_1_4			(0x3 << 5)
+#define RT5616_DRC_AGC_PRB_MASK			(0x1f)
+#define RT5616_DRC_AGC_PRB_SFT			0
 
-/* ALC Control 3 (0xb6) */
-#define RT5616_ALC_NGB_MASK			(0xf << 12)
-#define RT5616_ALC_NGB_SFT			12
-#define RT5616_ALC_TAR_MASK			(0x1f << 7)
-#define RT5616_ALC_TAR_SFT			7
-#define RT5616_ALC_NG_MASK			(0x1 << 6)
-#define RT5616_ALC_NG_SFT			6
-#define RT5616_ALC_NG_DIS			(0x0 << 6)
-#define RT5616_ALC_NG_EN			(0x1 << 6)
-#define RT5616_ALC_NGH_MASK			(0x1 << 5)
-#define RT5616_ALC_NGH_SFT			5
-#define RT5616_ALC_NGH_DIS			(0x0 << 5)
-#define RT5616_ALC_NGH_EN			(0x1 << 5)
-#define RT5616_ALC_NGT_MASK			(0x1f)
-#define RT5616_ALC_NGT_SFT			0
+/* DRC/AGC Control 3 (0xb6) */
+#define RT5616_DRC_AGC_NGB_MASK			(0xf << 12)
+#define RT5616_DRC_AGC_NGB_SFT			12
+#define RT5616_DRC_AGC_TAR_MASK			(0x1f << 7)
+#define RT5616_DRC_AGC_TAR_SFT			7
+#define RT5616_DRC_AGC_NG_MASK			(0x1 << 6)
+#define RT5616_DRC_AGC_NG_SFT			6
+#define RT5616_DRC_AGC_NG_DIS			(0x0 << 6)
+#define RT5616_DRC_AGC_NG_EN			(0x1 << 6)
+#define RT5616_DRC_AGC_NGH_MASK			(0x1 << 5)
+#define RT5616_DRC_AGC_NGH_SFT			5
+#define RT5616_DRC_AGC_NGH_DIS			(0x0 << 5)
+#define RT5616_DRC_AGC_NGH_EN			(0x1 << 5)
+#define RT5616_DRC_AGC_NGT_MASK			(0x1f)
+#define RT5616_DRC_AGC_NGT_SFT			0
 
 /* Jack Detect Control 1 (0xbb) */
 #define RT5616_JD_MASK				(0x7 << 13)
@@ -1840,21 +1798,6 @@ enum {
 #define RT5616_EQ_PST_VOL_MASK			(0xffff)
 #define RT5616_EQ_PST_VOL_SFT			0
 
-/* Vendor ID (0xfd) */
-#define RT5616_VER_C				0x2
-#define RT5616_VER_D				0x3
-
-
-/* Volume Rescale */
-#define RT5616_VOL_RSCL_MAX 0x27
-#define RT5616_VOL_RSCL_RANGE 0x1F
-/* Debug String Length */
-#define RT5616_REG_DISP_LEN 10
-
-#define RT5616_NO_JACK		BIT(0)
-#define RT5616_HEADSET_DET	BIT(1)
-#define RT5616_HEADPHO_DET	BIT(2)
-
 /* System Clock Source */
 enum {
 	RT5616_SCLK_S_MCLK,
@@ -1866,62 +1809,11 @@ enum {
 	RT5616_PLL1_S_MCLK,
 	RT5616_PLL1_S_BCLK1,
 	RT5616_PLL1_S_BCLK2,
-	RT5616_PLL1_S_BCLK3,
 };
 
 enum {
 	RT5616_AIF1,
-	RT5616_AIF2,
-	RT5616_AIF3,
 	RT5616_AIFS,
 };
-
-#define RT5616_U_IF1 (0x1)
-#define RT5616_U_IF2 (0x1 << 1)
-#define RT5616_U_IF3 (0x1 << 2)
-
-enum {
-	RT5616_IF_123,
-	RT5616_IF_132,
-	RT5616_IF_312,
-	RT5616_IF_321,
-	RT5616_IF_231,
-	RT5616_IF_213,
-	RT5616_IF_113,
-	RT5616_IF_223,
-	RT5616_IF_ALL,
-};
-
-
-struct rt5616_pll_code {
-	bool m_bp; /* Indicates bypass m code or not. */
-	int m_code;
-	int n_code;
-	int k_code;
-};
-
-struct rt5616_priv {
-	struct snd_soc_codec *codec;
-	struct delayed_work patch_work;
-
-	int aif_pu;
-	int sysclk;
-	int sysclk_src;
-	int lrck[RT5616_AIFS];
-	int bclk[RT5616_AIFS];
-	int master[RT5616_AIFS];
-
-	int pll_src;
-	int pll_in;
-	int pll_out;
-
-	int dmic_en;
-	int dsp_sw; /* expected parameter setting */
-	bool dsp_play_pass;
-	bool dsp_rec_pass;
-	struct regmap *regmap;
-};
-
-#define ALC5616_DEV_NAME    "alc5616-codec"
 
 #endif /* __RT5616_H__ */
