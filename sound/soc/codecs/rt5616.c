@@ -15,8 +15,9 @@
 #include <linux/delay.h>
 #include <linux/pm.h>
 #include <linux/i2c.h>
-#include <linux/platform_device.h>
-#include <linux/spi/spi.h>
+#include <linux/regmap.h>
+
+
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -863,23 +864,20 @@ static ssize_t alc5616_cfg_pow_ctr_show(struct device *dev, struct device_attrib
     return cnt;
 }
 
-static ssize_t alc5616_cfg_pow_ctr_store(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
+static ssize_t alc5616_cfg_pow_ctr_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int mode;
+	if (count < 0) {
+		return -EINVAL;
+	}
 
-	sscanf(buf, "%d", &mode);
-	
-	if(mode != 0 && mode != 1)
-	{
-		pr_err("the para is wrong, %d \n", mode);
-	}
-	{
-		alc_pwrctr = mode;	
-	}
+	mode = buf[0] - '0';
+	alc_pwrctr = mode ? 1 : 0;
+
 	return count;
 }
 
-static DEVICE_ATTR(alc5616_pow_ctr_cfg, 0644, alc5616_cfg_pow_ctr_show, alc5616_cfg_pow_ctr_store);
+static DEVICE_ATTR(alc5616_pow_ctr_cfg, (S_IWUSR | S_IRUGO), alc5616_cfg_pow_ctr_show, alc5616_cfg_pow_ctr_store);
 
 static ssize_t alc5616_cfg_pow_save_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -893,24 +891,20 @@ static ssize_t alc5616_cfg_pow_save_show(struct device *dev, struct device_attri
     return cnt;
 }
 
-static ssize_t alc5616_cfg_pow_save_store(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
+static ssize_t alc5616_cfg_pow_save_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
 {
 	int mode;
+	if (count < 0) {
+		return -EINVAL;
+	}
 
-	sscanf(buf, "%d", &mode);
-	
-	if(mode != 0 && mode != 1)
-	{
-		pr_err("the para is wrong, %d \n", mode);	
-	}
-	{
-		alc_val = mode;	
-	}
+	mode = buf[0] - '0';
+	alc_val = mode ? 1 : 0;
 
 	return count;
 }
 
-static DEVICE_ATTR(alc5616_pow_save_cfg, 0644, alc5616_cfg_pow_save_show, alc5616_cfg_pow_save_store);
+static DEVICE_ATTR(alc5616_pow_save_cfg, (S_IWUSR | S_IRUGO), alc5616_cfg_pow_save_show, alc5616_cfg_pow_save_store);
 
 static ssize_t alc5616_detected_state_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -923,13 +917,13 @@ static ssize_t alc5616_detected_state_show(struct device *dev, struct device_att
     return cnt;
 }
 
-static DEVICE_ATTR(alc5616_detected_state, 0444, alc5616_detected_state_show, NULL);
+static DEVICE_ATTR(alc5616_detected_state, S_IRUGO, alc5616_detected_state_show, NULL);
 
 static int rt5616_hp_event(struct snd_soc_dapm_widget *w, 
 	struct snd_kcontrol *kcontrol, int event)
 {
 	struct snd_soc_codec *codec = w->codec;
-
+	pr_info("%s: begin\n", __func__);
 	switch (event) {
 	case SND_SOC_DAPM_POST_PMU:
 		rt5616_pmu_depop(codec);
@@ -1619,7 +1613,7 @@ static bool update_alc5616_ul_gain(struct snd_soc_codec *codec, int val)
    
 	return true;
 }
-
+/*
 static bool update_codec_config(codec_config_type type, struct snd_soc_codec *codec, int val)
 {
 	bool ret = false;
@@ -1640,7 +1634,7 @@ static bool update_codec_config(codec_config_type type, struct snd_soc_codec *co
 
 	return ret;
 }
-
+*/
 static bool hex_str_to_num(char* buf, size_t count, u32 *val)
 {
 	int i = 0;
@@ -1667,56 +1661,6 @@ static bool hex_str_to_num(char* buf, size_t count, u32 *val)
 	*val = tmp;
 	return true;
 }
-
-static ssize_t alc5616_cfg_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	int cnt = 0;
- 
-	cnt += sprintf(buf, "0x%x,0x%x\n", CODEC_CONFIG_DL_GAIN, s_gain_val[CODEC_CONFIG_DL_GAIN]);
-        cnt += sprintf(buf+cnt, "0x%x,0x%x\n", CODEC_CONFIG_UL_GAIN, s_gain_val[CODEC_CONFIG_UL_GAIN]);
-
-        if (cnt >= PAGE_SIZE)
-                cnt = PAGE_SIZE - 1;
-
-        return cnt;
-}
-
-static ssize_t alc5616_cfg_store(struct device *dev, struct device_attribute *attr, char *buf, size_t count)
-{
-	struct i2c_client *client = to_i2c_client(dev);
-	struct rt5616_priv *rt5616 = i2c_get_clientdata(client);
-	struct snd_soc_codec *codec = rt5616->codec;
-
-	char* type_str;
-	char* val_str; 
-	char* b = strim(buf);
-	int type, val;
-
-	if (!b)
-		return -EINVAL;
-
-	type_str = strsep(&b, ",");
-	if (!type_str || !b)
-		return -EINVAL;
-	if (!hex_str_to_num(type_str, strlen(type_str), &type))
-		return -EINVAL;
-
-        val_str = strsep(&b, ",");
-	if (!val_str)
-		return -EINVAL;
-        if (!hex_str_to_num(val_str, strlen(val_str), &val))
-                return -EINVAL;
-
-	if (type < CODEC_CONFIG_DL_GAIN || type >= CODEC_CONFIG_MAX)
-		return -EINVAL;
-
-	if (!update_codec_config((codec_config_type)type,codec, val))
-		return -EINVAL;
-
-	return count;
-}
-
-static DEVICE_ATTR(alc5616_cfg, 0644, alc5616_cfg_show, alc5616_cfg_store);
 
 /**
  * rt5616_index_show - Dump private registers.
@@ -1753,7 +1697,7 @@ static ssize_t rt5616_index_show(struct device *dev,
 
 	return cnt;
 }
-static DEVICE_ATTR(index_reg, 0444, rt5616_index_show, NULL);
+static DEVICE_ATTR(index_reg, S_IRUGO, rt5616_index_show, NULL);
 
 static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 			enum snd_soc_bias_level level)
@@ -1849,13 +1793,6 @@ static int rt5616_probe(struct snd_soc_codec *codec)
 		return ret;
 	}
 
-    ret = device_create_file(codec->dev, &dev_attr_alc5616_cfg);
-    if (ret != 0) {
-        dev_err(codec->dev,
-        "Failed to create index_reg sysfs files: %d\n", ret);
-        return ret;
-    }
-
     ret = device_create_file(codec->dev, &dev_attr_alc5616_pow_save_cfg);
     if (ret != 0) {
         dev_err(codec->dev,
@@ -1886,7 +1823,6 @@ static int rt5616_remove(struct snd_soc_codec *codec)
 	return 0;
 }
 
-#ifdef CONFIG_PM
 static int rt5616_suspend(struct snd_soc_codec *codec, pm_message_t state)
 {
 	//rt5616_set_bias_level(codec, SND_SOC_BIAS_OFF);
@@ -1898,10 +1834,6 @@ static int rt5616_resume(struct snd_soc_codec *codec)
 	//rt5616_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
 	return 0;
 }
-#else
-#define rt5616_suspend NULL
-#define rt5616_resume NULL
-#endif
 
 #define RT5616_STEREO_RATES SNDRV_PCM_RATE_8000_96000
 #define RT5616_FORMATS (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S20_3LE | \
@@ -1990,8 +1922,6 @@ static int rt5616_i2c_probe(struct i2c_client *i2c,
 		return ret;
 	}
 
-	regmap_write(rt5616->regmap, RT5616_RESET, 0);
-
 	ret = regmap_read(rt5616->regmap, RT5616_VENDOR_ID, &val);
 	if(ret < 0) {
 		dev_err(&i2c->dev, "Failed to read device ID\n");
@@ -1999,7 +1929,7 @@ static int rt5616_i2c_probe(struct i2c_client *i2c,
 		kfree(rt5616);
 		return ret;
 	} else {
-		printk("%s: alc5616-codec.2-001b", "rt5616-aif1", __func__);
+		printk("%s: alc5616-codec.2-001b --> rt5616-aif1", __func__);
 		codec_available = true;	
 	}
 
