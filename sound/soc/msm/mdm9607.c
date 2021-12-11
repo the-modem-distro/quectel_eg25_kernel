@@ -1048,6 +1048,50 @@ static void mdm_sec_auxpcm_shutdown(struct snd_pcm_substream *substream)
 }
 #endif
 
+
+static int mdm_sec_auxpcm_hw_params(struct snd_pcm_substream *substream,
+		struct snd_pcm_hw_params *params)
+
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_codec *codec = rtd->codec;
+	struct snd_soc_dai *codec_dai = rtd->codec_dai;
+	struct snd_soc_card *card = rtd->card;
+	struct mdm_machine_data *pdata = snd_soc_card_get_drvdata(card);
+	unsigned int fmt;
+	int ret = 0;
+
+	pr_info("%s codec driver name:%s\n", __func__,
+			codec->dev->driver->name);
+
+	if (is_rt5616_codec_available()) {
+		if (pdata->sec_auxpcm_mode == 1) {
+			fmt = SND_SOC_DAIFMT_CBS_CFS|SND_SOC_DAIFMT_IB_NF|SND_SOC_DAIFMT_DSP_A;
+		} else {
+			fmt = SND_SOC_DAIFMT_CBM_CFM|SND_SOC_DAIFMT_IB_NF|SND_SOC_DAIFMT_DSP_A;
+		}
+		ret = snd_soc_dai_set_fmt(codec_dai, fmt);
+		if (ret < 0)
+			return ret;
+
+		/* set the codec FLL */
+		ret = snd_soc_dai_set_pll(codec_dai, 0, 1, 2048000,
+				params_rate(params) * 256);
+		if (ret < 0)
+			return ret;
+
+		/* set the codec system clock */
+		ret = snd_soc_dai_set_sysclk(codec_dai, 1,
+				params_rate(params) * 256, SND_SOC_CLOCK_IN);
+		if (ret < 0)
+			return ret;
+	} else {
+		pr_info("%s: No codec available, nothing to do here\n", __func__);
+	}
+
+	return 0;
+}
+
 static struct snd_soc_ops mdm_auxpcm_be_ops = {
 	.startup = mdm_auxpcm_startup,
 };
@@ -1056,9 +1100,8 @@ static struct snd_soc_ops mdm_sec_auxpcm_be_ops = {
 	.startup = mdm_sec_auxpcm_startup,
 #ifdef CONFIG_QUECTEL_AUDIO_DRIVER
 	.shutdown = mdm_sec_auxpcm_shutdown,
+	.hw_params = mdm_sec_auxpcm_hw_params,
 #endif
-
-
 };
 
 static int mdm_auxpcm_rate_get(struct snd_kcontrol *kcontrol,
@@ -2368,7 +2411,7 @@ static struct snd_soc_dai_link mdm_dai_rt5616[] = {
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-rx",
 #else
-		.codec_name = "alc5616-codec.2-001b",
+		.codec_name = "rt5616.2-001b",
 		.codec_dai_name = "rt5616-aif1",
 #endif
 		.no_pcm = 1,
@@ -2388,7 +2431,7 @@ static struct snd_soc_dai_link mdm_dai_rt5616[] = {
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-rx",
 #else
-		.codec_name = "alc5616-codec.2-001b",
+		.codec_name = "rt5616.2-001b",
 		.codec_dai_name = "rt5616-aif1",
 #endif
 		.no_pcm = 1,
@@ -2520,7 +2563,7 @@ static struct snd_soc_dai_link mdm_dai_rt5616[] = {
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-rx",
 #else
-		.codec_name = "alc5616-codec.2-001b",
+		.codec_name = "rt5616.2-001b",
 		.codec_dai_name = "rt5616-aif1",
 #endif
 
@@ -2542,7 +2585,7 @@ static struct snd_soc_dai_link mdm_dai_rt5616[] = {
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-tx",
 #else		
-		.codec_name = "alc5616-codec.2-001b",
+		.codec_name = "rt5616.2-001b",
 		.codec_dai_name = "rt5616-aif1",
 #endif
 
