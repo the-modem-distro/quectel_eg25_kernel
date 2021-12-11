@@ -912,6 +912,19 @@ static ssize_t alc5616_cfg_pow_save_store(struct device *dev, struct device_attr
 
 static DEVICE_ATTR(alc5616_pow_save_cfg, 0644, alc5616_cfg_pow_save_show, alc5616_cfg_pow_save_store);
 
+static ssize_t alc5616_detected_state_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int cnt = 0;
+ 
+	cnt += sprintf(buf, "%d\n", codec_available);
+
+    if (cnt >= PAGE_SIZE)
+		cnt = PAGE_SIZE - 1;
+    return cnt;
+}
+
+static DEVICE_ATTR(alc5616_detected_state, 0444, alc5616_detected_state_show, NULL);
+
 static int rt5616_hp_event(struct snd_soc_dapm_widget *w, 
 	struct snd_kcontrol *kcontrol, int event)
 {
@@ -1851,6 +1864,13 @@ static int rt5616_probe(struct snd_soc_codec *codec)
     }
 
     ret = device_create_file(codec->dev, &dev_attr_alc5616_pow_ctr_cfg);
+    if (ret != 0) {
+        dev_err(codec->dev,
+        "Failed to create index_reg sysfs files: %d\n", ret);
+        return ret;
+    }
+
+    ret = device_create_file(codec->dev, &dev_attr_alc5616_detected_state);
     if (ret != 0) {
         dev_err(codec->dev,
         "Failed to create index_reg sysfs files: %d\n", ret);
