@@ -1965,10 +1965,7 @@ static const struct regmap_config rt5616_regmap = {
 	.reg_stride = 1,
 
 	.max_register = RT5616_VENDOR_ID,
-	// 2017.10.24 eddy.qin changed
-	//.cache_type = REGCACHE_RBTREE,
-	.cache_type = REGCACHE_NONE,
-	// end eddy.qin
+	.cache_type = REGCACHE_RBTREE,
 };
 
 //extern void quec_set_codec_info(const char* codec_name, const char* dai_name);
@@ -1984,15 +1981,17 @@ static int rt5616_i2c_probe(struct i2c_client *i2c,
 	if (NULL == rt5616)
 		return -ENOMEM;
 	
+	i2c_set_clientdata(i2c, rt5616);
+
 	rt5616->regmap = devm_regmap_init_i2c(i2c, &rt5616_regmap);
 	if (IS_ERR(rt5616->regmap)) {
 		ret = PTR_ERR(rt5616->regmap);
 		dev_err(&i2c->dev, "Failed to initialise I/O: %d\n", ret);
 		return ret;
 	}
-	
-	//achang.zhang-2018/04/28:Add for codec compatible dynamically (start)
-	regcache_cache_bypass(rt5616->regmap, true);
+
+	regmap_write(rt5616->regmap, RT5616_RESET, 0);
+
 	ret = regmap_read(rt5616->regmap, RT5616_VENDOR_ID, &val);
 	if(ret < 0) {
 		dev_err(&i2c->dev, "Failed to read device ID\n");
@@ -2003,10 +2002,6 @@ static int rt5616_i2c_probe(struct i2c_client *i2c,
 		printk("%s: alc5616-codec.2-001b", "rt5616-aif1", __func__);
 		codec_available = true;	
 	}
-	regcache_cache_bypass(rt5616->regmap, false);
-	//achang.zhang-2018/04/28:Add for codec compatible dynamically (end)
-
-	i2c_set_clientdata(i2c, rt5616);
 
 	ret = snd_soc_register_codec(&i2c->dev, &soc_codec_dev_rt5616,
 			rt5616_dai, ARRAY_SIZE(rt5616_dai));
