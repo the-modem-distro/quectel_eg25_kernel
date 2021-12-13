@@ -2823,7 +2823,7 @@ static int voice_send_cvp_register_dev_cfg_cmd(struct voice_data *v)
 	ret = voice_get_cal(&cal_block, CVP_VOCDEV_CFG_CAL, NULL,
 		0, v->session_id);
 	if (ret < 0) {
-		pr_err("%s: Voice_get_cal failed for cal %d!\n",
+		pr_debug("%s: Voice_get_cal failed for cal %d!\n",
 			__func__, CVP_VOCDEV_CFG_CAL);
 
 		goto unlock;
@@ -6520,7 +6520,7 @@ static int32_t qdsp_cvs_callback(struct apr_client_data *data, void *priv)
 
 			pr_debug("%x %x\n", ptr[0], ptr[1]);
 			if (ptr[1] != 0) {
-				pr_err("%s: cmd = 0x%x returned error = 0x%x\n",
+				pr_debug("%s: cmd = 0x%x returned error = 0x%x\n",
 					__func__, ptr[0], ptr[1]);
 			}
 			/*response from  CVS */
