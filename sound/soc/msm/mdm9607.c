@@ -1061,9 +1061,6 @@ static int mdm_sec_auxpcm_hw_params(struct snd_pcm_substream *substream,
 	unsigned int fmt;
 	int ret = 0;
 
-	pr_info("%s codec driver name:%s\n", __func__,
-			codec->dev->driver->name);
-
 	if (is_rt5616_codec_available()) {
 		if (pdata->sec_auxpcm_mode == 1) {
 			fmt = SND_SOC_DAIFMT_CBS_CFS|SND_SOC_DAIFMT_IB_NF|SND_SOC_DAIFMT_DSP_A;
