@@ -2503,7 +2503,7 @@ static ssize_t auxpcm_rate_store
 	
 	sscanf(buff, "%d", &rate);
 	
-	if(rate <= 4096000)
+	if(rate <= 12288000)
 	{
 		auxpcm_pdata->mode_8k.pcm_clk_rate = rate;
 		#ifdef CONFIG_QUECTEL_PCM16K_SUPPORT
