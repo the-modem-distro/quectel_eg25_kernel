@@ -55,6 +55,31 @@ static const struct reg_default init_list[] = {
 	{RT5616_PR_BASE + 0x23,	0x0004},
 };
 
+static const struct reg_default init_reg[] = {
+	//OUTPUT PATH
+	{RT5616_HPO_MIXER,      0x4000},
+	{RT5616_LOUT_MIXER,     0xc800},
+	{RT5616_OUT_L3_MIXER,   0x0278},
+	{RT5616_OUT_R3_MIXER,   0x0278},
+	{RT5616_STO_DAC_MIXER,  0x1250},
+	
+	//OUTPUT VOL
+	{RT5616_HP_VOL,         0x1010},
+	{RT5616_LOUT_CTRL1,     0x8888},
+	{RT5616_LOUT_CTRL2,     0x8000},
+
+	//INPUT PATH
+	{RT5616_STO1_ADC_MIXER, 0x3820},
+	{RT5616_REC_L2_MIXER,   0x004f},
+	{RT5616_REC_R2_MIXER,   0x004f},
+	{RT5616_IN1_IN2,        0x04c0},
+
+	//INPUT VOL
+	{RT5616_ADC_DIG_VOL,    0x5c5c},
+
+	{RT5616_ADDA_CLK1,      0x0100},
+};
+
 #define RT5616_INIT_REG_LEN ARRAY_SIZE(init_list)
 
 static const struct reg_default rt5616_reg[] = {
@@ -164,7 +189,7 @@ static bool codec_available = false;
 
 bool is_rt5616_codec_available(void)
 {
-	pr_info("%s: Codec state: %i \n", __func__, codec_available);
+	pr_debug("%s: Codec state: %i \n", __func__, codec_available);
 	return codec_available;
 }
 EXPORT_SYMBOL(is_rt5616_codec_available);
@@ -879,6 +904,8 @@ static const struct snd_soc_dapm_route rt5616_dapm_routes[] = {
 	{"IN1P", NULL, "MIC1"},
 	{"IN2P", NULL, "MIC2"},
 	{"IN2N", NULL, "MIC2"},
+	{"IN2P", NULL, "micbias1"},
+	{"IN2N", NULL, "micbias1"},
 
 	{"BST1", NULL, "IN1P"},
 	{"BST2", NULL, "IN2P"},
@@ -993,7 +1020,7 @@ static int rt5616_hw_params(struct snd_pcm_substream *substream,
 	rt5616->lrck[dai->id] = params_rate(params);
 
 	pre_div = rl6231_get_clk_info(rt5616->sysclk, rt5616->lrck[dai->id]);
-	pr_info("%s pre_div= %i \n", __func__, pre_div);
+
 	if (pre_div < 0) {
 		dev_err(codec->dev, "Unsupported clock setting\n");
 		return -EINVAL;
@@ -1255,11 +1282,13 @@ static int rt5616_probe(struct snd_soc_codec *codec)
 	int ret;
 
 	/* Check if MCLK provided */
+	#if 0
 	rt5616->mclk = devm_clk_get(codec->dev, "mclk");
-	if (PTR_ERR(rt5616->mclk) == -EPROBE_DEFER) {
-		pr_warn("%s: Probe deferred! \n", __func__);
+	if (PTR_ERR(rt5616->mclk) == -EPROBE_DEFER)
 		return -EPROBE_DEFER;
-	}
+	#endif
+
+	regmap_multi_reg_write(rt5616->regmap, init_reg, ARRAY_SIZE(init_reg));
 
 	rt5616->codec = codec;
 
