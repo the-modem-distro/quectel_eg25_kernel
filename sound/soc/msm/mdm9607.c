@@ -1054,7 +1054,6 @@ static int mdm_sec_auxpcm_hw_params(struct snd_pcm_substream *substream,
 
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_codec *codec = rtd->codec;
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	struct snd_soc_card *card = rtd->card;
 	struct mdm_machine_data *pdata = snd_soc_card_get_drvdata(card);
@@ -1173,7 +1172,7 @@ static const char *const spk_function[] = {"Off", "On"};
 static const char *const mi2s_rx_ch_text[] = {"One", "Two"};
 static const char *const mi2s_tx_ch_text[] = {"One", "Two"};
 
-static const char *const auxpcm_rate_text[] = {"rate_8000", "rate_16000"};
+static const char *const auxpcm_rate_text[] = {"rate_8000", "rate_16000", "rate_48000"};
 static const char *const mi2s_rate_text[] = {"rate_8000",
 						"rate_16000", "rate_48000"};
 
