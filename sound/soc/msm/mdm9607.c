@@ -1071,7 +1071,7 @@ static int mdm_sec_auxpcm_hw_params(struct snd_pcm_substream *substream,
 			return ret;
 
 		/* set the codec FLL */
-		ret = snd_soc_dai_set_pll(codec_dai, 0, 1, 2048000,
+		ret = snd_soc_dai_set_pll(codec_dai, 0, 1, params_rate(params) * 256,
 				params_rate(params) * 256);
 		if (ret < 0)
 			return ret;
@@ -1081,8 +1081,6 @@ static int mdm_sec_auxpcm_hw_params(struct snd_pcm_substream *substream,
 				params_rate(params) * 256, SND_SOC_CLOCK_IN);
 		if (ret < 0)
 			return ret;
-	} else {
-		pr_info("%s: No codec available, nothing to do here\n", __func__);
 	}
 
 	return 0;
