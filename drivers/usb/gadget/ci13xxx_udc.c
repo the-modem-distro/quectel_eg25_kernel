@@ -1614,6 +1614,36 @@ done:
 static DEVICE_ATTR(dtds, S_IWUSR, NULL, print_dtds);
 
 
+
+static ssize_t isr_inhibit_suspend_store(struct device *pdev,
+    									struct device_attribute *attr,
+  										const char *buff, 
+										size_t size)
+{
+    int do_inhibit = 0;
+	struct ci13xxx *udc = _udc;
+
+    sscanf(buff, "%d", &do_inhibit);
+
+    pr_info("%s: Setting suspend inhibit to %d\n",__func__, do_inhibit);
+    if(do_inhibit == 1) {
+        udc->suspend_inhibit = 1;
+    } else {
+        udc->suspend_inhibit = 0;
+    }
+
+    return size;
+}
+static ssize_t isr_inhibit_suspend_show (struct device *pdev, 
+									   struct device_attribute *attr, 
+									   char *buf )
+{
+	struct ci13xxx *udc = _udc;
+    return sprintf(buf, "%d\n", udc->suspend_inhibit);
+}
+
+static DEVICE_ATTR(isr_inhibit_suspend, S_IRUGO | S_IWUSR, isr_inhibit_suspend_show, isr_inhibit_suspend_store);
+
 static ssize_t isr_suspend_state_show (struct device *pdev, 
 									   struct device_attribute *attr, 
 									   char *buf )
@@ -1623,7 +1653,12 @@ static ssize_t isr_suspend_state_show (struct device *pdev,
 }
 
 static DEVICE_ATTR(isr_suspend_state,  S_IRUGO, isr_suspend_state_show, NULL);
-static struct device_attribute *isr_suspend_attributes[] = { &dev_attr_isr_suspend_state, NULL };
+
+static struct device_attribute *isr_suspend_attributes[] = { 
+	&dev_attr_isr_inhibit_suspend,
+	&dev_attr_isr_suspend_state,
+	NULL 
+};
 
 static int create_dev_attr_file(struct device *dev)
 {
@@ -3822,7 +3857,7 @@ static irqreturn_t udc_irq(void)
 			udc->gadget.xfer_isr_count++;
 			isr_tr_complete_handler(udc);
 		}
-		if (USBi_SLI & intr) {
+		if (USBi_SLI & intr && !udc->suspend_inhibit) {
 			isr_suspend_handler(udc);
 			isr_statistics.sli++;
 		}
@@ -3877,7 +3912,7 @@ static int udc_probe(struct ci13xxx_udc_driver *driver, struct device *dev,
 	udc->lock = &udc_lock;
 	udc->regs = regs;
 	udc->udc_driver = driver;
-
+	udc->suspend_inhibit = 0;
 	udc->gadget.ops          = &usb_gadget_ops;
 	udc->gadget.speed        = USB_SPEED_UNKNOWN;
 	udc->gadget.max_speed    = USB_SPEED_HIGH;

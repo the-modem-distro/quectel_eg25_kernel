@@ -181,6 +181,7 @@ struct ci13xxx {
 	bool                      skip_flush; /* skip flushing remaining EP
 						upon flush timeout for the
 						first EP. */
+	unsigned int suspend_inhibit;
 };
 
 /******************************************************************************
