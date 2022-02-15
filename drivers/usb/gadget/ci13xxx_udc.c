@@ -1714,10 +1714,9 @@ static int ci13xxx_wakeup(struct usb_gadget *_gadget)
 		retry_count++;
 		schedule_delayed_work(&udc->rw_work, REMOTE_WAKEUP_DELAY);
 		return 0;
-	}
-	
-	if (ret == 1) {
-		pr_info("%s: Already awake\n", __func__);
+	} else if (ret == 1) {
+		pr_debug("%s: Already awake\n", __func__);
+		ret = 0;
 	}
 
 	retry_count = 0;
@@ -1731,14 +1730,14 @@ static int ci13xxx_wakeup(struct usb_gadget *_gadget)
 	spin_lock_irqsave(udc->lock, flags);
 	if (!hw_cread(CAP_PORTSC, PORTSC_SUSP)) {
 		ret = -EINVAL;
-		dbg_trace("port is not suspended\n");
+		pr_info("%s: Port is not suspended\n", __func__);
 		pm_runtime_put(&_gadget->dev);
-		goto out;
+	} else {
+		hw_cwrite(CAP_PORTSC, PORTSC_FPR, PORTSC_FPR);
+		pm_runtime_mark_last_busy(&_gadget->dev);
+		pm_runtime_put_autosuspend(&_gadget->dev);
 	}
-	hw_cwrite(CAP_PORTSC, PORTSC_FPR, PORTSC_FPR);
 
-	pm_runtime_mark_last_busy(&_gadget->dev);
-	pm_runtime_put_autosuspend(&_gadget->dev);
 out:
 	spin_unlock_irqrestore(udc->lock, flags);
 	return ret;
