@@ -1229,6 +1229,8 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 		 * away from ON. Disable the clock in that case, otherwise
 		 * enable it.
 		 */
+		regcache_cache_only(rt5616->regmap, false);
+		regcache_sync(rt5616->regmap);
 		if (IS_ERR(rt5616->mclk))
 			break;
 
@@ -1266,6 +1268,8 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 		snd_soc_write(codec, RT5616_PWR_MIXER, 0x0000);
 		snd_soc_write(codec, RT5616_PWR_ANLG1, RT5616_PWR_LDO_DVO_1_2V); //0x0000 in 4.14
 		snd_soc_write(codec, RT5616_PWR_ANLG2, 0x0000);
+		regcache_cache_only(rt5616->regmap, true);
+		regcache_mark_dirty(rt5616->regmap);
 		break;
 
 	default:
@@ -1423,7 +1427,7 @@ static int rt5616_i2c_probe(struct i2c_client *i2c,
 		return ret;
 	}
 	// Fucking ensure we reset it before reading...
-	regmap_write(rt5616->regmap, RT5616_RESET, 1);
+	regmap_write(rt5616->regmap, RT5616_RESET, 0);
 
 	regmap_read(rt5616->regmap, RT5616_DEVICE_ID, &val);
 	if (val != 0x6281) {

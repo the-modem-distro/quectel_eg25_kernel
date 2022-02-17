@@ -404,7 +404,7 @@
 		dma-names = "tx", "rx";
 		status = "disabled";
 
-		alc5616_codec@1b{
+		rt5616_codec@1b{
 			compatible = "realtek,rt5616";
 			reg = <0x1b>;
 		};
