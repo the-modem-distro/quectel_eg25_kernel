@@ -145,6 +145,8 @@ static int afe_get_cal_hw_delay(int32_t path,
 				struct audio_cal_hw_delay_entry *entry);
 static int remap_cal_data(struct cal_block_data *cal_block, int cal_index);
 
+void mdm_soc_reset_ref(void);
+
 int afe_get_topology(int port_id)
 {
 	int topology;
@@ -278,7 +280,7 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 		pr_debug("%s: reset event = %d %d apr[%pK]\n",
 			__func__,
 			data->reset_event, data->reset_proc, this_afe.apr);
-
+		mdm_soc_reset_ref();
 		cal_utils_clear_cal_block_q6maps(MAX_AFE_CAL_TYPES,
 			this_afe.cal_data);
 
