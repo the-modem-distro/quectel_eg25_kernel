@@ -1268,8 +1268,6 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 		snd_soc_write(codec, RT5616_PWR_MIXER, 0x0000);
 		snd_soc_write(codec, RT5616_PWR_ANLG1, RT5616_PWR_LDO_DVO_1_2V); //0x0000 in 4.14
 		snd_soc_write(codec, RT5616_PWR_ANLG2, 0x0000);
-		regcache_cache_only(rt5616->regmap, true);
-		regcache_mark_dirty(rt5616->regmap);
 		break;
 
 	default:
