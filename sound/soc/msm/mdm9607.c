@@ -951,6 +951,7 @@ done:
 #ifdef CONFIG_QUECTEL_AUDIO_DRIVER
 void mdm_soc_reset_ref(void)
 {
+	pr_info("%s: Reset ref counts\n", __func__);
     atomic_set(&aux_ref_count, 0);
     atomic_set(&sec_aux_ref_count, 0);
     atomic_set(&mi2s_ref_count, 0);
@@ -1023,23 +1024,27 @@ static int mdm_sec_auxpcm_hw_params(struct snd_pcm_substream *substream,
 	struct mdm_machine_data *pdata = snd_soc_card_get_drvdata(card);
 	unsigned int fmt;
 	int ret = 0;
-
+	pr_info("%s start \n", __func__);
 	if (is_rt5616_codec_available()) {
 		if (pdata->sec_auxpcm_mode == 1) {
+			pr_info("%s SND_SOC_DAIFMT_CBS_CFS \n", __func__);
 			fmt = SND_SOC_DAIFMT_CBS_CFS|SND_SOC_DAIFMT_IB_NF|SND_SOC_DAIFMT_DSP_A;
 		} else {
+			pr_info("%s SND_SOC_DAIFMT_CBM_CFM\n", __func__);
 			fmt = SND_SOC_DAIFMT_CBM_CFM|SND_SOC_DAIFMT_IB_NF|SND_SOC_DAIFMT_DSP_A;
 		}
 		ret = snd_soc_dai_set_fmt(codec_dai, fmt);
 		if (ret < 0)
 			return ret;
 
+		pr_info("%s Set FLL \n", __func__);
 		/* set the codec FLL */
 		ret = snd_soc_dai_set_pll(codec_dai, 0, 1, params_rate(params) * 256,
 				params_rate(params) * 256);
 		if (ret < 0)
 			return ret;
 
+		pr_info("%s Set Sysclk \n", __func__);
 		/* set the codec system clock */
 		ret = snd_soc_dai_set_sysclk(codec_dai, 1,
 				params_rate(params) * 256, SND_SOC_CLOCK_IN);
