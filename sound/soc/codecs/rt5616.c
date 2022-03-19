@@ -1126,9 +1126,13 @@ static int rt5616_set_dai_sysclk(struct snd_soc_dai *dai,
 
 	switch (clk_id) {
 	case RT5616_SCLK_S_MCLK:
+					pr_info("%s: RT5616_SCLK_S_MCLK\n", __func__);
+
 		reg_val |= RT5616_SCLK_SRC_MCLK;
 		break;
 	case RT5616_SCLK_S_PLL1:
+					pr_info("%s: RT5616_SCLK_S_PLL1\n", __func__);
+
 		reg_val |= RT5616_SCLK_SRC_PLL1;
 		break;
 	default:
@@ -1171,12 +1175,18 @@ static int rt5616_set_dai_pll(struct snd_soc_dai *dai, int pll_id, int source,
 
 	switch (source) {
 	case RT5616_PLL1_S_MCLK:
+				pr_info("%s: RT5616_PLL1_S_MCLK \n", __func__);
+
 		snd_soc_update_bits(codec, RT5616_GLB_CLK,
 				    RT5616_PLL1_SRC_MASK,
 				    RT5616_PLL1_SRC_MCLK);
 		break;
 	case RT5616_PLL1_S_BCLK1:
+				pr_info("%s: RT5616_PLL1_S_BCLK1\n", __func__);
+
 	case RT5616_PLL1_S_BCLK2:
+				pr_info("%s: RT5616_PLL1_S_BCLK2\n", __func__);
+
 		snd_soc_update_bits(codec, RT5616_GLB_CLK,
 				    RT5616_PLL1_SRC_MASK,
 				    RT5616_PLL1_SRC_BCLK1);
@@ -1192,7 +1202,7 @@ static int rt5616_set_dai_pll(struct snd_soc_dai *dai, int pll_id, int source,
 		return ret;
 	}
 
-	dev_dbg(codec->dev, "bypass=%d m=%d n=%d k=%d\n",
+	dev_err(codec->dev, "bypass=%d m=%d n=%d k=%d\n",
 		pll_code.m_bp, (pll_code.m_bp ? 0 : pll_code.m_code),
 		pll_code.n_code, pll_code.k_code);
 
@@ -1219,9 +1229,13 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 	switch (level) {
 
 	case SND_SOC_BIAS_ON:
+		pr_info("%s: SND_SOC_BIAS_ON\n", __func__);
+
 		break;
 
 	case SND_SOC_BIAS_PREPARE:
+			pr_info("%s: SND_SOC_BIAS_PREPARE\n", __func__);
+
 		/*
 		 * SND_SOC_BIAS_PREPARE is called while preparing for a
 		 * transition to ON or away from ON. If current bias_level
@@ -1229,8 +1243,6 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 		 * away from ON. Disable the clock in that case, otherwise
 		 * enable it.
 		 */
-		regcache_cache_only(rt5616->regmap, false);
-		regcache_sync(rt5616->regmap);
 		if (IS_ERR(rt5616->mclk))
 			break;
 
@@ -1238,13 +1250,21 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 			clk_disable_unprepare(rt5616->mclk);
 		} else {
 			ret = clk_prepare_enable(rt5616->mclk);
-			if (ret)
+			if (ret) {
+				pr_info("%s: Couldnt prepare the clock\n", __func__);
 				return ret;
+			}
 		}
 		break;
 
 	case SND_SOC_BIAS_STANDBY:
+		pr_info("%s: SND_SOC_BIAS_STANDBY\n", __func__);
 		if (codec->dapm.bias_level == SND_SOC_BIAS_OFF) {
+			pr_info("%s: Bias level is off\n", __func__);
+			regmap_multi_reg_write(rt5616->regmap, init_reg, ARRAY_SIZE(init_reg));
+			regcache_cache_only(rt5616->regmap, false);
+			regcache_sync(rt5616->regmap);
+			mdelay(10);
 			snd_soc_update_bits(codec, RT5616_PWR_ANLG1,
 					    RT5616_PWR_VREF1 | RT5616_PWR_MB |
 					    RT5616_PWR_BG | RT5616_PWR_VREF2,
@@ -1261,6 +1281,7 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 		break;
 
 	case SND_SOC_BIAS_OFF:
+		pr_info("%s: SND_SOC_BIAS_OFF\n", __func__);
 		snd_soc_update_bits(codec, RT5616_D_MISC, RT5616_D_GATE_EN, 0);
 		snd_soc_write(codec, RT5616_PWR_DIG1, 0x0000);
 		snd_soc_write(codec, RT5616_PWR_DIG2, 0x0000);
@@ -1268,6 +1289,8 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 		snd_soc_write(codec, RT5616_PWR_MIXER, 0x0000);
 		snd_soc_write(codec, RT5616_PWR_ANLG1, RT5616_PWR_LDO_DVO_1_2V); //0x0000 in 4.14
 		snd_soc_write(codec, RT5616_PWR_ANLG2, 0x0000);
+		regcache_cache_only(rt5616->regmap, true);
+		regcache_mark_dirty(rt5616->regmap);
 		break;
 
 	default:
@@ -1284,11 +1307,11 @@ static int rt5616_probe(struct snd_soc_codec *codec)
 	int ret;
 
 	/* Check if MCLK provided */
-	#if 0
 	rt5616->mclk = devm_clk_get(codec->dev, "mclk");
-	if (PTR_ERR(rt5616->mclk) == -EPROBE_DEFER)
+	if (PTR_ERR(rt5616->mclk) == -EPROBE_DEFER) {
+		pr_info("%s: MCLK is not available, deferring\n", __func__);
 		return -EPROBE_DEFER;
-	#endif
+	}
 
 	regmap_multi_reg_write(rt5616->regmap, init_reg, ARRAY_SIZE(init_reg));
 

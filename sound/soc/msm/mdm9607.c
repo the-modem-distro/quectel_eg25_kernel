@@ -1039,6 +1039,7 @@ static int mdm_sec_auxpcm_hw_params(struct snd_pcm_substream *substream,
 
 		pr_info("%s Set FLL \n", __func__);
 		/* set the codec FLL */
+	//	ret = snd_soc_dai_set_pll(codec_dai, 0, 1, 2048000,
 		ret = snd_soc_dai_set_pll(codec_dai, 0, 1, params_rate(params) * 256,
 				params_rate(params) * 256);
 		if (ret < 0)
@@ -1048,8 +1049,10 @@ static int mdm_sec_auxpcm_hw_params(struct snd_pcm_substream *substream,
 		/* set the codec system clock */
 		ret = snd_soc_dai_set_sysclk(codec_dai, 1,
 				params_rate(params) * 256, SND_SOC_CLOCK_IN);
-		if (ret < 0)
+		if (ret < 0) {
+			pr_info("%s: Failed to set sys clk\n", __func__);
 			return ret;
+		}
 	}
 
 	return 0;
