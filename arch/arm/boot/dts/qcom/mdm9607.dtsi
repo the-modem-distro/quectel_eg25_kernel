@@ -1074,12 +1074,12 @@
 	dai_sec_auxpcm: qcom,msm-sec-auxpcm {
 		compatible = "qcom,msm-auxpcm-dev";
 		qcom,msm-cpudai-auxpcm-mode = <0>, <0>;
-		qcom,msm-cpudai-auxpcm-sync = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-frame = <5>, <4>;
+		qcom,msm-cpudai-auxpcm-sync = <0>, <1>;
+		qcom,msm-cpudai-auxpcm-frame = <2>, <4>;
 		qcom,msm-cpudai-auxpcm-quant = <2>, <2>;
 		qcom,msm-cpudai-auxpcm-num-slots = <1>, <1>;
 		qcom,msm-cpudai-auxpcm-slot-mapping = <1>, <1>;
-		qcom,msm-cpudai-auxpcm-data = <0>, <0>;
+		qcom,msm-cpudai-auxpcm-data = <1>, <0>;
 		qcom,msm-cpudai-auxpcm-pcm-clk-rate = <2048000>, <2048000>;
 		qcom,msm-auxpcm-interface = "secondary";
 		qcom,msm-cpudai-afe-clk-ver = <2>;
