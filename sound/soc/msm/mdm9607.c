@@ -3495,12 +3495,6 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 			strlcpy(stub_codec_rx_dai_name, "rt5616-aif1", sizeof("rt5616-aif1"));
 			strlcpy(stub_codec_tx_dai_name, "rt5616-aif1", sizeof("rt5616-aif1"));
 			mdm_auxpcm_rate = SAMPLE_RATE_16KHZ;
-			mdm_mi2s_rate = SAMPLE_RATE_16KHZ;
-			mdm_sec_mi2s_rate = SAMPLE_RATE_16KHZ;
-			mdm_pri_tdm_rx_0_sample_rate = SAMPLE_RATE_16KHZ;
-			mdm_pri_tdm_tx_0_sample_rate = SAMPLE_RATE_16KHZ;
-			mdm_sec_tdm_rx_0_sample_rate = SAMPLE_RATE_16KHZ;
-			mdm_sec_tdm_tx_0_sample_rate = SAMPLE_RATE_16KHZ;
 		} else {
 			pr_info("%s: RT5616 Was *NOT* detected, using i2s directly \n", __func__);
 			mdm_auxpcm_mode = I2S_PCM_SLAVE_MODE;
