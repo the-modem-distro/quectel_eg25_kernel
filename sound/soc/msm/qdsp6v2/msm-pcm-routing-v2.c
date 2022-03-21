@@ -13477,7 +13477,7 @@ static int msm_pcm_routing_hw_params(struct snd_pcm_substream *substream,
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	unsigned int be_id = rtd->dai_link->be_id;
-	pr_info("%s: Sampling rate: %i\n", __func__, params_rate(params));
+
 	if (be_id >= MSM_BACKEND_DAI_MAX) {
 		pr_err("%s: unexpected be_id %d\n", __func__, be_id);
 		return -EINVAL;

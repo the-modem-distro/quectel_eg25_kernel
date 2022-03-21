@@ -958,14 +958,12 @@ static int mdm_sec_auxpcm_hw_params(struct snd_pcm_substream *substream,
 	unsigned int fmt;
 	int ret = 0;
 	if (is_rt5616_codec_available()) {
-		pr_info("%s: Selected sampling rate: %i\n", __func__, params_rate(params));
 		if (pdata->sec_auxpcm_mode == 1) {
 			fmt = SND_SOC_DAIFMT_CBS_CFS|SND_SOC_DAIFMT_IB_NF|SND_SOC_DAIFMT_DSP_A;
 		} else {
 			fmt = SND_SOC_DAIFMT_CBM_CFM|SND_SOC_DAIFMT_IB_NF|SND_SOC_DAIFMT_DSP_A;
 		}
 		ret = snd_soc_dai_set_fmt(codec_dai, fmt);
-		pr_info("%s: set_fmt returned %i\n", __func__, ret);
 		if (ret < 0)
 			return ret;
 
