@@ -1756,8 +1756,7 @@ static int mdm_sec_auxpcm_hw_params(struct snd_pcm_substream *substream,
 			return ret;
 
 		/* set the codec FLL */
-		ret = snd_soc_dai_set_pll(codec_dai, 0, 1, params_rate(params) * 256,
-				params_rate(params) * 256);
+		ret = snd_soc_dai_set_pll(codec_dai, 0, 1, 2048000,	params_rate(params) * 256);
 		if (ret < 0)
 			return ret;
 
