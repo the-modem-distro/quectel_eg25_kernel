@@ -554,6 +554,7 @@ static struct cal_block_data *get_matching_cal_block(
 static int cal_block_ion_alloc(struct cal_block_data *cal_block)
 {
 	int	ret = 0;
+
 	if (cal_block == NULL) {
 		pr_err("%s: cal_block is NULL!\n", __func__);
 		ret = -EINVAL;

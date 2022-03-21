@@ -1894,7 +1894,7 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 							data->payload_size);
 				}
 			} else {
-				pr_err("%s: !! payload size of %x is less than expected.\n",
+				pr_debug("%s: payload size of %x is less than expected.\n",
 					__func__, data->payload_size);
 			}
 			break;
@@ -8370,7 +8370,7 @@ int q6asm_send_cal(struct audio_client *ac)
 	mutex_lock(&cal_data[ASM_AUDSTRM_CAL]->lock);
 	cal_block = cal_utils_get_only_cal_block(cal_data[ASM_AUDSTRM_CAL]);
 	if (cal_block == NULL) {
-		pr_debug("%s: cal_block is NULL\n",
+		pr_err("%s: cal_block is NULL\n",
 			__func__);
 		goto unlock;
 	}
