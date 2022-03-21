@@ -1016,7 +1016,7 @@ static int rt5616_hw_params(struct snd_pcm_substream *substream,
 	struct rt5616_priv *rt5616 = snd_soc_codec_get_drvdata(codec);
 	unsigned int val_len = 0, val_clk, mask_clk;
 	int pre_div, bclk_ms, frame_size;
-
+	pr_info("%s: Sampling rate: %i\n ", __func__, params_rate(params));
 	rt5616->lrck[dai->id] = params_rate(params);
 
 	pre_div = rl6231_get_clk_info(rt5616->sysclk, rt5616->lrck[dai->id]);
@@ -1071,39 +1071,50 @@ static int rt5616_set_dai_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 
 	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
 	case SND_SOC_DAIFMT_CBM_CFM:
+		pr_info("%s: SND_SOC_DAIFMT_CBM_CFM\n", __func__);
 		rt5616->master[dai->id] = 1;
 		break;
 	case SND_SOC_DAIFMT_CBS_CFS:
+		pr_info("%s: SND_SOC_DAIFMT_CBS_CFS\n", __func__);
 		reg_val |= RT5616_I2S_MS_S;
 		rt5616->master[dai->id] = 0;
 		break;
 	default:
+		pr_info("%s: SND_SOC_DAIFMT_MASTER_MASK Default case\n", __func__);
 		return -EINVAL;
 	}
 
 	switch (fmt & SND_SOC_DAIFMT_INV_MASK) {
 	case SND_SOC_DAIFMT_NB_NF:
+		pr_info("%s: SND_SOC_DAIFMT_NB_NF\n", __func__);
 		break;
 	case SND_SOC_DAIFMT_IB_NF:
+		pr_info("%s: SND_SOC_DAIFMT_IB_NF\n", __func__);
 		reg_val |= RT5616_I2S_BP_INV;
 		break;
 	default:
+		pr_info("%s: SND_SOC_DAIFMT_INV_MASK Default case\n", __func__);
 		return -EINVAL;
 	}
 
 	switch (fmt & SND_SOC_DAIFMT_FORMAT_MASK) {
 	case SND_SOC_DAIFMT_I2S:
+		pr_info("%s: SND_SOC_DAIFMT_I2S\n", __func__);
 		break;
 	case SND_SOC_DAIFMT_LEFT_J:
+		pr_info("%s: SND_SOC_DAIFMT_LEFT_J\n", __func__);
 		reg_val |= RT5616_I2S_DF_LEFT;
 		break;
 	case SND_SOC_DAIFMT_DSP_A:
+		pr_info("%s: SND_SOC_DAIFMT_DSP_A\n", __func__);
 		reg_val |= RT5616_I2S_DF_PCM_A;
 		break;
 	case SND_SOC_DAIFMT_DSP_B:
+		pr_info("%s: SND_SOC_DAIFMT_DSP_B\n", __func__);
 		reg_val |= RT5616_I2S_DF_PCM_B;
 		break;
 	default:
+		pr_info("%s: SND_SOC_DAIFMT_FORMAT_MASK Default case\n", __func__);
 		return -EINVAL;
 	}
 
@@ -1163,7 +1174,7 @@ static int rt5616_set_dai_pll(struct snd_soc_dai *dai, int pll_id, int source,
 		return 0;
 
 	if (!freq_in || !freq_out) {
-		dev_dbg(codec->dev, "PLL disabled\n");
+		dev_info(codec->dev, "PLL disabled\n");
 
 		rt5616->pll_in = 0;
 		rt5616->pll_out = 0;
@@ -1216,7 +1227,8 @@ static int rt5616_set_dai_pll(struct snd_soc_dai *dai, int pll_id, int source,
 	rt5616->pll_in = freq_in;
 	rt5616->pll_out = freq_out;
 	rt5616->pll_src = source;
-
+	mdelay(10);
+	
 	return 0;
 }
 
@@ -1229,12 +1241,11 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 	switch (level) {
 
 	case SND_SOC_BIAS_ON:
-		pr_info("%s: SND_SOC_BIAS_ON\n", __func__);
-
+		pr_debug("%s: SND_SOC_BIAS_ON\n", __func__);
 		break;
 
 	case SND_SOC_BIAS_PREPARE:
-			pr_info("%s: SND_SOC_BIAS_PREPARE\n", __func__);
+		pr_debug("%s: SND_SOC_BIAS_PREPARE\n", __func__);
 
 		/*
 		 * SND_SOC_BIAS_PREPARE is called while preparing for a
@@ -1258,9 +1269,8 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 		break;
 
 	case SND_SOC_BIAS_STANDBY:
-		pr_info("%s: SND_SOC_BIAS_STANDBY\n", __func__);
+		pr_debug("%s: SND_SOC_BIAS_STANDBY\n", __func__);
 		if (codec->dapm.bias_level == SND_SOC_BIAS_OFF) {
-			pr_info("%s: Bias level is off\n", __func__);
 			regmap_multi_reg_write(rt5616->regmap, init_reg, ARRAY_SIZE(init_reg));
 			regcache_cache_only(rt5616->regmap, false);
 			regcache_sync(rt5616->regmap);
@@ -1281,7 +1291,7 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 		break;
 
 	case SND_SOC_BIAS_OFF:
-		pr_info("%s: SND_SOC_BIAS_OFF\n", __func__);
+		pr_debug("%s: SND_SOC_BIAS_OFF\n", __func__);
 		snd_soc_update_bits(codec, RT5616_D_MISC, RT5616_D_GATE_EN, 0);
 		snd_soc_write(codec, RT5616_PWR_DIG1, 0x0000);
 		snd_soc_write(codec, RT5616_PWR_DIG2, 0x0000);
