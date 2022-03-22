@@ -32,7 +32,7 @@
 &blsp1_uart5 {
 	status = "ok";
 	pinctrl-names = "default";
-	pinctrl-0 = <&blsp1_uart5_sleep>;
+	pinctrl-0 = <&blsp1_uart5_active>;
 };
 
 &blsp1_uart3 {

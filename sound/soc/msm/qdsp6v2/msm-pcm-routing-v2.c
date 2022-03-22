@@ -45,8 +45,6 @@
 #include "q6voice.h"
 #include "sound/q6lsm.h"
 
-#define QUECTEL_UAC_FEATURE
-
 static int get_cal_path(int path_type);
 
 static struct mutex routing_lock;
@@ -1805,28 +1803,6 @@ static int msm_routing_get_voice_mixer(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
-#ifdef QUECTEL_UAC_FEATURE
-static void disable_mixer(struct snd_soc_dapm_context *dapm, char* name) {
-	struct snd_ctl_elem_id id = {0};
-	struct snd_kcontrol* kctl;
-	struct snd_card *card = dapm->card->snd_card;
-	
-	id.iface = SNDRV_CTL_ELEM_IFACE_MIXER;
-	strncpy(id.name,name, sizeof(id.name));
-	
-	kctl = snd_ctl_find_id(card, &id);
-
-	if (kctl) {
-		struct soc_mixer_control *mc =
-			(struct soc_mixer_control *)kctl->private_value;
-
-		if (test_bit(mc->shift, &msm_bedais[mc->reg].fe_sessions)) {
-			msm_pcm_routing_process_voice(mc->reg, mc->shift, 0);
-			snd_soc_dapm_mixer_update_power(dapm, kctl, 0, NULL);
-		}
-	}
-}
-#endif
 static int msm_routing_put_voice_mixer(struct snd_kcontrol *kcontrol,
 				struct snd_ctl_elem_value *ucontrol)
 {
@@ -1836,22 +1812,7 @@ static int msm_routing_put_voice_mixer(struct snd_kcontrol *kcontrol,
 	struct soc_mixer_control *mc =
 		(struct soc_mixer_control *)kcontrol->private_value;
 	struct snd_soc_dapm_update *update = NULL;
-#ifdef QUECTEL_UAC_FEATURE
-	if (ucontrol->value.integer.value[0] 
-			&& (mc->shift == MSM_FRONTEND_DAI_CS_VOICE || mc->shift == MSM_FRONTEND_DAI_VOLTE)) {
-		if (mc->reg == MSM_BACKEND_DAI_SEC_AUXPCM_RX || mc->reg == MSM_BACKEND_DAI_SEC_AUXPCM_TX) {
-			disable_mixer(widget->dapm, "AFE_PCM_RX_Voice Mixer CSVoice");
-			disable_mixer(widget->dapm, "Voice_Tx Mixer AFE_PCM_TX_Voice");
-			disable_mixer(widget->dapm, "AFE_PCM_RX_Voice Mixer VoLTE");
-			disable_mixer(widget->dapm, "VoLTE_Tx Mixer AFE_PCM_TX_VoLTE");
-		} else if (mc->reg == MSM_BACKEND_DAI_AFE_PCM_RX || mc->reg == MSM_BACKEND_DAI_AFE_PCM_TX) {
-			disable_mixer(widget->dapm, "SEC_AUX_PCM_RX_Voice Mixer CSVoice");
-			disable_mixer(widget->dapm, "Voice_Tx Mixer SEC_AUX_PCM_TX_Voice");
-			disable_mixer(widget->dapm, "SEC_AUX_PCM_RX_Voice Mixer VoLTE");
-			disable_mixer(widget->dapm, "VoLTE_Tx Mixer SEC_AUX_PCM_TX_VoLTE");
-		}
-	}
-#endif
+
 	if (ucontrol->value.integer.value[0]) {
 		msm_pcm_routing_process_voice(mc->reg, mc->shift, 1);
 		snd_soc_dapm_mixer_update_power(widget->dapm, kcontrol, 1, update);
@@ -4069,15 +4030,6 @@ static const struct snd_kcontrol_new secondary_mi2s_rx_mixer_controls[] = {
 	SOC_SINGLE_EXT("MultiMedia29", MSM_BACKEND_DAI_SECONDARY_MI2S_RX,
 	MSM_FRONTEND_DAI_MULTIMEDIA29, 1, 0, msm_routing_get_audio_mixer,
 	msm_routing_put_audio_mixer),
-};
-
-static const struct snd_kcontrol_new mi2s_hl_mixer_controls[] = {
-	SOC_SINGLE_EXT("PRI_MI2S_TX", MSM_BACKEND_DAI_SECONDARY_MI2S_RX,
-	MSM_BACKEND_DAI_PRI_MI2S_TX, 1, 0, msm_routing_get_port_mixer,
-	msm_routing_put_port_mixer),
-	SOC_SINGLE_EXT("INTERNAL_FM_TX", MSM_BACKEND_DAI_SECONDARY_MI2S_RX,
-	MSM_BACKEND_DAI_INT_FM_TX, 1, 0, msm_routing_get_port_mixer,
-	msm_routing_put_port_mixer),
 };
 
 static const struct snd_kcontrol_new primary_mi2s_rx_mixer_controls[] = {
@@ -10912,8 +10864,7 @@ static const struct snd_soc_dapm_widget msm_qdsp6_widgets[] = {
 				&hfp_aux_switch_mixer_controls),
 	SND_SOC_DAPM_SWITCH("HFP_INT_UL_HL", SND_SOC_NOPM, 0, 0,
 				&hfp_int_switch_mixer_controls),
-	SND_SOC_DAPM_MUX("SLIM_0_RX AANC MUX", SND_SOC_NOPM, 0, 0,
-			aanc_slim_0_rx_mux),
+
 	/* Mixer definitions */
 	SND_SOC_DAPM_MIXER("PRI_RX Audio Mixer", SND_SOC_NOPM, 0, 0,
 	pri_i2s_rx_mixer_controls, ARRAY_SIZE(pri_i2s_rx_mixer_controls)),
@@ -10941,9 +10892,6 @@ static const struct snd_soc_dapm_widget msm_qdsp6_widgets[] = {
 	SND_SOC_DAPM_MIXER("SEC_MI2S_RX_SD1 Audio Mixer", SND_SOC_NOPM, 0, 0,
 			   secondary_mi2s_rx2_mixer_controls,
 			   ARRAY_SIZE(secondary_mi2s_rx2_mixer_controls)),
-	SND_SOC_DAPM_MIXER("SEC_MI2S_RX Port Mixer", SND_SOC_NOPM, 0, 0,
-			   mi2s_hl_mixer_controls,
-			   ARRAY_SIZE(mi2s_hl_mixer_controls)),
 	SND_SOC_DAPM_MIXER("PRI_MI2S_RX Audio Mixer", SND_SOC_NOPM, 0, 0,
 			   primary_mi2s_rx_mixer_controls,
 			   ARRAY_SIZE(primary_mi2s_rx_mixer_controls)),
@@ -11594,9 +11542,6 @@ static const struct snd_soc_dapm_route intercon[] = {
 
 	{"SEC_MI2S_RX_SD1 Audio Mixer", "MultiMedia6", "MM_DL6"},
 	{"SEC_MI2S_RX_SD1", NULL, "SEC_MI2S_RX_SD1 Audio Mixer"},
-
-	{"SEC_MI2S_RX Port Mixer", "PRI_MI2S_TX", "PRI_MI2S_TX"},
-	{"SEC_MI2S_RX Port Mixer", "INTERNAL_FM_TX", "INT_FM_TX"},
 
 	{"PRI_MI2S_RX Audio Mixer", "MultiMedia1", "MM_DL1"},
 	{"PRI_MI2S_RX Audio Mixer", "MultiMedia2", "MM_DL2"},
@@ -13344,8 +13289,6 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"SLIMBUS_1_RX Mixer", "Voice2 Stub", "VOICE2_STUB_DL"},
 	{"SLIMBUS_1_RX Mixer", "VoLTE Stub", "VOLTE_STUB_DL"},
 	{"SLIMBUS_1_RX", NULL, "SLIMBUS_1_RX Mixer"},
-	{"INTERNAL_BT_SCO_RX_Voice Mixer", "Voice Stub", "VOICE_STUB_DL"},
-	{"INTERNAL_BT_SCO_RX_Voice Mixer", "Voice2 Stub", "VOICE2_STUB_DL"},
 	{"AFE_PCM_RX_Voice Mixer", "Voice Stub", "VOICE_STUB_DL"},
 	{"AFE_PCM_RX_Voice Mixer", "Voice2 Stub", "VOICE2_STUB_DL"},
 	{"AFE_PCM_RX_Voice Mixer", "VoLTE Stub", "VOLTE_STUB_DL"},
@@ -14024,7 +13967,6 @@ static int msm_routing_probe(struct snd_soc_platform *platform)
 
 	snd_soc_add_platform_controls(platform, aptx_dec_license_controls,
 					ARRAY_SIZE(aptx_dec_license_controls));
-	
 	return 0;
 }
 

@@ -1159,7 +1159,7 @@ static int rt5616_set_dai_pll(struct snd_soc_dai *dai, int pll_id, int source,
 		return 0;
 
 	if (!freq_in || !freq_out) {
-		dev_dbg(codec->dev, "PLL disabled\n");
+		dev_info(codec->dev, "PLL disabled\n");
 
 		rt5616->pll_in = 0;
 		rt5616->pll_out = 0;
@@ -1206,7 +1206,8 @@ static int rt5616_set_dai_pll(struct snd_soc_dai *dai, int pll_id, int source,
 	rt5616->pll_in = freq_in;
 	rt5616->pll_out = freq_out;
 	rt5616->pll_src = source;
-
+	mdelay(10);
+	
 	return 0;
 }
 
@@ -1229,8 +1230,6 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 		 * away from ON. Disable the clock in that case, otherwise
 		 * enable it.
 		 */
-		regcache_cache_only(rt5616->regmap, false);
-		regcache_sync(rt5616->regmap);
 		if (IS_ERR(rt5616->mclk))
 			break;
 
@@ -1238,13 +1237,19 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 			clk_disable_unprepare(rt5616->mclk);
 		} else {
 			ret = clk_prepare_enable(rt5616->mclk);
-			if (ret)
+			if (ret) {
+				pr_info("%s: Couldnt prepare the clock\n", __func__);
 				return ret;
+			}
 		}
 		break;
 
 	case SND_SOC_BIAS_STANDBY:
 		if (codec->dapm.bias_level == SND_SOC_BIAS_OFF) {
+			regmap_multi_reg_write(rt5616->regmap, init_reg, ARRAY_SIZE(init_reg));
+			regcache_cache_only(rt5616->regmap, false);
+			regcache_sync(rt5616->regmap);
+			mdelay(10);
 			snd_soc_update_bits(codec, RT5616_PWR_ANLG1,
 					    RT5616_PWR_VREF1 | RT5616_PWR_MB |
 					    RT5616_PWR_BG | RT5616_PWR_VREF2,
@@ -1268,6 +1273,8 @@ static int rt5616_set_bias_level(struct snd_soc_codec *codec,
 		snd_soc_write(codec, RT5616_PWR_MIXER, 0x0000);
 		snd_soc_write(codec, RT5616_PWR_ANLG1, RT5616_PWR_LDO_DVO_1_2V); //0x0000 in 4.14
 		snd_soc_write(codec, RT5616_PWR_ANLG2, 0x0000);
+		regcache_cache_only(rt5616->regmap, true);
+		regcache_mark_dirty(rt5616->regmap);
 		break;
 
 	default:
@@ -1284,11 +1291,11 @@ static int rt5616_probe(struct snd_soc_codec *codec)
 	int ret;
 
 	/* Check if MCLK provided */
-	#if 0
 	rt5616->mclk = devm_clk_get(codec->dev, "mclk");
-	if (PTR_ERR(rt5616->mclk) == -EPROBE_DEFER)
+	if (PTR_ERR(rt5616->mclk) == -EPROBE_DEFER) {
+		pr_info("%s: MCLK is not available, deferring\n", __func__);
 		return -EPROBE_DEFER;
-	#endif
+	}
 
 	regmap_multi_reg_write(rt5616->regmap, init_reg, ARRAY_SIZE(init_reg));
 

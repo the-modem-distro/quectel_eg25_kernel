@@ -828,8 +828,8 @@ static int msm_otg_set_suspend(struct usb_phy *phy, int suspend)
 
  
 	if (suspend && phy->state == OTG_STATE_B_SUSPEND) {
-		pr_debug("%s: Trying to suspend when not finished waking up\n ", __func__);
-		return -EBUSY;
+		pr_info("%s: Trying to suspend when not finished waking up\n ", __func__);
+	//	return -EBUSY;
 	}
 	if (suspend) {
 		/* called in suspend interrupt context */
