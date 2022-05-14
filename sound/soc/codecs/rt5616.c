@@ -1432,8 +1432,7 @@ static int rt5616_i2c_probe(struct i2c_client *i2c,
 		return ret;
 	}
 	// Fucking ensure we reset it before reading...
-	regmap_write(rt5616->regmap, RT5616_RESET, 0);
-
+ 	regmap_write(rt5616->regmap, RT5616_RESET, 1); 
 	regmap_read(rt5616->regmap, RT5616_DEVICE_ID, &val);
 	if (val != 0x6281) {
 		dev_err(&i2c->dev,
