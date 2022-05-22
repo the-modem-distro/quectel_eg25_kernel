@@ -1161,19 +1161,12 @@
 		compatible = "qcom,msm-thermal";
 		qcom,sensor-id = <4>;
 		qcom,poll-ms = <250>;
-		qcom,core-limit-temp = <60>; // Limit at 60C
-		qcom,core-temp-hysteresis = <10>;
-
-		qcom,core-reset-temp = <95>; // Reset at 95C
-		qcom,therm-reset-temp = <95>; // Reset at 95C
-		qcom,limit-temp = <60>;
+		qcom,limit-temp = <80>;
 		qcom,temp-hysteresis = <10>;
-		qcom,hotplug-temp = <85>; // Threshold temperature to start shutting down cores
-		qcom,hotplug-temp-hysteresis = <10>;
 		qcom,freq-step = <2>;
 		qcom,freq-mitigation-temp = <105>;
 		qcom,freq-mitigation-temp-hysteresis = <15>;
-		qcom,freq-mitigation-value = <800000>;
+		qcom,freq-mitigation-value = <100000>;
 		qcom,disable-cx-phase-ctrl;
 		qcom,disable-gfx-phase-ctrl;
 		qcom,disable-psm;
