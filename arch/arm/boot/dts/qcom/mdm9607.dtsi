@@ -1398,6 +1398,7 @@
 		qcom,rx-ring-size = <32>;
 		qcom,max-rx-mtu = <4096>;
 		qcom,fast-shutdown;
+		status = "disabled";
 	};
 
 	spmi_bus: qcom,spmi@200f000 {
@@ -1547,6 +1548,7 @@
 		qcom,use-sw-hmac-algo;
 		qcom,use-sw-aead-algo;
 		qcom,ce-opp-freq = <100000000>;
+		status = "disabled";
 	};
 
 	qcom_qcedev: qcedev@720000 {
@@ -1572,6 +1574,7 @@
 		clock-names = "core_clk_src", "core_clk",
 				"iface_clk", "bus_clk";
 		qcom,ce-opp-freq = <100000000>;
+		status = "disabled";
 	};
 
 	qcom_seecom: qseecom@87a80000 {
