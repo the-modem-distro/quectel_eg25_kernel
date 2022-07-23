@@ -3102,6 +3102,7 @@ int msm_nand_scan(struct mtd_info *mtd)
 					nand_flash_ids[i].dev_id == devid)
 				flashdev = &nand_flash_ids[i];
 		}
+
 		if (!flashdev || !flashman) {
 			pr_err("unknown nand flashid=%x manuf=%x devid=%x\n",
 				flash_id, manid, devid);

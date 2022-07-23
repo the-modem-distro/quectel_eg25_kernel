@@ -25,6 +25,7 @@
  * If page size and eraseblock size are 0, the sizes are taken from the
  * extended chip ID.
  */
+ 
 struct nand_flash_dev nand_flash_ids[] = {
 	/*
 	 * Some incompatible NAND chips share device ID's and so must be
@@ -77,6 +78,10 @@ struct nand_flash_dev nand_flash_ids[] = {
 	{"MX63U1GC12HAXMI01 1G 1.8V 4-bit",
 		{ .id = {0xc2, 0xa1, 0x80, 0x15, 0x00, 0x00, 0x00, 0x00} },
 		SZ_2K, SZ_128, SZ_128K, 0, 4, 64, NAND_ECC_INFO(4, SZ_512)},
+
+	{"FM68D1G1GMB 1G  1.8V 4-bit",
+		{ .id = {0xc8, 0x61, 0x80, 0x15, 0x00, 0x00, 0x00, 0x00} },
+		SZ_2K, SZ_128, SZ_128K, 0, 4, 64, NAND_ECC_INFO(4, SZ_512) },
 
 	LEGACY_ID_NAND("NAND 4MiB 5V 8-bit",   0x6B, 4, SZ_8K, SP_OPTIONS),
 	LEGACY_ID_NAND("NAND 4MiB 3,3V 8-bit", 0xE3, 4, SZ_8K, SP_OPTIONS),
@@ -205,6 +210,7 @@ struct nand_manufacturers nand_manuf_ids[] = {
 	{NAND_MFR_EON, "Eon"},
 	{NAND_MFR_SANDISK, "SanDisk"},
 	{NAND_MFR_INTEL, "Intel"},
+	{NAND_MFR_ESMT, "ESMT"},
 	{0x0, "Unknown"}
 };
 
