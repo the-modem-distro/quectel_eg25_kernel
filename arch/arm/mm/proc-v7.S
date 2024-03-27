@@ -462,7 +462,7 @@ __v7_setup_stack:
 	string	cpu_elf_name, "v7"
 	.align
 
-	.section ".proc.info.init", #alloc
+	.section ".proc.info.init", "alloc"
 
 	/*
 	 * Standard v7 proc info content
@@ -500,7 +500,7 @@ __v7_ca5mp_proc_info:
 	/*
 	 * ARM Ltd. Cortex A9 processor.
 	 */
-	.type   __v7_ca9mp_proc_info, #object
+	.type   __v7_ca9mp_proc_info, "object"
 __v7_ca9mp_proc_info:
 	.long	0x410fc090
 	.long	0xff0ffff0
@@ -513,7 +513,7 @@ __v7_ca9mp_proc_info:
 	 * Marvell PJ4B processor.
 	 */
 #ifdef CONFIG_CPU_PJ4B
-	.type   __v7_pj4b_proc_info, #object
+	.type   __v7_pj4b_proc_info, "object"
 __v7_pj4b_proc_info:
 	.long	0x560f5800
 	.long	0xff0fff00
@@ -524,7 +524,7 @@ __v7_pj4b_proc_info:
 	/*
 	 * ARM Ltd. Cortex R7 processor.
 	 */
-	.type	__v7_cr7mp_proc_info, #object
+	.type	__v7_cr7mp_proc_info, "object"
 __v7_cr7mp_proc_info:
 	.long	0x410fc170
 	.long	0xff0ffff0
