@@ -109,7 +109,7 @@
 #endif
 		.endm
 
-		.section ".start", #alloc, #execinstr
+		.section ".start","ax"
 /*
  * sort out different calling conventions
  */
